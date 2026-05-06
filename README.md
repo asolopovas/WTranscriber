@@ -57,6 +57,19 @@ src-tauri/      Rust backend (Tauri commands, transcription pipeline)
 public/         Static assets
 ```
 
+## Bundle sizes (Windows x64)
+
+| Artifact | Size |
+|---|---|
+| `wtranscriber.exe` (GUI) | ~9.5 MB |
+| `wt.exe` (CLI) | ~5.3 MB |
+| NSIS installer | ~4.4 MB |
+| MSI installer | ~6.7 MB |
+
+ffmpeg, sherpa-onnx and llama.cpp binaries are not bundled — they are
+resolved at runtime via `which` / `WT_*_DIR` env vars / exe-adjacent
+install paths.
+
 ## License
 
 MIT
