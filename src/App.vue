@@ -1161,29 +1161,46 @@ const fieldClass =
                   </label>
                 </div>
 
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Speakers</span
-                  >
-                  <input
-                    :value="config.speakers ?? 0"
-                    type="number"
-                    min="0"
-                    max="20"
-                    :disabled="!config.diarize"
-                    :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
-                    @input="
-                      (e) => {
-                        const n = Number((e.target as HTMLInputElement).value);
-                        if (config) config.speakers = n > 0 ? n : null;
-                      }
-                    "
-                  />
-                  <span class="font-mono text-labelSmall text-outline mt-unit block"
-                    >0 = auto</span
-                  >
-                </label>
+                <div class="grid grid-cols-2 gap-md">
+                  <label class="block">
+                    <span
+                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                      >Diarizer</span
+                    >
+                    <select
+                      v-model="config.diarizer"
+                      :disabled="!config.diarize"
+                      :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="nemo">NVIDIA NeMo Sortformer</option>
+                      <option value="sherpa">Sherpa pyannote + TitaNet</option>
+                    </select>
+                  </label>
+                  <label class="block">
+                    <span
+                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                      >Speakers</span
+                    >
+                    <input
+                      :value="config.speakers ?? 0"
+                      type="number"
+                      min="0"
+                      max="20"
+                      :disabled="!config.diarize"
+                      :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+                      @input="
+                        (e) => {
+                          const n = Number((e.target as HTMLInputElement).value);
+                          if (config) config.speakers = n > 0 ? n : null;
+                        }
+                      "
+                    />
+                    <span class="font-mono text-labelSmall text-outline mt-unit block"
+                      >0 = auto</span
+                    >
+                  </label>
+                </div>
 
                 <div class="flex items-center justify-between gap-xl py-xs">
                   <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
