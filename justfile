@@ -49,5 +49,8 @@ clean:
 icons source="src-tauri/icons/icon.png":
     bun run tauri icon {{source}}
 
+cudnn version="9.21.1.3":
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
+
 bump version:
     bun pm version {{version}} --no-git-tag-version
