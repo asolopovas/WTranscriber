@@ -1,22 +1,32 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
-import type { Config, Transcript } from "./types";
+import type { Config, Suggestion, Transcript } from "./types";
 import ModelManager from "./components/ModelManager.vue";
 import History from "./components/History.vue";
+import Settings from "./components/Settings.vue";
 
-const tab = ref<"transcribe" | "models" | "history">("transcribe");
+const tab = ref<"transcribe" | "models" | "history" | "settings">("transcribe");
 
 const version = ref("");
 const config = ref<Config | null>(null);
 const transcript = ref<Transcript | null>(null);
-const status = ref<"idle" | "running" | "error">("idle");
+const suggestion = ref<Suggestion | null>(null);
+const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
+
+async function reloadConfig() {
+  config.value = await api.loadConfig();
+}
 
 onMounted(async () => {
   version.value = await api.appVersion();
-  config.value = await api.loadConfig();
+  await reloadConfig();
+});
+
+watch(tab, (t) => {
+  if (t === "transcribe") void reloadConfig();
 });
 
 async function pickAndTranscribe() {
@@ -28,9 +38,20 @@ async function pickAndTranscribe() {
   if (typeof selected !== "string") return;
   status.value = "running";
   error.value = null;
+  suggestion.value = null;
   try {
     transcript.value = await api.transcribeFile(selected, config.value);
     status.value = "idle";
+    if (config.value.auto_rename) {
+      status.value = "renaming";
+      try {
+        suggestion.value = await api.suggestFilename(transcript.value);
+      } catch (e) {
+        error.value = `auto-rename failed: ${String(e)}`;
+      } finally {
+        status.value = "idle";
+      }
+    }
   } catch (e) {
     error.value = String(e);
     status.value = "error";
@@ -51,11 +72,13 @@ function fmt(ms: number): string {
         <button :class="{ active: tab === 'transcribe' }" @click="tab = 'transcribe'">Transcribe</button>
         <button :class="{ active: tab === 'history' }" @click="tab = 'history'">History</button>
         <button :class="{ active: tab === 'models' }" @click="tab = 'models'">Models</button>
+        <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">Settings</button>
       </nav>
       <span class="version">v{{ version }}</span>
     </header>
 
     <ModelManager v-if="tab === 'models'" />
+    <Settings v-else-if="tab === 'settings'" />
     <History
       v-else-if="tab === 'history'"
       @open="(t) => { transcript = t; tab = 'transcribe'; }"
@@ -63,8 +86,8 @@ function fmt(ms: number): string {
     <template v-else>
 
     <section class="controls">
-      <button :disabled="status === 'running'" @click="pickAndTranscribe">
-        {{ status === "running" ? "Transcribing…" : "Pick audio file" }}
+      <button :disabled="status === 'running' || status === 'renaming'" @click="pickAndTranscribe">
+        {{ status === "running" ? "Transcribing…" : status === "renaming" ? "Naming…" : "Pick audio file" }}
       </button>
       <span v-if="config" class="meta">
         {{ config.model }} · {{ config.language }} · {{ config.device }}
@@ -77,6 +100,10 @@ function fmt(ms: number): string {
       {{ transcript.utterances.length }} utterances ·
       {{ transcript.speakers_detected }} speakers ·
       {{ fmt(transcript.duration_ms) }}
+    </section>
+
+    <section v-if="suggestion" class="suggestion">
+      Suggested filename: <code>{{ suggestion.topic }}_{{ suggestion.stamp }}</code>
     </section>
 
     <section class="transcript">
@@ -168,6 +195,16 @@ button:disabled {
 .summary {
   color: #999;
   font-size: 0.85rem;
+}
+.suggestion {
+  color: #6cf;
+  font-size: 0.85rem;
+}
+.suggestion code {
+  font-family: ui-monospace, monospace;
+  background: #1a1a1a;
+  padding: 2px 6px;
+  border-radius: 3px;
 }
 .utterance {
   padding: 12px;
