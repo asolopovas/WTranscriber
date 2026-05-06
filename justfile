@@ -52,5 +52,8 @@ icons source="src-tauri/icons/icon.png":
 cudnn version="9.21.1.3":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
 
+sherpa-cuda-build version="v1.13.0":
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-sherpa-cuda.ps1 -Version {{version}}
+
 bump version:
     bun pm version {{version}} --no-git-tag-version

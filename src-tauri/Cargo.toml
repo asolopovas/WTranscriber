@@ -52,6 +52,7 @@ hound = "3.5"
 rubato = "0.16"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 byteorder = "1.5"
+sherpa-onnx = { version = "1.13", default-features = false, features = ["static"] }
 
 [profile.release]
 codegen-units = 1

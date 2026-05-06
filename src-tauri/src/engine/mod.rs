@@ -1,6 +1,7 @@
 mod canary;
 mod chunk;
 mod nemo_ctc;
+mod recognizer;
 mod runtime;
 mod sherpa;
 mod transducer;
@@ -17,8 +18,8 @@ pub use whisper::run as run_whisper;
 
 use crate::{
     config::{Config, Engine},
-    error::Result,
-    transcriber::Segment,
+    error::{Error, Result},
+    transcriber::{Segment, Token},
 };
 
 pub fn run(
@@ -28,6 +29,9 @@ pub fn run(
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
+    if use_in_process(config) {
+        return run_in_process(samples, audio_dur_sec, config, cancelled);
+    }
     match config.engine {
         Engine::WhisperOnnx => whisper::run(samples, audio_dur_sec, config, on_progress, cancelled),
         Engine::Zipformer => transducer::run(
@@ -49,4 +53,144 @@ pub fn run(
         Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled),
         Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled),
     }
+}
+
+fn use_in_process(config: &Config) -> bool {
+    if std::env::var("WT_USE_SUBPROCESS")
+        .ok()
+        .is_some_and(|v| v == "1")
+    {
+        return false;
+    }
+    matches!(
+        config.engine,
+        Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
+    )
+}
+
+fn run_in_process(
+    samples: &[f32],
+    audio_dur_sec: f64,
+    config: &Config,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(Vec<Segment>, String, f64)> {
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
+    recognizer::ensure(config)?;
+    let mut guard = recognizer::lock();
+    let loaded = guard
+        .as_mut()
+        .ok_or_else(|| Error::Transcribe("recognizer cache empty after ensure".into()))?;
+    let t0 = std::time::Instant::now();
+    let stream = loaded.recognizer.create_stream();
+    let sample_rate = i32::try_from(crate::audio::WHISPER_SAMPLE_RATE).unwrap_or(16_000);
+    stream.accept_waveform(sample_rate, samples);
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
+    loaded.recognizer.decode(&stream);
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let result = stream
+        .get_result()
+        .ok_or_else(|| Error::Transcribe("empty result from recognizer".into()))?;
+    let elapsed = t0.elapsed().as_secs_f64();
+    let rtf = if elapsed > 0.0 {
+        audio_dur_sec / elapsed
+    } else {
+        0.0
+    };
+    let segments = build_segments(&result, audio_dur_sec);
+    let detected = if config.language == "auto" || config.language.is_empty() {
+        String::new()
+    } else {
+        config.language.clone()
+    };
+    Ok((segments, detected, rtf))
+}
+
+fn build_segments(
+    result: &sherpa_onnx::OfflineRecognizerResult,
+    audio_dur_sec: f64,
+) -> Vec<Segment> {
+    let text = result.text.trim();
+    if text.is_empty() && result.tokens.is_empty() {
+        return Vec::new();
+    }
+    let timestamps = result.timestamps.as_ref();
+    if let Some(ts) = timestamps
+        && !result.tokens.is_empty()
+        && ts.len() == result.tokens.len()
+    {
+        return vec![coalesce_word_segment(&result.tokens, ts, audio_dur_sec)];
+    }
+    vec![Segment {
+        text: text.to_owned(),
+        start_ms: 0,
+        end_ms: f64_ms(audio_dur_sec),
+        tokens: Vec::new(),
+    }]
+}
+
+fn coalesce_word_segment(tokens: &[String], timestamps: &[f32], audio_dur_sec: f64) -> Segment {
+    struct Word {
+        text: String,
+        start: f64,
+        end: f64,
+    }
+    let mut words: Vec<Word> = Vec::with_capacity(tokens.len() / 2 + 1);
+    for (i, tok) in tokens.iter().enumerate() {
+        if tok.is_empty() {
+            continue;
+        }
+        let is_boundary = i == 0 || tok.starts_with(' ');
+        let piece = tok.strip_prefix(' ').unwrap_or(tok);
+        if is_boundary || words.is_empty() {
+            words.push(Word {
+                text: piece.to_owned(),
+                start: f64::from(timestamps[i]),
+                end: 0.0,
+            });
+        } else {
+            words.last_mut().unwrap().text.push_str(piece);
+        }
+    }
+    if words.is_empty() {
+        return Segment {
+            text: String::new(),
+            start_ms: 0,
+            end_ms: f64_ms(audio_dur_sec),
+            tokens: Vec::new(),
+        };
+    }
+    for i in 0..words.len() {
+        words[i].end = if i + 1 < words.len() {
+            words[i + 1].start
+        } else {
+            audio_dur_sec
+        };
+    }
+    let parts: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
+    let toks: Vec<Token> = words
+        .iter()
+        .map(|w| Token {
+            text: w.text.clone(),
+            start_ms: f64_ms(w.start),
+            end_ms: f64_ms(w.end),
+            confidence: 0.0,
+        })
+        .collect();
+    Segment {
+        text: parts.join(" "),
+        start_ms: f64_ms(words.first().unwrap().start),
+        end_ms: f64_ms(words.last().unwrap().end),
+        tokens: toks,
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn f64_ms(sec: f64) -> u64 {
+    (sec * 1000.0) as u64
 }

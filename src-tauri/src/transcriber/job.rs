@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-const SLAB_SEC: f64 = 180.0;
+const SLAB_SEC: f64 = 600.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
