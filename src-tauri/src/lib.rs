@@ -1,6 +1,7 @@
 mod audio;
 mod commands;
 mod config;
+mod engine;
 mod error;
 mod models;
 mod paths;
