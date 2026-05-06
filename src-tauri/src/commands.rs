@@ -6,12 +6,13 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     audio,
+    browser::{self, DirListing},
     config::Config,
-    error::Result,
+    error::{Error, Result},
     logfile,
     models::{self, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
-    transcriber::{self, CacheEntry, Job, Transcript},
+    transcriber::{self, CacheEntry, Job, Transcript, export::Format as ExportFormat},
 };
 
 #[tauri::command]
@@ -128,6 +129,72 @@ pub fn history_load(key: String) -> Result<Option<Transcript>> {
 #[tauri::command]
 pub fn history_delete(key: String) -> Result<()> {
     transcriber::cache::invalidate(&key)
+}
+
+#[tauri::command]
+pub fn list_directory(path: Option<PathBuf>) -> Result<DirListing> {
+    let p = path.unwrap_or_else(browser::home_dir);
+    browser::list(&p)
+}
+
+#[tauri::command]
+pub fn default_dir() -> PathBuf {
+    browser::home_dir()
+}
+
+#[tauri::command]
+pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err(Error::Config("new name is empty".into()));
+    }
+    if trimmed.contains(['/', '\\']) {
+        return Err(Error::Config("new name must not contain path separators".into()));
+    }
+    let parent = source
+        .parent()
+        .ok_or_else(|| Error::Config("source has no parent directory".into()))?;
+    let mut target_name = trimmed.to_owned();
+    if std::path::Path::new(&target_name).extension().is_none()
+        && let Some(ext) = source.extension().and_then(|e| e.to_str())
+        && !ext.is_empty()
+    {
+        target_name.push('.');
+        target_name.push_str(ext);
+    }
+    let dst = parent.join(&target_name);
+    if dst == source {
+        return Ok(dst);
+    }
+    if dst.exists() {
+        return Err(Error::Config(format!(
+            "destination already exists: {target_name}"
+        )));
+    }
+    std::fs::rename(&source, &dst)?;
+    logfile::info(&format!("rename {} -> {}", source.display(), dst.display()));
+    Ok(dst)
+}
+
+#[tauri::command]
+pub fn delete_file(path: PathBuf) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(&path)?;
+    logfile::info(&format!("delete {}", path.display()));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn export_transcript(
+    transcript: Transcript,
+    dest: PathBuf,
+    format: ExportFormat,
+) -> Result<PathBuf> {
+    transcriber::export::write(&transcript, &dest, format)?;
+    logfile::info(&format!("export {:?} -> {}", format, dest.display()));
+    Ok(dest)
 }
 
 #[tauri::command]

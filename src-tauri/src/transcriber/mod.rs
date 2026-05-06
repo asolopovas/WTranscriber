@@ -4,6 +4,7 @@ mod transcript;
 
 pub mod cache;
 pub mod dedup;
+pub mod export;
 
 #[allow(unused_imports, dead_code)]
 pub use cache::{

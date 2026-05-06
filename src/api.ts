@@ -3,6 +3,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   CacheEntry,
   Config,
+  DirListing,
+  ExportFormat,
   FileProgress,
   ModelInfo,
   ModelStatus,
@@ -28,6 +30,13 @@ export const api = {
   logPath: () => invoke<string>("log_path"),
   logTail: (maxBytes?: number) => invoke<string>("log_tail", { maxBytes }),
   logClear: () => invoke<void>("log_clear"),
+  listDirectory: (path?: string) => invoke<DirListing>("list_directory", { path }),
+  defaultDir: () => invoke<string>("default_dir"),
+  renameFile: (source: string, newName: string) =>
+    invoke<string>("rename_file", { source, newName }),
+  deleteFile: (path: string) => invoke<void>("delete_file", { path }),
+  exportTranscript: (transcript: Transcript, dest: string, format: ExportFormat) =>
+    invoke<string>("export_transcript", { transcript, dest, format }),
 };
 
 export const events = {

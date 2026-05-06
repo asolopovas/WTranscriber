@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api } from "./api";
-import type { Config, ModelInfo, Suggestion, Transcript } from "./types";
+import type {
+  Config,
+  DirEntry,
+  DirListing,
+  ExportFormat,
+  ModelInfo,
+  Transcript,
+} from "./types";
 import ModelManager from "./components/ModelManager.vue";
 import History from "./components/History.vue";
 import Settings from "./components/Settings.vue";
@@ -15,13 +22,14 @@ const tab = ref<Tab>("transcribe");
 const version = ref("");
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
+const listing = ref<DirListing | null>(null);
+const selectedPath = ref<string>("");
 const transcript = ref<Transcript | null>(null);
-const suggestion = ref<Suggestion | null>(null);
 const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
-const sourcePath = ref<string>("");
 const dragOver = ref(false);
 const saveState = ref<"idle" | "saving" | "saved">("idle");
+const busy = ref<Record<string, boolean>>({});
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
@@ -41,15 +49,94 @@ const engineOptions = [
 
 const languageOptions = ["auto", "en", "de", "fr", "es", "it", "pt", "ru", "uk", "zh", "ja", "ko"];
 
+const exportFormats: { value: ExportFormat; label: string }[] = [
+  { value: "txt", label: "Plain text (.txt)" },
+  { value: "csv", label: "CSV (.csv)" },
+  { value: "json", label: "JSON (.json)" },
+  { value: "srt", label: "Subtitles (.srt)" },
+  { value: "vtt", label: "WebVTT (.vtt)" },
+];
+
 const asrModels = computed(() =>
   models.value.filter((m) => m.family === "asr" && m.status === "installed"),
 );
 
-const audioExtensions = ["wav", "mp3", "ogg", "m4a", "flac"];
+const selectedEntry = computed<DirEntry | null>(() => {
+  if (!listing.value || !selectedPath.value) return null;
+  return listing.value.entries.find((e) => e.path === selectedPath.value) ?? null;
+});
+
+const breadcrumbs = computed(() => {
+  if (!listing.value) return [];
+  const parts = listing.value.path.split(/[\\/]/).filter(Boolean);
+  const sep = listing.value.path.includes("\\") ? "\\" : "/";
+  const out: { label: string; path: string }[] = [];
+  let acc = listing.value.path.startsWith("/") ? "" : "";
+  for (let i = 0; i < parts.length; i++) {
+    acc = i === 0 ? parts[0] + (sep === "\\" ? sep : "") : acc + sep + parts[i];
+    out.push({ label: parts[i], path: acc });
+  }
+  return out;
+});
 
 async function reload() {
   config.value = await api.loadConfig();
   models.value = await api.listModels();
+  if (!listing.value) {
+    const start = config.value.last_dir || (await api.defaultDir());
+    await openDir(start);
+  } else {
+    await refreshListing();
+  }
+}
+
+async function refreshListing() {
+  if (!listing.value) return;
+  try {
+    listing.value = await api.listDirectory(listing.value.path);
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function openDir(path: string) {
+  try {
+    listing.value = await api.listDirectory(path);
+    selectedPath.value = "";
+    if (config.value && config.value.last_dir !== listing.value.path) {
+      config.value.last_dir = listing.value.path;
+    }
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function pickFolder() {
+  const selected = await open({ directory: true, multiple: false });
+  if (typeof selected === "string") void openDir(selected);
+}
+
+function chooseEntry(entry: DirEntry) {
+  if (entry.is_dir) {
+    void openDir(entry.path);
+    return;
+  }
+  if (entry.path === selectedPath.value) return;
+  selectedPath.value = entry.path;
+  transcript.value = null;
+  error.value = null;
+  if (entry.cache_key) {
+    void loadCached(entry.cache_key);
+  }
+}
+
+async function loadCached(key: string) {
+  try {
+    const t = await api.historyLoad(key);
+    if (t) transcript.value = t;
+  } catch (e) {
+    error.value = String(e);
+  }
 }
 
 onMounted(async () => {
@@ -57,15 +144,13 @@ onMounted(async () => {
   await reload();
   unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
     if (tab.value !== "transcribe") return;
-    if (event.payload.type === "over") {
-      dragOver.value = true;
-    } else if (event.payload.type === "leave") {
-      dragOver.value = false;
-    } else if (event.payload.type === "drop") {
+    if (event.payload.type === "over") dragOver.value = true;
+    else if (event.payload.type === "leave") dragOver.value = false;
+    else if (event.payload.type === "drop") {
       dragOver.value = false;
       const path = event.payload.paths?.[0];
-      if (path && hasAudioExt(path)) stageFile(path);
-      else if (path) error.value = `Unsupported file type: ${path}`;
+      if (!path) return;
+      void openDroppedPath(path);
     }
   });
 });
@@ -73,13 +158,14 @@ onMounted(async () => {
 let unlistenDrop: (() => void) | null = null;
 onUnmounted(() => unlistenDrop?.());
 
-function hasAudioExt(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return audioExtensions.includes(ext);
+async function openDroppedPath(path: string) {
+  const dir = path.replace(/[\\/][^\\/]+$/, "");
+  await openDir(dir);
+  selectedPath.value = path;
 }
 
 watch(tab, (t) => {
-  if (t === "transcribe") void reload();
+  if (t === "transcribe") void refreshListing();
 });
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,44 +191,143 @@ watch(
   { deep: true },
 );
 
-async function pickFile() {
-  const selected = await open({
-    multiple: false,
-    filters: [{ name: "Audio", extensions: audioExtensions }],
-  });
-  if (typeof selected === "string") stageFile(selected);
-}
-
-function stageFile(path: string) {
-  sourcePath.value = path;
-  transcript.value = null;
-  suggestion.value = null;
-  error.value = null;
-  status.value = "idle";
-}
-
-async function runTranscribe() {
-  const path = sourcePath.value;
-  if (!path || !config.value) return;
+async function runTranscribe(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target || !config.value) return;
+  if (!target.is_audio) return;
+  selectedPath.value = target.path;
   status.value = "running";
   error.value = null;
-  suggestion.value = null;
+  busy.value = { ...busy.value, [target.path]: true };
   try {
-    transcript.value = await api.transcribeFile(path, config.value);
+    transcript.value = await api.transcribeFile(target.path, config.value);
     status.value = "idle";
-    if (config.value.auto_rename) {
-      status.value = "renaming";
-      try {
-        suggestion.value = await api.suggestFilename(transcript.value);
-      } catch (e) {
-        error.value = `auto-rename failed: ${String(e)}`;
-      } finally {
-        status.value = "idle";
-      }
-    }
+    await refreshListing();
   } catch (e) {
     error.value = String(e);
     status.value = "error";
+  } finally {
+    const next = { ...busy.value };
+    delete next[target.path];
+    busy.value = next;
+  }
+}
+
+async function autoRename(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target || !target.is_audio) return;
+  let t = transcript.value;
+  if (!t) {
+    if (target.cache_key) {
+      t = await api.historyLoad(target.cache_key);
+    }
+  }
+  if (!t) {
+    await message("Transcribe first to enable auto-rename.", { title: "Auto-rename", kind: "info" });
+    return;
+  }
+  status.value = "renaming";
+  try {
+    const s = await api.suggestFilename(t);
+    const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
+    const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
+    const ok = await confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" });
+    if (!ok) return;
+    const newPath = await api.renameFile(target.path, suggestion);
+    selectedPath.value = newPath;
+    await refreshListing();
+  } catch (e) {
+    error.value = `auto-rename failed: ${String(e)}`;
+  } finally {
+    status.value = "idle";
+  }
+}
+
+const renaming = ref(false);
+const renameTarget = ref<DirEntry | null>(null);
+const renameValue = ref("");
+
+function openRename(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  renameTarget.value = target;
+  renameValue.value = target.name;
+  renaming.value = true;
+}
+
+async function commitRename() {
+  if (!renameTarget.value) return;
+  const target = renameTarget.value;
+  const next = renameValue.value.trim();
+  renaming.value = false;
+  if (!next || next === target.name) return;
+  try {
+    const newPath = await api.renameFile(target.path, next);
+    if (selectedPath.value === target.path) selectedPath.value = newPath;
+    await refreshListing();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function deleteEntry(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  const ok = await confirm(`Delete "${target.name}"?\n\nThis cannot be undone.`, {
+    title: "Delete file",
+    okLabel: "Delete",
+    kind: "warning",
+  });
+  if (!ok) return;
+  try {
+    await api.deleteFile(target.path);
+    if (selectedPath.value === target.path) {
+      selectedPath.value = "";
+      transcript.value = null;
+    }
+    await refreshListing();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+const exporting = ref(false);
+const exportTarget = ref<DirEntry | null>(null);
+const exportFormat = ref<ExportFormat>("txt");
+
+async function openExport(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  let t = transcript.value;
+  if (!t || (selectedEntry.value && selectedEntry.value.path !== target.path)) {
+    if (target.cache_key) t = await api.historyLoad(target.cache_key);
+  }
+  if (!t) {
+    await message("Transcribe this file first to enable export.", { title: "Export", kind: "info" });
+    return;
+  }
+  exportTarget.value = target;
+  exporting.value = true;
+}
+
+async function commitExport() {
+  if (!exportTarget.value) return;
+  const target = exportTarget.value;
+  const fmt = exportFormat.value;
+  exporting.value = false;
+  let t = transcript.value;
+  if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
+  if (!t) return;
+  const stem = target.name.replace(/\.[^.]+$/, "");
+  const dest = await save({
+    defaultPath: `${stem}.${fmt}`,
+    filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }],
+  });
+  if (!dest) return;
+  try {
+    await api.exportTranscript(t, dest, fmt);
+  } catch (e) {
+    error.value = String(e);
   }
 }
 
@@ -159,14 +344,20 @@ function fmtLong(ms: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
 function openHistoryItem(t: Transcript) {
   transcript.value = t;
-  suggestion.value = null;
-  sourcePath.value = "";
+  selectedPath.value = "";
   tab.value = "transcribe";
 }
 
@@ -203,95 +394,174 @@ const fieldClass =
     <main class="flex-1 flex overflow-hidden">
       <template v-if="tab === 'transcribe'">
         <section
-          class="flex-1 flex flex-col p-margin overflow-hidden bg-surface relative"
+          class="flex-1 flex flex-col overflow-hidden bg-surface relative"
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
-          <div class="flex items-center justify-between mb-margin">
-            <div class="flex items-center gap-xs text-on-surface-variant min-w-0">
-              <span class="material-symbols-outlined text-[18px] shrink-0">folder_open</span>
-              <span class="font-mono text-labelMedium truncate">{{ sourcePath ? basename(sourcePath) : "no file selected" }}</span>
+          <div class="flex items-center gap-xs px-margin h-12 border-b border-outline-variant/40 shrink-0">
+            <button
+              :disabled="!listing?.parent"
+              class="text-on-surface-variant hover:text-on-surface disabled:opacity-40 transition-colors"
+              @click="listing?.parent && openDir(listing.parent)"
+              title="Parent folder"
+            >
+              <span class="material-symbols-outlined text-[20px]">arrow_upward</span>
+            </button>
+            <button
+              class="text-on-surface-variant hover:text-on-surface transition-colors"
+              @click="refreshListing"
+              title="Refresh"
+            >
+              <span class="material-symbols-outlined text-[20px]">refresh</span>
+            </button>
+            <div class="flex items-center gap-unit min-w-0 font-mono text-labelMedium text-on-surface-variant overflow-x-auto scroll-thin">
+              <template v-for="(b, i) in breadcrumbs" :key="b.path">
+                <span v-if="i > 0" class="opacity-50">/</span>
+                <button
+                  class="hover:text-on-surface whitespace-nowrap"
+                  :class="i === breadcrumbs.length - 1 ? 'text-on-surface' : ''"
+                  @click="openDir(b.path)"
+                >
+                  {{ b.label }}
+                </button>
+              </template>
             </div>
-            <div class="flex gap-xs shrink-0">
-              <button
-                :disabled="status === 'running' || status === 'renaming'"
-                @click="pickFile"
-                class="bg-surface-container-high text-on-surface px-margin py-xs rounded-full font-medium text-titleSmall flex items-center gap-unit hover:bg-surface-container-highest border border-outline-variant transition-colors disabled:opacity-60 disabled:cursor-progress"
-              >
-                <span class="material-symbols-outlined text-[18px]">upload_file</span>
-                <span>{{ sourcePath ? "Change file" : "Pick audio" }}</span>
-              </button>
-              <button
-                :disabled="!sourcePath || status === 'running' || status === 'renaming'"
-                @click="runTranscribe"
-                class="bg-primary text-on-primary px-margin py-xs rounded-full font-medium text-titleSmall flex items-center gap-unit hover:bg-primary-fixed-dim transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <span class="material-symbols-outlined text-[18px]">{{ status === 'running' ? 'hourglass_top' : status === 'renaming' ? 'auto_awesome' : 'graphic_eq' }}</span>
-                <span>{{ status === "running" ? "Transcribing…" : status === "renaming" ? "Naming…" : "Transcribe" }}</span>
-              </button>
-            </div>
+            <div class="flex-1"></div>
+            <button
+              class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+              @click="pickFolder"
+            >
+              <span class="material-symbols-outlined text-[16px]">folder_open</span>
+              Choose folder
+            </button>
           </div>
 
-          <div v-if="error" class="mb-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs">
+          <div v-if="error" class="m-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs">
             <span class="material-symbols-outlined text-[18px] mt-[1px] shrink-0">error</span>
             <span class="flex-1 break-words font-mono text-labelMedium">{{ error }}</span>
             <button class="text-titleSmall underline hover:opacity-80 shrink-0" @click="tab = 'logs'">View log</button>
             <button class="material-symbols-outlined text-[18px] hover:opacity-70" @click="error = null">close</button>
           </div>
 
-          <div v-if="suggestion" class="mb-margin p-md rounded-lg bg-secondary-container/40 border border-secondary/30 flex items-center gap-xs text-bodyMedium">
-            <span class="material-symbols-outlined text-secondary text-[18px]">auto_awesome</span>
-            <span class="text-on-surface-variant">Suggested:</span>
-            <code class="font-mono text-secondary bg-surface-container px-xs py-unit rounded">{{ suggestion.topic }}_{{ suggestion.stamp }}</code>
+          <div class="flex-1 overflow-y-auto scroll-thin">
+            <div v-if="!listing || listing.entries.length === 0" class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant">
+              <span class="material-symbols-outlined text-[48px] text-outline-variant">folder_off</span>
+              <p class="text-bodyMedium">{{ dragOver ? "Drop a file or folder" : "Empty folder" }}</p>
+              <p class="font-mono text-labelSmall text-outline">Drag audio here or use Choose folder above</p>
+            </div>
+
+            <table v-else class="w-full text-bodyMedium">
+              <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
+                <tr class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
+                  <th class="px-margin py-xs w-8"></th>
+                  <th class="px-xs py-xs">Name</th>
+                  <th class="px-xs py-xs w-24">Duration</th>
+                  <th class="px-xs py-xs w-24">Size</th>
+                  <th class="px-xs py-xs w-28">Status</th>
+                  <th class="px-margin py-xs w-[200px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="entry in listing.entries"
+                  :key="entry.path"
+                  class="border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
+                  :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
+                  @click="chooseEntry(entry)"
+                  @dblclick="entry.is_dir ? openDir(entry.path) : runTranscribe(entry)"
+                >
+                  <td class="px-margin py-xs">
+                    <span class="material-symbols-outlined text-[20px]" :class="entry.is_dir ? 'text-primary' : 'text-on-surface-variant'">
+                      {{ entry.is_dir ? 'folder' : 'graphic_eq' }}
+                    </span>
+                  </td>
+                  <td class="px-xs py-xs truncate max-w-0">
+                    <span class="text-on-surface">{{ entry.name }}</span>
+                  </td>
+                  <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
+                    {{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}
+                  </td>
+                  <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
+                    {{ entry.is_dir ? "—" : fmtBytes(entry.size_bytes) }}
+                  </td>
+                  <td class="px-xs py-xs">
+                    <span
+                      v-if="busy[entry.path]"
+                      class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
+                    >
+                      <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+                      transcribing
+                    </span>
+                    <span
+                      v-else-if="entry.cache_key"
+                      class="font-mono text-labelSmall text-tertiary flex items-center gap-unit"
+                    >
+                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                      transcribed
+                    </span>
+                    <span v-else-if="entry.is_audio" class="font-mono text-labelSmall text-outline">—</span>
+                  </td>
+                  <td class="px-margin py-xs text-right">
+                    <div v-if="entry.is_audio" class="inline-flex gap-unit" @click.stop>
+                      <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
+                        :disabled="busy[entry.path]"
+                        title="Transcribe"
+                        @click="runTranscribe(entry)"
+                      >play_arrow</button>
+                      <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
+                        title="Auto-rename (AI)"
+                        @click="autoRename(entry)"
+                      >auto_awesome</button>
+                      <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+                        title="Rename"
+                        @click="openRename(entry)"
+                      >drive_file_rename_outline</button>
+                      <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+                        title="Export transcript"
+                        :disabled="!entry.cache_key"
+                        :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
+                        @click="openExport(entry)"
+                      >download</button>
+                      <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error transition-colors"
+                        title="Delete"
+                        @click="deleteEntry(entry)"
+                      >delete</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <div class="flex-1 overflow-y-auto pr-xs scroll-thin relative">
-            <div
-              v-if="!transcript && status !== 'running'"
-              class="h-full flex flex-col items-center justify-center gap-md text-center px-xl"
+          <div v-if="transcript" class="border-t border-outline-variant/40 max-h-[40%] overflow-y-auto scroll-thin p-margin shrink-0">
+            <div class="flex items-center justify-between mb-md">
+              <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
+                <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
+                Transcript
+                <span v-if="selectedPath" class="font-mono text-labelSmall text-on-surface-variant">— {{ basename(selectedPath) }}</span>
+              </h3>
+              <button
+                class="text-on-surface-variant hover:text-on-surface text-titleSmall"
+                @click="transcript = null"
+              >
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+            <article
+              v-for="(u, i) in transcript.utterances"
+              :key="i"
+              class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
             >
-              <div
-                class="w-full max-w-md border-2 border-dashed rounded-xl p-xl flex flex-col items-center gap-md transition-colors"
-                :class="dragOver
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-outline-variant text-on-surface-variant hover:border-outline'"
-              >
-                <span class="material-symbols-outlined text-[56px]" :class="dragOver ? 'text-primary' : 'text-outline-variant'">
-                  {{ dragOver ? 'download' : 'graphic_eq' }}
-                </span>
-                <p class="text-bodyMedium">
-                  {{ dragOver ? "Drop to load" : sourcePath ? "Press Transcribe to start" : "Drag an audio file here" }}
-                </p>
-                <p v-if="!dragOver" class="font-mono text-labelSmall text-outline">
-                  {{ audioExtensions.map((e) => '.' + e).join(' · ') }}
-                </p>
-                <button
-                  v-if="!dragOver"
-                  @click="pickFile"
-                  class="mt-xs px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors"
-                >
-                  or browse files
-                </button>
+              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{ fmt(u.start_ms) }}</span>
+              <div class="flex-1 min-w-0">
+                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">{{ u.speaker }}</div>
+                <p class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">{{ u.text }}</p>
               </div>
-            </div>
-
-            <div v-else-if="status === 'running'" class="h-full flex flex-col items-center justify-center gap-md text-on-surface-variant">
-              <span class="material-symbols-outlined text-[56px] text-primary animate-pulse">graphic_eq</span>
-              <p class="text-bodyMedium">Transcribing {{ basename(sourcePath) }}…</p>
-            </div>
-
-            <div v-else class="space-y-md">
-              <article
-                v-for="(u, i) in transcript!.utterances"
-                :key="i"
-                class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
-              >
-                <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{ fmt(u.start_ms) }}</span>
-                <div class="flex-1 min-w-0">
-                  <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">{{ u.speaker }}</div>
-                  <p class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">{{ u.text }}</p>
-                </div>
-              </article>
-            </div>
+            </article>
           </div>
         </section>
 
@@ -369,8 +639,14 @@ const fieldClass =
             </div>
 
             <div>
-              <h3 class="text-titleSmall text-on-surface mb-md">Session</h3>
+              <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
               <div class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium">
+                <div class="flex justify-between items-center">
+                  <span class="text-on-surface-variant">File</span>
+                  <span class="text-on-surface truncate ml-md max-w-[180px]" :title="selectedEntry?.name">
+                    {{ selectedEntry?.name ?? "—" }}
+                  </span>
+                </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Status</span>
                   <span :class="status === 'error' ? 'text-error' : status === 'idle' ? 'text-tertiary' : 'text-secondary'">
@@ -400,5 +676,61 @@ const fieldClass =
       <History v-else-if="tab === 'history'" @open="openHistoryItem" />
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
+
+    <div
+      v-if="renaming"
+      class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+      @click.self="renaming = false"
+    >
+      <div class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md">
+        <h3 class="text-titleSmall text-on-surface">Rename file</h3>
+        <input
+          v-model="renameValue"
+          :class="fieldClass"
+          @keydown.enter="commitRename"
+          @keydown.escape="renaming = false"
+        />
+        <div class="flex justify-end gap-xs">
+          <button
+            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
+            @click="renaming = false"
+          >Cancel</button>
+          <button
+            class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
+            @click="commitRename"
+          >Rename</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="exporting"
+      class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+      @click.self="exporting = false"
+    >
+      <div class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md">
+        <h3 class="text-titleSmall text-on-surface">Export transcript</h3>
+        <div class="space-y-xs">
+          <label
+            v-for="f in exportFormats"
+            :key="f.value"
+            class="flex items-center gap-xs p-xs rounded hover:bg-surface-container-high cursor-pointer"
+          >
+            <input type="radio" :value="f.value" v-model="exportFormat" />
+            <span class="text-bodyMedium text-on-surface">{{ f.label }}</span>
+          </label>
+        </div>
+        <div class="flex justify-end gap-xs">
+          <button
+            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
+            @click="exporting = false"
+          >Cancel</button>
+          <button
+            class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
+            @click="commitExport"
+          >Save…</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

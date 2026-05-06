@@ -13,6 +13,8 @@ pub struct Config {
     pub diarize: bool,
     pub speakers: Option<u32>,
     pub auto_rename: bool,
+    #[serde(default)]
+    pub last_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +46,7 @@ impl Default for Config {
             diarize: true,
             speakers: None,
             auto_rename: false,
+            last_dir: None,
         }
     }
 }

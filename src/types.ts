@@ -11,6 +11,27 @@ export interface Config {
   diarize: boolean;
   speakers: number | null;
   auto_rename: boolean;
+  last_dir?: string | null;
+}
+
+export type ExportFormat = "txt" | "csv" | "json" | "srt" | "vtt";
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  is_audio: boolean;
+  size_bytes: number;
+  modified_ms: number;
+  cache_key: string | null;
+  utterances: number | null;
+  duration_ms: number | null;
+}
+
+export interface DirListing {
+  path: string;
+  parent: string | null;
+  entries: DirEntry[];
 }
 
 export type Family = "asr" | "diarizer" | "llm";

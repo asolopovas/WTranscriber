@@ -1,4 +1,5 @@
 mod audio;
+mod browser;
 mod commands;
 mod config;
 mod diarizer;
@@ -80,6 +81,11 @@ pub fn run() {
             commands::install_model,
             commands::probe_audio,
             commands::transcribe_file,
+            commands::rename_file,
+            commands::delete_file,
+            commands::export_transcript,
+            commands::list_directory,
+            commands::default_dir,
             commands::history_list,
             commands::history_load,
             commands::history_delete,
