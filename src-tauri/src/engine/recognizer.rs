@@ -194,7 +194,7 @@ fn whisper_config(
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
             num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
-            debug: false,
+            debug: true,
             ..OfflineModelConfig::default()
         },
         ..OfflineRecognizerConfig::default()
@@ -229,7 +229,7 @@ fn transducer_config(
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
             num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
-            debug: false,
+            debug: true,
             ..OfflineModelConfig::default()
         },
         ..OfflineRecognizerConfig::default()
@@ -258,7 +258,7 @@ fn nemo_ctc_config(
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
             num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
-            debug: false,
+            debug: true,
             ..OfflineModelConfig::default()
         },
         ..OfflineRecognizerConfig::default()

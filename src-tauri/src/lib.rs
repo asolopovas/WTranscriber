@@ -36,6 +36,10 @@ async fn ensure_runtimes(app: &tauri::AppHandle) {
         install_cudnn(app).await;
     }
     install_llama(app).await;
+    if matches!(variant, runtimes::SherpaVariant::Cuda) {
+        runtimes::inproc_cuda::setup();
+        runtimes::inproc_cuda::dump_path();
+    }
 }
 
 async fn install_cudnn(app: &tauri::AppHandle) {
@@ -158,7 +162,10 @@ fn auto_install_essentials(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "debug,wtranscriber=trace,wtranscriber_lib=trace".into()),
+        )
         .init();
 
     logfile::info(&format!(

@@ -86,6 +86,12 @@ pub fn info(msg: &str) {
     write_line("INFO", msg);
 }
 
+#[allow(dead_code)]
+pub fn debug(msg: &str) {
+    eprintln!("DEBUG {msg}");
+    write_line("DEBUG", msg);
+}
+
 pub fn warn(msg: &str) {
     eprintln!("WARN  {msg}");
     write_line("WARN", msg);
