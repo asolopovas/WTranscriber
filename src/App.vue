@@ -1,160 +1,159 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { onMounted, ref } from "vue";
+import { open } from "@tauri-apps/plugin-dialog";
+import { api } from "./api";
+import type { Config, Utterance } from "./types";
 
-const greetMsg = ref("");
-const name = ref("");
+const version = ref("");
+const config = ref<Config | null>(null);
+const utterances = ref<Utterance[]>([]);
+const status = ref<"idle" | "running" | "error">("idle");
+const error = ref<string | null>(null);
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+onMounted(async () => {
+  version.value = await api.appVersion();
+  config.value = await api.loadConfig();
+});
+
+async function pickAndTranscribe() {
+  if (!config.value) return;
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "Audio", extensions: ["wav", "mp3", "ogg", "m4a", "flac"] }],
+  });
+  if (typeof selected !== "string") return;
+  status.value = "running";
+  error.value = null;
+  try {
+    utterances.value = await api.transcribeFile(selected, config.value);
+    status.value = "idle";
+  } catch (e) {
+    error.value = String(e);
+    status.value = "error";
+  }
+}
+
+function fmt(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <main class="app">
+    <header>
+      <h1>WTranscriber</h1>
+      <span class="version">v{{ version }}</span>
+    </header>
 
-    <div class="row">
-      <a href="https://vitejs.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+    <section class="controls">
+      <button :disabled="status === 'running'" @click="pickAndTranscribe">
+        {{ status === "running" ? "Transcribing…" : "Pick audio file" }}
+      </button>
+      <span v-if="config" class="meta">
+        {{ config.model }} · {{ config.language }} · {{ config.device }}
+      </span>
+    </section>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
+    <section v-if="error" class="error">{{ error }}</section>
+
+    <section class="transcript">
+      <p v-if="!utterances.length" class="empty">No transcript yet.</p>
+      <article v-for="(u, i) in utterances" :key="i" class="utterance">
+        <span class="ts">{{ fmt(u.start_ms) }} → {{ fmt(u.end_ms) }}</span>
+        <span v-if="u.speaker" class="speaker">{{ u.speaker }}</span>
+        <p>{{ u.text }}</p>
+      </article>
+    </section>
   </main>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
-<style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
+.app {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  gap: 16px;
+  padding: 24px;
+  max-width: 960px;
+  margin: 0 auto;
+  font-family: Inter, system-ui, sans-serif;
 }
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+header {
   display: flex;
-  justify-content: center;
+  align-items: baseline;
+  justify-content: space-between;
 }
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-
-a:hover {
-  color: #535bf2;
-}
-
 h1 {
-  text-align: center;
+  margin: 0;
+  font-size: 1.5rem;
 }
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.version {
+  color: #888;
+  font-size: 0.85rem;
 }
-
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.meta {
+  color: #888;
+  font-size: 0.85rem;
+}
 button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #1f1f1f;
+  color: #f0f0f0;
   cursor: pointer;
 }
-
-button:hover {
-  border-color: #396cd8;
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
 }
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+.error {
+  padding: 12px;
+  border-radius: 6px;
+  background: #3a1f1f;
+  color: #ffb4b4;
 }
-
-input,
-button {
-  outline: none;
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-
-#greet-input {
-  margin-right: 5px;
+.empty {
+  color: #666;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
+.utterance {
+  padding: 12px;
+  border-radius: 6px;
+  background: #1a1a1a;
 }
+.ts {
+  color: #888;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  margin-right: 8px;
+}
+.speaker {
+  color: #6cf;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.utterance p {
+  margin: 4px 0 0;
+}
+</style>
 
+<style>
+:root {
+  color-scheme: dark;
+  background: #0e0e0e;
+  color: #f0f0f0;
+}
+body {
+  margin: 0;
+}
 </style>

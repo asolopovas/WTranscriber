@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "wt",
+  "productName": "WTranscriber",
   "version": "0.1.0",
   "identifier": "com.asolopovas.wtranscriber",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "wt",
-        "width": 800,
-        "height": 600
+        "title": "WTranscriber",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 720,
+        "minHeight": 480
       }
     ],
     "security": {

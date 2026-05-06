@@ -23,10 +23,17 @@ just setup        # install JS deps
 just dev          # run app in dev mode
 just build        # production bundle
 just fmt          # format Rust + frontend
-just lint         # clippy + vue-tsc
+just lint         # clippy (warnings as errors) + vue-tsc
+just test         # cargo test
 ```
 
-Run `just` with no arguments to list available recipes.
+Run `just` with no arguments to list all recipes.
+
+## Status
+
+Early stage. Skeleton is in place; transcription pipeline is being ported
+from the Go implementation in [`wt`](https://github.com/asolopovas/wt).
+See [`AGENTS.md`](AGENTS.md) for the migration map and conventions.
 
 ## Layout
 
