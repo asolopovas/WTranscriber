@@ -13,7 +13,43 @@ mod transcriber;
 
 pub mod api;
 
+use tauri::Emitter;
 use tracing_subscriber::EnvFilter;
+
+fn auto_install_essentials(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let manager = models::manager();
+        let entries: Vec<_> = match manager.list() {
+            Ok(list) => list
+                .into_iter()
+                .filter(|m| m.default_active && m.status == models::ModelStatus::NotInstalled)
+                .map(|m| m.id)
+                .collect(),
+            Err(e) => {
+                logfile::error(&format!("auto_install: list failed: {e}"));
+                return;
+            }
+        };
+        for id in entries {
+            logfile::info(&format!("auto_install {id} starting"));
+            let app_for_cb = app.clone();
+            let mut on_progress = move |p: models::FileProgress| {
+                let _ = app_for_cb.emit("model:progress", &p);
+            };
+            let result = manager.install(&id, &mut on_progress).await;
+            match &result {
+                Ok(()) => {
+                    logfile::info(&format!("auto_install {id} ok"));
+                    let _ = app.emit("model:done", &id);
+                }
+                Err(e) => {
+                    logfile::error(&format!("auto_install {id}: {e}"));
+                    let _ = app.emit("model:error", &id);
+                }
+            }
+        }
+    });
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,6 +63,10 @@ pub fn run() {
     ));
 
     tauri::Builder::default()
+        .setup(|app| {
+            auto_install_essentials(app.handle().clone());
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
