@@ -30,6 +30,17 @@ const error = ref<string | null>(null);
 const dragOver = ref(false);
 const saveState = ref<"idle" | "saving" | "saved">("idle");
 const busy = ref<Record<string, boolean>>({});
+const dialogOpen = ref(false);
+
+async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  if (dialogOpen.value) return undefined;
+  dialogOpen.value = true;
+  try {
+    return await fn();
+  } finally {
+    dialogOpen.value = false;
+  }
+}
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
@@ -103,17 +114,19 @@ async function openDir(path: string) {
 }
 
 async function pickFolder() {
-  const selected = await open({ directory: true, multiple: false });
+  const selected = await withDialog(() => open({ directory: true, multiple: false }));
   if (typeof selected === "string") void openDir(selected);
 }
 
 const audioExtensions = ["wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma"];
 
 async function pickAudio() {
-  const selected = await open({
-    multiple: true,
-    filters: [{ name: "Audio", extensions: audioExtensions }],
-  });
+  const selected = await withDialog(() =>
+    open({
+      multiple: true,
+      filters: [{ name: "Audio", extensions: audioExtensions }],
+    }),
+  );
   if (!selected) return;
   const paths = Array.isArray(selected) ? selected : [selected];
   await addPathsToWorkdir(paths);
@@ -244,7 +257,9 @@ async function autoRename(entry?: DirEntry) {
     const s = await api.suggestFilename(t);
     const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
     const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
-    const ok = await confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" });
+    const ok = await withDialog(() =>
+    confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
+  );
     if (!ok) return;
     const newPath = await api.renameFile(target.path, suggestion);
     selectedPath.value = newPath;
@@ -263,6 +278,7 @@ const renameValue = ref("");
 function openRename(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
+  if (renaming.value || exporting.value) return;
   renameTarget.value = target;
   renameValue.value = target.name;
   renaming.value = true;
@@ -286,11 +302,13 @@ async function commitRename() {
 async function deleteEntry(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
-  const ok = await confirm(`Delete "${target.name}"?\n\nThis cannot be undone.`, {
-    title: "Delete file",
-    okLabel: "Delete",
-    kind: "warning",
-  });
+  const ok = await withDialog(() =>
+    confirm(`Delete "${target.name}"?\n\nThis cannot be undone.`, {
+      title: "Delete file",
+      okLabel: "Delete",
+      kind: "warning",
+    }),
+  );
   if (!ok) return;
   try {
     await api.deleteFile(target.path);
@@ -311,6 +329,7 @@ const exportFormat = ref<ExportFormat>("txt");
 async function openExport(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
+  if (renaming.value || exporting.value) return;
   let t = transcript.value;
   if (!t || (selectedEntry.value && selectedEntry.value.path !== target.path)) {
     if (target.cache_key) t = await api.historyLoad(target.cache_key);
@@ -332,10 +351,12 @@ async function commitExport() {
   if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
   if (!t) return;
   const stem = target.name.replace(/\.[^.]+$/, "");
-  const dest = await save({
-    defaultPath: `${stem}.${fmt}`,
-    filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }],
-  });
+  const dest = await withDialog(() =>
+    save({
+      defaultPath: `${stem}.${fmt}`,
+      filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }],
+    }),
+  );
   if (!dest) return;
   try {
     await api.exportTranscript(t, dest, fmt);
