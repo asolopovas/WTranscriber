@@ -17,6 +17,9 @@ pub enum Error {
     #[allow(dead_code)]
     Transcribe(String),
 
+    #[error("cancelled")]
+    Cancelled,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

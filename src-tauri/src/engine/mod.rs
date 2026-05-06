@@ -7,7 +7,7 @@ mod transducer;
 mod whisper;
 
 #[allow(unused_imports)]
-pub use chunk::{Chunk, run_chunked, split_chunks};
+pub use chunk::{Chunk, run_chunked, run_single, split_chunks};
 #[allow(unused_imports)]
 pub use runtime::{Provider, provider, threads};
 #[allow(unused_imports)]
@@ -26,15 +26,17 @@ pub fn run(
     audio_dur_sec: f64,
     config: &Config,
     on_progress: &mut dyn FnMut(f64),
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
     match config.engine {
-        Engine::WhisperOnnx => whisper::run(samples, audio_dur_sec, config, on_progress),
+        Engine::WhisperOnnx => whisper::run(samples, audio_dur_sec, config, on_progress, cancelled),
         Engine::Zipformer => transducer::run(
             transducer::Kind::Zipformer,
             samples,
             audio_dur_sec,
             config,
             on_progress,
+            cancelled,
         ),
         Engine::Parakeet => transducer::run(
             transducer::Kind::Parakeet,
@@ -42,8 +44,9 @@ pub fn run(
             audio_dur_sec,
             config,
             on_progress,
+            cancelled,
         ),
-        Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress),
-        Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress),
+        Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled),
+        Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled),
     }
 }

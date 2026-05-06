@@ -51,9 +51,7 @@ fn prune_archives() {
     let mut archives: Vec<_> = entries
         .flatten()
         .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("wt-")
+            e.file_name().to_string_lossy().starts_with("wt-")
                 && e.file_name().to_string_lossy().ends_with(".log")
         })
         .collect();

@@ -61,8 +61,15 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         return Ok(cached);
     }
 
+    if sink.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
+
     sink.phase(Phase::LoadingAudio);
     let samples = audio::load_samples(input)?;
+    if sink.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
     let audio_dur_sec = samples.len() as f64 / f64::from(audio::WHISPER_SAMPLE_RATE);
     let duration_ms = (audio_dur_sec * 1000.0) as u64;
 
@@ -70,17 +77,34 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let mut on_progress = |pct: f64| {
         sink.report_pct(Phase::Transcribing, pct);
     };
-    let (mut segments, detected_language, observed_rtf) =
-        engine::run(&samples, audio_dur_sec, config, &mut on_progress)?;
+    let cancelled = || sink.is_cancelled();
+    let (mut segments, detected_language, observed_rtf) = engine::run(
+        &samples,
+        audio_dur_sec,
+        config,
+        &mut on_progress,
+        &cancelled,
+    )?;
     apply_dedup(&mut segments);
+
+    if sink.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
 
     let device_label = format!("{:?}", config.device).to_lowercase();
     progress::save_rtf(&config.model, &device_label, observed_rtf);
 
     let (diar_segs, diar_name) = if config.diarize {
+        if sink.is_cancelled() {
+            return Err(crate::error::Error::Cancelled);
+        }
         sink.phase(Phase::Diarizing);
-        run_diarize(input, &samples, audio_dur_sec, speakers, sink)
-            .map_or((Vec::new(), None), |(s, n)| (s, Some(n)))
+        let result = run_diarize(input, &samples, audio_dur_sec, speakers, sink)
+            .map_or((Vec::new(), None), |(s, n)| (s, Some(n)));
+        if sink.is_cancelled() {
+            return Err(crate::error::Error::Cancelled);
+        }
+        result
     } else {
         (Vec::new(), None)
     };

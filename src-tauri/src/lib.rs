@@ -42,7 +42,9 @@ async fn install_cudnn(app: &tauri::AppHandle) {
     if runtimes::cudnn_installed() {
         logfile::info(&format!("runtime {id} already installed"));
     } else {
-        logfile::info(&format!("runtime install {id} starting (~700 MB, one-time)"));
+        logfile::info(&format!(
+            "runtime install {id} starting (~700 MB, one-time)"
+        ));
         let mut on_progress = progress_emitter(app, id.clone());
         match runtimes::ensure_cudnn(&mut on_progress).await {
             Ok(dll) => {
@@ -181,6 +183,7 @@ pub fn run() {
             commands::install_model,
             commands::probe_audio,
             commands::transcribe_file,
+            commands::cancel_transcribe,
             commands::rename_file,
             commands::delete_file,
             commands::export_transcript,

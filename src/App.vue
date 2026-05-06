@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, events } from "./api";
 import type {
   Config,
@@ -32,6 +33,9 @@ const saveState = ref<"idle" | "saving" | "saved">("idle");
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
 const dialogOpen = ref(false);
+const queueActive = ref(false);
+const queueTotal = ref(0);
+const queueDone = ref(0);
 
 function fmtClock(secs: number): string {
   if (!Number.isFinite(secs) || secs < 0) secs = 0;
@@ -106,6 +110,10 @@ const selectedEntry = computed<DirEntry | null>(() => {
 
 const audioEntries = computed<DirEntry[]>(() =>
   listing.value ? listing.value.entries.filter((e) => e.is_audio) : [],
+);
+
+const untranscribedEntries = computed<DirEntry[]>(() =>
+  audioEntries.value.filter((e) => !e.cache_key && !busy.value[e.path]),
 );
 
 async function reload() {
@@ -264,8 +272,13 @@ async function runTranscribe(entry?: DirEntry) {
     status.value = "idle";
     await refreshListing();
   } catch (e) {
-    error.value = String(e);
-    status.value = "error";
+    const msg = String(e);
+    if (msg.includes("cancelled")) {
+      status.value = "idle";
+    } else {
+      error.value = msg;
+      status.value = "error";
+    }
   } finally {
     const next = { ...busy.value };
     delete next[target.path];
@@ -273,6 +286,30 @@ async function runTranscribe(entry?: DirEntry) {
     const np = { ...progressByPath.value };
     delete np[target.path];
     progressByPath.value = np;
+  }
+}
+
+async function stopTranscribe(entry: DirEntry) {
+  await api.cancelTranscribe(entry.path);
+}
+
+async function transcribeAll() {
+  if (!config.value || queueActive.value) return;
+  const items = untranscribedEntries.value;
+  if (!items.length) return;
+  queueActive.value = true;
+  queueTotal.value = items.length;
+  queueDone.value = 0;
+  try {
+    for (const entry of items) {
+      if (!config.value) break;
+      await runTranscribe(entry);
+      queueDone.value += 1;
+    }
+  } finally {
+    queueActive.value = false;
+    queueTotal.value = 0;
+    queueDone.value = 0;
   }
 }
 
@@ -286,7 +323,10 @@ async function autoRename(entry?: DirEntry) {
     }
   }
   if (!t) {
-    await message("Transcribe first to enable auto-rename.", { title: "Auto-rename", kind: "info" });
+    await message("Transcribe first to enable auto-rename.", {
+      title: "Auto-rename",
+      kind: "info",
+    });
     return;
   }
   status.value = "renaming";
@@ -295,8 +335,8 @@ async function autoRename(entry?: DirEntry) {
     const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
     const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
     const ok = await withDialog(() =>
-    confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
-  );
+      confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
+    );
     if (!ok) return;
     const newPath = await api.renameFile(target.path, suggestion);
     selectedPath.value = newPath;
@@ -368,6 +408,7 @@ const previewTarget = ref<DirEntry | null>(null);
 const previewTranscript = ref<Transcript | null>(null);
 const previewLoading = ref(false);
 const previewError = ref<string | null>(null);
+const previewAudioSrc = ref("");
 
 async function openPreview(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
@@ -376,6 +417,7 @@ async function openPreview(entry?: DirEntry) {
   previewTarget.value = target;
   previewError.value = null;
   previewTranscript.value = null;
+  previewAudioSrc.value = target.is_audio ? convertFileSrc(target.path) : "";
   previewing.value = true;
   let t: Transcript | null = null;
   if (transcript.value && selectedEntry.value && selectedEntry.value.path === target.path) {
@@ -402,6 +444,7 @@ function closePreview() {
   previewTarget.value = null;
   previewTranscript.value = null;
   previewError.value = null;
+  previewAudioSrc.value = "";
 }
 
 async function copyPreviewText() {
@@ -425,7 +468,10 @@ async function openExport(entry?: DirEntry) {
     if (target.cache_key) t = await api.historyLoad(target.cache_key);
   }
   if (!t) {
-    await message("Transcribe this file first to enable export.", { title: "Export", kind: "info" });
+    await message("Transcribe this file first to enable export.", {
+      title: "Export",
+      kind: "info",
+    });
     return;
   }
   exportTarget.value = target;
@@ -485,10 +531,15 @@ const fieldClass =
 
 <template>
   <div class="h-screen flex flex-col bg-background text-on-background overflow-hidden">
-    <header class="flex justify-between items-center w-full px-margin h-16 shrink-0 border-b border-outline-variant/40 bg-surface">
+    <header
+      class="flex justify-between items-center w-full px-margin h-16 shrink-0 border-b border-outline-variant/40 bg-surface"
+    >
       <div class="flex items-center gap-xs">
         <span class="material-symbols-outlined text-primary text-[24px]">graphic_eq</span>
-        <span class="font-mono tracking-tighter font-bold text-primary text-labelMedium ml-xs uppercase">wt</span>
+        <span
+          class="font-mono tracking-tighter font-bold text-primary text-labelMedium ml-xs uppercase"
+          >wt</span
+        >
       </div>
       <nav class="flex items-center gap-xl h-full">
         <button
@@ -496,9 +547,11 @@ const fieldClass =
           :key="t.id"
           @click="tab = t.id"
           class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors"
-          :class="tab === t.id
-            ? 'border-primary text-on-surface'
-            : 'border-transparent text-on-surface-variant hover:text-on-surface'"
+          :class="
+            tab === t.id
+              ? 'border-primary text-on-surface'
+              : 'border-transparent text-on-surface-variant hover:text-on-surface'
+          "
         >
           {{ t.label }}
         </button>
@@ -515,9 +568,16 @@ const fieldClass =
           class="flex-1 flex flex-col overflow-hidden bg-surface relative"
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
-          <div class="flex items-center gap-xs px-margin h-12 border-b border-outline-variant/40 shrink-0">
-            <span class="material-symbols-outlined text-on-surface-variant text-[18px]">folder</span>
-            <span class="font-mono text-labelMedium text-on-surface truncate" :title="listing?.path">
+          <div
+            class="flex items-center gap-xs px-margin h-12 border-b border-outline-variant/40 shrink-0"
+          >
+            <span class="material-symbols-outlined text-on-surface-variant text-[18px]"
+              >folder</span
+            >
+            <span
+              class="font-mono text-labelMedium text-on-surface truncate"
+              :title="listing?.path"
+            >
               {{ listing?.path ?? "—" }}
             </span>
             <button
@@ -528,6 +588,22 @@ const fieldClass =
               <span class="material-symbols-outlined text-[18px]">refresh</span>
             </button>
             <div class="flex-1"></div>
+            <div
+              v-if="queueActive"
+              class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
+            >
+              <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+              queue {{ queueDone + 1 }}/{{ queueTotal }}
+            </div>
+            <button
+              class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit disabled:opacity-40 disabled:cursor-not-allowed"
+              :disabled="queueActive || untranscribedEntries.length === 0"
+              @click="transcribeAll"
+              title="Transcribe every untranscribed audio file in this folder"
+            >
+              <span class="material-symbols-outlined text-[16px]">playlist_play</span>
+              Transcribe all
+            </button>
             <button
               class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit"
               @click="pickFolder"
@@ -546,25 +622,50 @@ const fieldClass =
             </button>
           </div>
 
-          <div v-if="error" class="m-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs">
+          <div
+            v-if="error"
+            class="m-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs"
+          >
             <span class="material-symbols-outlined text-[18px] mt-[1px] shrink-0">error</span>
             <span class="flex-1 break-words font-mono text-labelMedium">{{ error }}</span>
-            <button class="text-titleSmall underline hover:opacity-80 shrink-0" @click="tab = 'logs'">View log</button>
-            <button class="material-symbols-outlined text-[18px] hover:opacity-70" @click="error = null">close</button>
+            <button
+              class="text-titleSmall underline hover:opacity-80 shrink-0"
+              @click="tab = 'logs'"
+            >
+              View log
+            </button>
+            <button
+              class="material-symbols-outlined text-[18px] hover:opacity-70"
+              @click="error = null"
+            >
+              close
+            </button>
           </div>
 
           <div class="flex-1 overflow-y-auto scroll-thin">
-            <div v-if="!listing || audioEntries.length === 0" class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant">
-              <span class="material-symbols-outlined text-[48px]" :class="dragOver ? 'text-primary' : 'text-outline-variant'">
+            <div
+              v-if="!listing || audioEntries.length === 0"
+              class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant"
+            >
+              <span
+                class="material-symbols-outlined text-[48px]"
+                :class="dragOver ? 'text-primary' : 'text-outline-variant'"
+              >
                 {{ dragOver ? "download" : "library_music" }}
               </span>
-              <p class="text-bodyMedium">{{ dragOver ? "Drop to add" : "No audio in this folder" }}</p>
-              <p class="font-mono text-labelSmall text-outline">Drag files here or click Add audio</p>
+              <p class="text-bodyMedium">
+                {{ dragOver ? "Drop to add" : "No audio in this folder" }}
+              </p>
+              <p class="font-mono text-labelSmall text-outline">
+                Drag files here or click Add audio
+              </p>
             </div>
 
             <table v-else class="w-full text-bodyMedium">
               <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
-                <tr class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
+                <tr
+                  class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                >
                   <th class="px-margin py-xs w-8"></th>
                   <th class="px-xs py-xs">Name</th>
                   <th class="px-xs py-xs w-24">Duration</th>
@@ -583,7 +684,9 @@ const fieldClass =
                   @dblclick="runTranscribe(entry)"
                 >
                   <td class="px-margin py-xs">
-                    <span class="material-symbols-outlined text-[20px] text-on-surface-variant">graphic_eq</span>
+                    <span class="material-symbols-outlined text-[20px] text-on-surface-variant"
+                      >graphic_eq</span
+                    >
                   </td>
                   <td class="px-xs py-xs truncate max-w-0">
                     <span class="text-on-surface">{{ entry.name }}</span>
@@ -597,8 +700,12 @@ const fieldClass =
                   <td class="px-xs py-xs">
                     <template v-if="busy[entry.path]">
                       <div class="flex flex-col gap-unit">
-                        <span class="font-mono text-labelSmall text-secondary flex items-center gap-unit">
-                          <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+                        <span
+                          class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
+                        >
+                          <span class="material-symbols-outlined text-[14px] animate-pulse"
+                            >graphic_eq</span
+                          >
                           <template v-if="progressByPath[entry.path]">
                             <span v-if="progressByPath[entry.path].phase === 'transcribing'">
                               {{ progressByPath[entry.path].displayPct.toFixed(1) }}%
@@ -608,10 +715,14 @@ const fieldClass =
                           <span v-else>transcribing</span>
                         </span>
                         <span
-                          v-if="progressByPath[entry.path] && progressByPath[entry.path].phase === 'transcribing'"
+                          v-if="
+                            progressByPath[entry.path] &&
+                            progressByPath[entry.path].phase === 'transcribing'
+                          "
                           class="font-mono text-[10px] text-on-surface-variant"
                         >
-                          {{ fmtClock(progressByPath[entry.path].elapsedSec) }} elapsed · {{ fmtClock(progressByPath[entry.path].etaSec) }} left
+                          {{ fmtClock(progressByPath[entry.path].elapsedSec) }} elapsed ·
+                          {{ fmtClock(progressByPath[entry.path].etaSec) }} left
                         </span>
                       </div>
                     </template>
@@ -627,40 +738,60 @@ const fieldClass =
                   <td class="px-margin py-xs text-right">
                     <div class="inline-flex gap-unit" @click.stop>
                       <button
+                        v-if="busy[entry.path]"
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-error transition-colors"
+                        title="Stop transcription"
+                        @click="stopTranscribe(entry)"
+                      >
+                        stop
+                      </button>
+                      <button
+                        v-else
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
-                        :disabled="busy[entry.path]"
                         title="Transcribe"
                         @click="runTranscribe(entry)"
-                      >play_arrow</button>
+                      >
+                        play_arrow
+                      </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
                         title="Auto-rename (AI)"
                         @click="autoRename(entry)"
-                      >auto_awesome</button>
+                      >
+                        auto_awesome
+                      </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
                         title="Rename"
                         @click="openRename(entry)"
-                      >drive_file_rename_outline</button>
+                      >
+                        drive_file_rename_outline
+                      </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
                         title="Preview transcript"
                         :disabled="!entry.cache_key"
                         :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
                         @click="openPreview(entry)"
-                      >visibility</button>
+                      >
+                        visibility
+                      </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
                         title="Export transcript"
                         :disabled="!entry.cache_key"
                         :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
                         @click="openExport(entry)"
-                      >download</button>
+                      >
+                        download
+                      </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error transition-colors"
                         title="Delete"
                         @click="deleteEntry(entry)"
-                      >delete</button>
+                      >
+                        delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -668,12 +799,17 @@ const fieldClass =
             </table>
           </div>
 
-          <div v-if="transcript" class="border-t border-outline-variant/40 max-h-[40%] overflow-y-auto scroll-thin p-margin shrink-0">
+          <div
+            v-if="transcript"
+            class="border-t border-outline-variant/40 max-h-[40%] overflow-y-auto scroll-thin p-margin shrink-0"
+          >
             <div class="flex items-center justify-between mb-md">
               <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
                 <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
                 Transcript
-                <span v-if="selectedPath" class="font-mono text-labelSmall text-on-surface-variant">— {{ basename(selectedPath) }}</span>
+                <span v-if="selectedPath" class="font-mono text-labelSmall text-on-surface-variant"
+                  >— {{ basename(selectedPath) }}</span
+                >
               </h3>
               <button
                 class="text-on-surface-variant hover:text-on-surface text-titleSmall"
@@ -687,59 +823,99 @@ const fieldClass =
               :key="i"
               class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
             >
-              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{ fmt(u.start_ms) }}</span>
+              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
+                fmt(u.start_ms)
+              }}</span>
               <div class="flex-1 min-w-0">
-                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">{{ u.speaker }}</div>
-                <p class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">{{ u.text }}</p>
+                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
+                  {{ u.speaker }}
+                </div>
+                <p
+                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
+                >
+                  {{ u.text }}
+                </p>
               </div>
             </article>
           </div>
         </section>
 
-        <aside class="w-[340px] bg-surface-container border-l border-outline-variant/40 flex flex-col h-full shrink-0 overflow-y-auto scroll-thin">
+        <aside
+          class="w-[340px] bg-surface-container border-l border-outline-variant/40 flex flex-col h-full shrink-0 overflow-y-auto scroll-thin"
+        >
           <div v-if="config" class="p-margin space-y-xl">
             <div>
               <div class="flex items-center justify-between mb-md">
                 <h3 class="text-titleSmall text-on-surface">Configuration</h3>
                 <span
                   class="font-mono text-labelSmall flex items-center gap-unit"
-                  :class="saveState === 'saving' ? 'text-secondary' : saveState === 'saved' ? 'text-tertiary' : 'text-outline'"
+                  :class="
+                    saveState === 'saving'
+                      ? 'text-secondary'
+                      : saveState === 'saved'
+                        ? 'text-tertiary'
+                        : 'text-outline'
+                  "
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full"
-                    :class="saveState === 'saving' ? 'bg-secondary animate-pulse' : saveState === 'saved' ? 'bg-tertiary' : 'bg-outline-variant'"
+                    :class="
+                      saveState === 'saving'
+                        ? 'bg-secondary animate-pulse'
+                        : saveState === 'saved'
+                          ? 'bg-tertiary'
+                          : 'bg-outline-variant'
+                    "
                   ></span>
-                  {{ saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced" }}
+                  {{
+                    saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced"
+                  }}
                 </span>
               </div>
 
               <div class="space-y-md">
                 <label class="block">
-                  <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">Engine</span>
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Engine</span
+                  >
                   <select v-model="config.engine" :class="[fieldClass, 'mt-unit']">
-                    <option v-for="o in engineOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                    <option v-for="o in engineOptions" :key="o.value" :value="o.value">
+                      {{ o.label }}
+                    </option>
                   </select>
                 </label>
 
                 <label class="block">
-                  <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">Model</span>
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Model</span
+                  >
                   <select v-model="config.model" :class="[fieldClass, 'mt-unit']">
                     <option v-if="!asrModels.length" :value="config.model" disabled>
                       No installed models — open Models tab
                     </option>
-                    <option v-for="m in asrModels" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+                    <option v-for="m in asrModels" :key="m.id" :value="m.id">
+                      {{ m.display_name }}
+                    </option>
                   </select>
                 </label>
 
                 <div class="grid grid-cols-2 gap-md">
                   <label class="block">
-                    <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">Language</span>
+                    <span
+                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                      >Language</span
+                    >
                     <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
                       <option v-for="l in languageOptions" :key="l" :value="l">{{ l }}</option>
                     </select>
                   </label>
                   <label class="block">
-                    <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">Device</span>
+                    <span
+                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                      >Device</span
+                    >
                     <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
                       <option value="cpu">CPU</option>
                       <option value="cuda">CUDA</option>
@@ -747,17 +923,29 @@ const fieldClass =
                   </label>
                 </div>
 
-                <div class="flex items-center justify-between bg-surface-container-high p-md rounded-lg border border-outline-variant/40">
+                <div
+                  class="flex items-center justify-between bg-surface-container-high p-md rounded-lg border border-outline-variant/40"
+                >
                   <div>
                     <div class="text-bodyMedium text-on-surface">Diarize speakers</div>
                     <div class="font-mono text-labelSmall text-on-surface-variant">
-                      {{ config.diarize ? (config.speakers ? `${config.speakers} speakers` : "auto-detect") : "disabled" }}
+                      {{
+                        config.diarize
+                          ? config.speakers
+                            ? `${config.speakers} speakers`
+                            : "auto-detect"
+                          : "disabled"
+                      }}
                     </div>
                   </div>
                   <button
                     type="button"
                     class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                    :class="config.diarize ? 'bg-primary' : 'bg-surface-container-highest border border-outline-variant'"
+                    :class="
+                      config.diarize
+                        ? 'bg-primary'
+                        : 'bg-surface-container-highest border border-outline-variant'
+                    "
                     @click="config.diarize = !config.diarize"
                   >
                     <span
@@ -771,42 +959,77 @@ const fieldClass =
 
             <div>
               <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
-              <div class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium">
+              <div
+                class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium"
+              >
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">File</span>
-                  <span class="text-on-surface truncate ml-md max-w-[180px]" :title="selectedEntry?.name">
+                  <span
+                    class="text-on-surface truncate ml-md max-w-[180px]"
+                    :title="selectedEntry?.name"
+                  >
                     {{ selectedEntry?.name ?? "—" }}
                   </span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Status</span>
-                  <span :class="status === 'error' ? 'text-error' : status === 'idle' ? 'text-tertiary' : 'text-secondary'">
-                    <template v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'">
+                  <span
+                    :class="
+                      status === 'error'
+                        ? 'text-error'
+                        : status === 'idle'
+                          ? 'text-tertiary'
+                          : 'text-secondary'
+                    "
+                  >
+                    <template
+                      v-if="
+                        selectedEntry && progressByPath[selectedEntry.path] && status === 'running'
+                      "
+                    >
                       {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
                       <span v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
                         · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
                       </span>
                     </template>
-                    <template v-else>{{ status === "idle" && transcript ? "ready" : status }}</template>
+                    <template v-else>{{
+                      status === "idle" && transcript ? "ready" : status
+                    }}</template>
                   </span>
                 </div>
                 <div
-                  v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running' && progressByPath[selectedEntry.path].phase === 'transcribing'"
+                  v-if="
+                    selectedEntry &&
+                    progressByPath[selectedEntry.path] &&
+                    status === 'running' &&
+                    progressByPath[selectedEntry.path].phase === 'transcribing'
+                  "
                   class="flex justify-between items-center"
                 >
                   <span class="text-on-surface-variant">Elapsed</span>
-                  <span class="text-on-surface">{{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}</span>
+                  <span class="text-on-surface">{{
+                    fmtClock(progressByPath[selectedEntry.path].elapsedSec)
+                  }}</span>
                 </div>
                 <div
-                  v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running' && progressByPath[selectedEntry.path].phase === 'transcribing'"
+                  v-if="
+                    selectedEntry &&
+                    progressByPath[selectedEntry.path] &&
+                    status === 'running' &&
+                    progressByPath[selectedEntry.path].phase === 'transcribing'
+                  "
                   class="flex justify-between items-center"
                 >
                   <span class="text-on-surface-variant">ETA</span>
-                  <span class="text-secondary">{{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}</span>
+                  <span class="text-secondary">{{
+                    fmtClock(progressByPath[selectedEntry.path].etaSec)
+                  }}</span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Duration</span>
-                  <span class="text-on-surface">{{ transcript ? fmtLong(transcript.duration_ms) : "—" }}</span>
+                  <span class="text-on-surface">{{
+                    transcript ? fmtLong(transcript.duration_ms) : "—"
+                  }}</span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Utterances</span>
@@ -832,7 +1055,9 @@ const fieldClass =
       class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
       @click.self="renaming = false"
     >
-      <div class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md">
+      <div
+        class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md"
+      >
         <h3 class="text-titleSmall text-on-surface">Rename file</h3>
         <input
           v-model="renameValue"
@@ -844,11 +1069,15 @@ const fieldClass =
           <button
             class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
             @click="renaming = false"
-          >Cancel</button>
+          >
+            Cancel
+          </button>
           <button
             class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
             @click="commitRename"
-          >Rename</button>
+          >
+            Rename
+          </button>
         </div>
       </div>
     </div>
@@ -858,7 +1087,9 @@ const fieldClass =
       class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
       @click.self="exporting = false"
     >
-      <div class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md">
+      <div
+        class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md"
+      >
         <h3 class="text-titleSmall text-on-surface">Export transcript</h3>
         <div class="space-y-xs">
           <label
@@ -874,11 +1105,15 @@ const fieldClass =
           <button
             class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
             @click="exporting = false"
-          >Cancel</button>
+          >
+            Cancel
+          </button>
           <button
             class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
             @click="commitExport"
-          >Save…</button>
+          >
+            Save…
+          </button>
         </div>
       </div>
     </div>
@@ -889,15 +1124,25 @@ const fieldClass =
       @click.self="closePreview"
       @keydown.escape="closePreview"
     >
-      <div class="bg-surface-container rounded-xl border border-outline-variant/50 w-full max-w-[768px] max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
-        <div class="px-margin py-md border-b border-outline-variant/40 bg-surface-container-low flex items-start gap-md">
+      <div
+        class="bg-surface-container rounded-xl border border-outline-variant/50 w-full max-w-[768px] max-h-[85vh] flex flex-col overflow-hidden shadow-2xl"
+      >
+        <div
+          class="px-margin py-md border-b border-outline-variant/40 bg-surface-container-low flex items-start gap-md"
+        >
           <span class="material-symbols-outlined text-primary text-[22px] mt-unit">subtitles</span>
           <div class="flex-1 min-w-0">
             <h3 class="text-titleSmall text-on-surface">Transcript preview</h3>
-            <p class="font-mono text-labelSmall text-on-surface-variant truncate" :title="previewTarget?.name">
+            <p
+              class="font-mono text-labelSmall text-on-surface-variant truncate"
+              :title="previewTarget?.name"
+            >
               {{ previewTarget?.name ?? "—" }}
             </p>
-            <div v-if="previewTranscript" class="flex flex-wrap gap-md mt-xs font-mono text-labelSmall text-on-surface-variant">
+            <div
+              v-if="previewTranscript"
+              class="flex flex-wrap gap-md mt-xs font-mono text-labelSmall text-on-surface-variant"
+            >
               <span class="flex items-center gap-unit">
                 <span class="material-symbols-outlined text-[14px]">schedule</span>
                 {{ fmtLong(previewTranscript.duration_ms) }}
@@ -906,7 +1151,10 @@ const fieldClass =
                 <span class="material-symbols-outlined text-[14px]">format_list_bulleted</span>
                 {{ previewTranscript.utterances.length }} utterances
               </span>
-              <span v-if="previewTranscript.speakers_detected" class="flex items-center gap-unit text-primary">
+              <span
+                v-if="previewTranscript.speakers_detected"
+                class="flex items-center gap-unit text-primary"
+              >
                 <span class="material-symbols-outlined text-[14px]">groups</span>
                 {{ previewTranscript.speakers_detected }} speakers
               </span>
@@ -926,33 +1174,59 @@ const fieldClass =
               class="material-symbols-outlined text-[20px] p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
               title="Close"
               @click="closePreview"
-            >close</button>
+            >
+              close
+            </button>
           </div>
         </div>
 
-        <div v-if="previewError" class="mx-margin mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono">
+        <div
+          v-if="previewError"
+          class="mx-margin mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
+        >
           {{ previewError }}
         </div>
 
+        <div v-if="previewAudioSrc" class="px-margin pt-md">
+          <audio class="w-full h-10" controls preload="metadata" :src="previewAudioSrc"></audio>
+        </div>
+
         <div class="flex-1 overflow-y-auto scroll-thin px-margin py-md">
-          <div v-if="previewLoading" class="h-full flex flex-col items-center justify-center gap-xs text-on-surface-variant">
+          <div
+            v-if="previewLoading"
+            class="h-full flex flex-col items-center justify-center gap-xs text-on-surface-variant"
+          >
             <span class="material-symbols-outlined text-[32px] animate-pulse">graphic_eq</span>
             <p class="text-bodyMedium">Loading transcript…</p>
           </div>
-          <div v-else-if="previewTranscript && previewTranscript.utterances.length" class="flex flex-col gap-xs">
+          <div
+            v-else-if="previewTranscript && previewTranscript.utterances.length"
+            class="flex flex-col gap-xs"
+          >
             <article
               v-for="(u, i) in previewTranscript.utterances"
               :key="i"
               class="flex gap-md items-start group hover:bg-surface-container-high/40 -mx-xs px-xs py-xs rounded transition-colors"
             >
-              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{ fmt(u.start_ms) }}</span>
+              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
+                fmt(u.start_ms)
+              }}</span>
               <div class="flex-1 min-w-0">
-                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">{{ u.speaker }}</div>
-                <p class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">{{ u.text }}</p>
+                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
+                  {{ u.speaker }}
+                </div>
+                <p
+                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
+                >
+                  {{ u.text }}
+                </p>
               </div>
             </article>
           </div>
-          <div v-else-if="!previewError" class="h-full flex items-center justify-center text-outline italic">
+          <div
+            v-else-if="!previewError"
+            class="h-full flex items-center justify-center text-outline italic"
+          >
             (transcript is empty)
           </div>
         </div>

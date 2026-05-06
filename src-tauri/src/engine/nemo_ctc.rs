@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     config::Config,
     engine::{
-        chunk::{ChunkProcessor, run_chunked, segments_from_sherpa},
+        chunk::{ChunkProcessor, run_single, segments_from_sherpa},
         runtime,
         sherpa::{find_binary, parse_json, run_cmd},
     },
@@ -39,15 +39,20 @@ struct Processor<'a> {
     bin: PathBuf,
     paths: Paths,
     config: &'a Config,
+    cancelled: &'a dyn Fn() -> bool,
 }
 
 impl ChunkProcessor for Processor<'_> {
     fn process(&mut self, wav: &Path, chunk_dur_sec: f64) -> Result<Vec<Segment>> {
         let args = self.args(wav);
-        let (stdout, _, _) = run_cmd(&self.bin, &args)?;
+        let (stdout, _, _) = run_cmd(&self.bin, &args, self.cancelled)?;
         Ok(parse_json(&stdout)
             .map(|r| segments_from_sherpa(&r, chunk_dur_sec))
             .unwrap_or_default())
+    }
+
+    fn is_cancelled(&self) -> bool {
+        (self.cancelled)()
     }
 }
 
@@ -69,11 +74,17 @@ pub fn run(
     audio_dur_sec: f64,
     config: &Config,
     on_progress: &mut dyn FnMut(f64),
+    cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
     let bin = find_binary()?;
     let paths = resolve(&config.model)?;
-    let processor = Processor { bin, paths, config };
-    let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
+    let processor = Processor {
+        bin,
+        paths,
+        config,
+        cancelled,
+    };
+    let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
     let lang = config.language.trim().to_lowercase();
     let detected = if lang == "auto" || lang.is_empty() {
         String::new()

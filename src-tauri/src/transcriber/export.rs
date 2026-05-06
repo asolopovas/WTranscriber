@@ -86,12 +86,7 @@ fn write_json<W: Write>(w: &mut W, t: &Transcript) -> Result<()> {
 fn write_srt<W: Write>(w: &mut W, t: &Transcript) -> Result<()> {
     for (i, u) in t.utterances.iter().enumerate() {
         writeln!(w, "{}", i + 1)?;
-        writeln!(
-            w,
-            "{} --> {}",
-            format_srt(u.start_ms),
-            format_srt(u.end_ms)
-        )?;
+        writeln!(w, "{} --> {}", format_srt(u.start_ms), format_srt(u.end_ms))?;
         let sp = speaker(u);
         if sp.is_empty() {
             writeln!(w, "{}", u.text.trim())?;
@@ -107,12 +102,7 @@ fn write_vtt<W: Write>(w: &mut W, t: &Transcript) -> Result<()> {
     writeln!(w, "WEBVTT")?;
     writeln!(w)?;
     for u in &t.utterances {
-        writeln!(
-            w,
-            "{} --> {}",
-            format_vtt(u.start_ms),
-            format_vtt(u.end_ms)
-        )?;
+        writeln!(w, "{} --> {}", format_vtt(u.start_ms), format_vtt(u.end_ms))?;
         let sp = speaker(u);
         if sp.is_empty() {
             writeln!(w, "{}", u.text.trim())?;

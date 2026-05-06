@@ -6,9 +6,10 @@
 )]
 
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -29,6 +30,9 @@ use crate::{
     progress::{self, Phase, Sink, Smoother},
     transcriber::{self, Job, Transcript, export::Format as ExportFormat},
 };
+
+static TRANSCRIBE_CANCELS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[tauri::command]
 pub const fn app_version() -> &'static str {
@@ -99,11 +103,19 @@ struct TranscribeSink {
     smoother: Arc<Mutex<Smoother>>,
     current_phase: Mutex<Phase>,
     ticker_cancel: Arc<AtomicBool>,
+    cancel: Arc<AtomicBool>,
     ticker_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl TranscribeSink {
-    fn new(app: AppHandle, handle: Handle, file_path: String, audio_dur_sec: f64, initial_rtf: f64) -> Self {
+    fn new(
+        app: AppHandle,
+        handle: Handle,
+        file_path: String,
+        audio_dur_sec: f64,
+        initial_rtf: f64,
+        cancel: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             app,
             handle,
@@ -111,6 +123,7 @@ impl TranscribeSink {
             smoother: Arc::new(Mutex::new(Smoother::new(audio_dur_sec, initial_rtf))),
             current_phase: Mutex::new(Phase::CacheCheck),
             ticker_cancel: Arc::new(AtomicBool::new(false)),
+            cancel,
             ticker_handle: Mutex::new(None),
         }
     }
@@ -210,14 +223,14 @@ impl Sink for TranscribeSink {
             _ => {}
         }
     }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancel.load(Ordering::SeqCst)
+    }
 }
 
 #[tauri::command]
-pub async fn transcribe_file(
-    app: AppHandle,
-    input: PathBuf,
-    config: Config,
-) -> Result<Transcript> {
+pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> Result<Transcript> {
     let label = format!(
         "transcribe {} model={} engine={:?} lang={} device={:?}",
         input.display(),
@@ -235,15 +248,21 @@ pub async fn transcribe_file(
     };
     let device_label = format!("{:?}", config.device).to_lowercase();
     let initial_rtf = progress::load_rtf(&config.model, &device_label);
+    let input_key = input.to_string_lossy().into_owned();
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.insert(input_key.clone(), cancel.clone());
+    }
     let sink = Arc::new(TranscribeSink::new(
         app,
         Handle::current(),
-        input.to_string_lossy().into_owned(),
+        input_key.clone(),
         audio_dur_sec,
         initial_rtf,
+        cancel,
     ));
     let job = Job { input, config };
-    match transcriber::run_with_sink(&job, sink.clone()).await {
+    let result = match transcriber::run_with_sink(&job, sink.clone()).await {
         Ok(t) => {
             logfile::process_end(
                 &label,
@@ -258,12 +277,34 @@ pub async fn transcribe_file(
             sink.emit(Phase::Done, 100.0, 0.0);
             Ok(t)
         }
+        Err(Error::Cancelled) => {
+            logfile::process_end(&label, "cancelled", "user cancelled");
+            Err(Error::Cancelled)
+        }
         Err(e) => {
             logfile::error(&format!("{label}: {e}"));
             logfile::process_end(&label, "failed", &e.to_string());
             Err(e)
         }
+    };
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.remove(&input_key);
     }
+    result
+}
+
+#[tauri::command]
+pub fn cancel_transcribe(input: PathBuf) -> bool {
+    let key = input.to_string_lossy().into_owned();
+    let token = TRANSCRIBE_CANCELS
+        .lock()
+        .ok()
+        .and_then(|cancels| cancels.get(&key).cloned());
+    token.is_some_and(|cancel| {
+        cancel.store(true, Ordering::SeqCst);
+        logfile::info(&format!("cancel_transcribe {}", input.display()));
+        true
+    })
 }
 
 #[tauri::command]
@@ -300,10 +341,7 @@ pub fn default_dir() -> PathBuf {
 #[tauri::command]
 pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
     if !source.is_file() {
-        return Err(Error::Config(format!(
-            "not a file: {}",
-            source.display()
-        )));
+        return Err(Error::Config(format!("not a file: {}", source.display())));
     }
     std::fs::create_dir_all(&workdir)?;
     let file_name = source
@@ -353,7 +391,9 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
         return Err(Error::Config("new name is empty".into()));
     }
     if trimmed.contains(['/', '\\']) {
-        return Err(Error::Config("new name must not contain path separators".into()));
+        return Err(Error::Config(
+            "new name must not contain path separators".into(),
+        ));
     }
     let parent = source
         .parent()

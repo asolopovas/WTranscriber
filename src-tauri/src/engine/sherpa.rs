@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
@@ -68,14 +68,18 @@ pub fn find_binary() -> Result<PathBuf> {
     )))
 }
 
-pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
+pub fn run_cmd(
+    bin: &Path,
+    args: &[String],
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(String, String, f64)> {
     let start = Instant::now();
     let effective: Vec<String> = if CUDA_DISABLED.load(Ordering::Relaxed) && uses_cuda(args) {
         swap_provider_to_cpu(args)
     } else {
         args.to_vec()
     };
-    let out = exec(bin, &effective)?;
+    let out = exec(bin, &effective, cancelled)?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if out.status.success() {
@@ -90,7 +94,7 @@ pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
             ));
         }
         let cpu_args = swap_provider_to_cpu(&effective);
-        let out2 = exec(bin, &cpu_args)?;
+        let out2 = exec(bin, &cpu_args, cancelled)?;
         let stdout2 = String::from_utf8_lossy(&out2.stdout).into_owned();
         let stderr2 = String::from_utf8_lossy(&out2.stderr).into_owned();
         if !out2.status.success() {
@@ -107,10 +111,24 @@ pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
     )))
 }
 
-fn exec(bin: &Path, args: &[String]) -> Result<std::process::Output> {
+fn exec(bin: &Path, args: &[String], cancelled: &dyn Fn() -> bool) -> Result<std::process::Output> {
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
     let mut cmd = build_command(bin);
-    cmd.args(args);
-    Ok(cmd.output()?)
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    loop {
+        if cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::Cancelled);
+        }
+        if child.try_wait()?.is_some() {
+            return Ok(child.wait_with_output()?);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 fn uses_cuda(args: &[String]) -> bool {

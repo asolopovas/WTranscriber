@@ -22,6 +22,7 @@ export const api = {
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
+  cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),
   historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
   suggestFilename: (transcript: Transcript) =>
     invoke<Suggestion>("suggest_filename", { transcript }),

@@ -7,7 +7,9 @@ use crate::{
     transcriber::cache,
 };
 
-const AUDIO_EXTS: &[&str] = &["wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma"];
+const AUDIO_EXTS: &[&str] = &[
+    "wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma",
+];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DirEntry {
@@ -32,10 +34,7 @@ pub struct DirListing {
 pub fn list(path: &Path) -> Result<DirListing> {
     let abs = std::path::absolute(path)?;
     if !abs.is_dir() {
-        return Err(Error::Config(format!(
-            "not a directory: {}",
-            abs.display()
-        )));
+        return Err(Error::Config(format!("not a directory: {}", abs.display())));
     }
 
     let cache_index: Vec<cache::Entry> = cache::list();
@@ -96,7 +95,11 @@ pub fn list(path: &Path) -> Result<DirListing> {
         });
     }
 
-    entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
 
     let parent = abs.parent().map(Path::to_path_buf);
 
@@ -110,7 +113,10 @@ pub fn list(path: &Path) -> Result<DirListing> {
 pub fn home_dir() -> PathBuf {
     let base = directories::UserDirs::new().map_or_else(
         || PathBuf::from("."),
-        |u| u.document_dir().map_or_else(|| u.home_dir().to_path_buf(), Path::to_path_buf),
+        |u| {
+            u.document_dir()
+                .map_or_else(|| u.home_dir().to_path_buf(), Path::to_path_buf)
+        },
     );
     let dir = base.join("WTranscribe");
     let _ = std::fs::create_dir_all(&dir);

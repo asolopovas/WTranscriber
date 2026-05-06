@@ -125,10 +125,9 @@ pub fn ensure_on_path() {
     }
     if cfg!(windows) {
         match persist_user_path(&bin) {
-            Ok(true) => crate::logfile::info(&format!(
-                "cuDNN added to user PATH: {}",
-                bin.display()
-            )),
+            Ok(true) => {
+                crate::logfile::info(&format!("cuDNN added to user PATH: {}", bin.display()));
+            }
             Ok(false) => {}
             Err(e) => crate::logfile::warn(&format!("cuDNN PATH persist failed: {e}")),
         }
@@ -285,10 +284,14 @@ fn flatten_x64(dir: &std::path::Path) {
     if !nested.is_dir() {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(&nested) else { return };
+    let Ok(entries) = std::fs::read_dir(&nested) else {
+        return;
+    };
     for e in entries.flatten() {
         let from = e.path();
-        let Some(name) = from.file_name() else { continue };
+        let Some(name) = from.file_name() else {
+            continue;
+        };
         let to = dir.join(name);
         if to.exists() {
             continue;

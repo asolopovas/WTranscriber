@@ -3,7 +3,8 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::cast_possible_wrap,
-    clippy::float_cmp
+    clippy::float_cmp,
+    dead_code
 )]
 
 use std::path::Path;
@@ -164,6 +165,9 @@ fn coalesce_tokens(tokens: &[String], timestamps: &[f64], audio_dur_sec: f64) ->
 
 pub trait ChunkProcessor {
     fn process(&mut self, wav: &Path, chunk_dur_sec: f64) -> Result<Vec<Segment>>;
+    fn is_cancelled(&self) -> bool {
+        false
+    }
 }
 
 pub fn run_chunked<P: ChunkProcessor>(
@@ -182,6 +186,9 @@ pub fn run_chunked<P: ChunkProcessor>(
     let mut total_elapsed = 0.0;
 
     for (i, ch) in chunks.iter().enumerate() {
+        if processor.is_cancelled() {
+            return Err(crate::error::Error::Cancelled);
+        }
         let dir = tempfile::tempdir()?;
         let wav = dir.path().join("input.wav");
         write_pcm16_wav(&wav, ch.samples, WHISPER_SAMPLE_RATE)?;
@@ -189,6 +196,9 @@ pub fn run_chunked<P: ChunkProcessor>(
         let chunk_dur = ch.end_sec - ch.start_sec;
         let start = std::time::Instant::now();
         let mut segs = processor.process(&wav, chunk_dur)?;
+        if processor.is_cancelled() {
+            return Err(crate::error::Error::Cancelled);
+        }
         let elapsed = start.elapsed().as_secs_f64();
 
         shift(&mut segs, ch.start_sec, ch.end_sec);
@@ -208,6 +218,36 @@ pub fn run_chunked<P: ChunkProcessor>(
         0.0
     };
     Ok((merged, rtf))
+}
+
+pub fn run_single<P: ChunkProcessor>(
+    samples: &[f32],
+    audio_dur_sec: f64,
+    mut processor: P,
+    on_progress: &mut dyn FnMut(f64),
+) -> Result<(Vec<Segment>, f64)> {
+    if samples.is_empty() {
+        return Ok((Vec::new(), 0.0));
+    }
+    if processor.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
+    let dir = tempfile::tempdir()?;
+    let wav = dir.path().join("input.wav");
+    write_pcm16_wav(&wav, samples, WHISPER_SAMPLE_RATE)?;
+    let start = std::time::Instant::now();
+    let segs = processor.process(&wav, audio_dur_sec)?;
+    if processor.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    on_progress(100.0);
+    let rtf = if elapsed > 0.0 {
+        audio_dur_sec / elapsed
+    } else {
+        0.0
+    };
+    Ok((segs, rtf))
 }
 
 #[cfg(test)]

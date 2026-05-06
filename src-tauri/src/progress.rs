@@ -54,7 +54,11 @@ impl Smoother {
     #[must_use]
     pub fn new(audio_dur_sec: f64, initial_rtf: f64) -> Self {
         let prior = if initial_rtf > 0.0 { initial_rtf } else { 1.0 };
-        let dur = if audio_dur_sec > 0.0 { audio_dur_sec } else { 1.0 };
+        let dur = if audio_dur_sec > 0.0 {
+            audio_dur_sec
+        } else {
+            1.0
+        };
         let now = Instant::now();
         Self {
             audio_dur_sec: dur,
@@ -247,6 +251,9 @@ pub fn save_rtf(model: &str, device: &str, observed: f64) {
 pub trait Sink: Send + Sync {
     fn phase(&self, phase: Phase);
     fn report_pct(&self, phase: Phase, pct: f64);
+    fn is_cancelled(&self) -> bool {
+        false
+    }
 }
 
 pub struct NoopSink;
