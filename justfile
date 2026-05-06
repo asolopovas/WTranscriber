@@ -4,6 +4,12 @@ set dotenv-load := false
 _sep := if os() == 'windows' { ';' } else { ':' }
 export PATH := env_var('USERPROFILE') / '.cargo' / 'bin' + _sep + env_var('PATH')
 
+_android_sdk := env_var_or_default('ANDROID_HOME', env_var('USERPROFILE') / 'AppData' / 'Local' / 'Android' / 'Sdk')
+_android_ndk := env_var_or_default('NDK_HOME', _android_sdk / 'ndk' / '27.2.12479018')
+_android_prebuilt := justfile_directory() / '.android-prebuilt'
+export ANDROID_HOME := _android_sdk
+export NDK_HOME := _android_ndk
+
 default:
     @just --list
 
@@ -29,6 +35,30 @@ build-cpu:
 
 build-cli:
     cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+
+android-targets:
+    rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+android-prebuilts:
+    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-android-prebuilts.ps1
+
+android-init: android-targets android-prebuilts
+    bun run tauri android init
+
+android-dev:
+    bun run tauri android dev
+
+android-build target="aarch64":
+    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/android-build.ps1 -Target {{target}}
+
+android-build-debug target="aarch64":
+    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/android-build.ps1 -Target {{target}} -DebugBuild
+
+android-doctor:
+    @echo "ANDROID_HOME    = {{_android_sdk}}"
+    @echo "NDK_HOME        = {{_android_ndk}}"
+    @echo "prebuilts       = {{_android_prebuilt}}"
+    @rustup target list --installed
 
 cli *args:
     cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}

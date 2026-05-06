@@ -61,6 +61,7 @@ just check        fast gate: fmt-check + lint + test (see below)
 just check-all    full gate: check + dep-check + audit (pre-release)
 just clean        remove target + dist + node_modules
 just icons        regenerate icon set from src-tauri/icons/icon.png
+just android-*    Android scaffold / build (see docs/android.md)
 ```
 
 ## Quality gate — tiered
