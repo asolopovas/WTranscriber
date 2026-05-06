@@ -15,6 +15,12 @@ dev:
 build:
     bun run tauri build
 
+build-cli:
+    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+
+cli *args:
+    cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
+
 preview:
     bun run preview
 

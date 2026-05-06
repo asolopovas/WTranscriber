@@ -76,6 +76,7 @@ pub fn build_key_params(
     })
 }
 
+#[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
         "{}\0{}\0{}\0{}\0{}\0{}",
@@ -142,6 +143,7 @@ pub fn store(mut entry: Entry, transcript: &Transcript) -> Result<PathBuf> {
     Ok(path)
 }
 
+#[must_use]
 pub fn list() -> Vec<Entry> {
     let mut entries = load_index();
     entries.sort_by_key(|e| std::cmp::Reverse(e.created_at));

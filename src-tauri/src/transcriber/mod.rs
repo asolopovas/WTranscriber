@@ -3,7 +3,7 @@ mod job;
 mod transcript;
 
 pub mod cache;
-mod dedup;
+pub mod dedup;
 
 #[allow(unused_imports, dead_code)]
 pub use cache::{Entry as CacheEntry, KeyParams, build_key_params, compute_key, list as cache_list};

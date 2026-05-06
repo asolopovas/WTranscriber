@@ -20,14 +20,28 @@ Audio transcription desktop application powered by [Tauri](https://tauri.app), [
 
 ```bash
 just setup        # install JS deps
-just dev          # run app in dev mode
-just build        # production bundle
+just dev          # run desktop app
+just build        # bundle desktop app
+just build-cli    # build the headless `wt` CLI
+just cli ARGS     # run the CLI in dev (e.g. `just cli models list`)
 just fmt          # format Rust + frontend
 just lint         # clippy (warnings as errors) + vue-tsc
 just test         # cargo test
 ```
 
 Run `just` with no arguments to list all recipes.
+
+## CLI
+
+```bash
+wt audio.wav                       # transcribe (writes audio_<model>_<ts>.json)
+wt -l en --speakers 3 meeting.ogg  # language hint + speaker count
+wt --no-diarize a.wav b.mp3        # multiple files, no diarization
+wt --device cuda --no-cache a.wav  # CUDA provider, bypass transcript cache
+wt models list                     # show catalog + install state
+wt models install sherpa-whisper-turbo
+wt models status sherpa-pyannote-titanet
+```
 
 ## Status
 

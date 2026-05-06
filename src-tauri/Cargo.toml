@@ -13,6 +13,14 @@ publish = false
 name = "wtranscriber_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "wtranscriber"
+path = "src/main.rs"
+
+[[bin]]
+name = "wt"
+path = "src/bin/wt.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -38,6 +46,7 @@ tempfile = "3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+clap = { version = "4", features = ["derive"] }
 
 [profile.release]
 codegen-units = 1

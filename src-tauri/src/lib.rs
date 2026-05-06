@@ -8,6 +8,8 @@ mod models;
 mod paths;
 mod transcriber;
 
+pub mod api;
+
 use tracing_subscriber::EnvFilter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

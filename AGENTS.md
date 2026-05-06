@@ -18,8 +18,10 @@ src/                Vue 3 frontend
   App.vue           root component
 src-tauri/
   src/
-    main.rs         binary entry
+    main.rs         desktop binary entry (Tauri)
+    bin/wt.rs       headless CLI binary (clap)
     lib.rs          tauri::Builder, plugin registration, command list
+    api.rs          public re-exports for the CLI / external consumers
     commands.rs     #[tauri::command] handlers (thin)
     config.rs       persisted user config
     models.rs       model registry / discovery
