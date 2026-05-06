@@ -94,7 +94,14 @@ pub fn save(p: &Partial) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let raw = serde_json::to_string(p)?;
-    std::fs::write(path, raw)?;
+    let mut tmp = path.clone().into_os_string();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, raw)?;
+    if let Err(e) = std::fs::rename(&tmp, &path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     Ok(())
 }
 

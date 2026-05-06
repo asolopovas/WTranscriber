@@ -28,12 +28,15 @@ pub fn run(
     config: &Config,
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
-) -> Result<(Vec<Segment>, String, f64)> {
+    on_chunk: &mut dyn FnMut(Vec<Segment>, f64),
+) -> Result<(String, f64)> {
     if use_in_process(config) {
-        return run_in_process(samples, audio_dur_sec, config, cancelled);
+        return run_in_process(samples, audio_dur_sec, config, cancelled, on_chunk);
     }
-    match config.engine {
-        Engine::WhisperOnnx => whisper::run(samples, audio_dur_sec, config, on_progress, cancelled),
+    let (segs, lang, rtf) = match config.engine {
+        Engine::WhisperOnnx => {
+            whisper::run(samples, audio_dur_sec, config, on_progress, cancelled)?
+        }
         Engine::Zipformer => transducer::run(
             transducer::Kind::Zipformer,
             samples,
@@ -41,7 +44,7 @@ pub fn run(
             config,
             on_progress,
             cancelled,
-        ),
+        )?,
         Engine::Parakeet => transducer::run(
             transducer::Kind::Parakeet,
             samples,
@@ -49,10 +52,12 @@ pub fn run(
             config,
             on_progress,
             cancelled,
-        ),
-        Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled),
-        Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled),
-    }
+        )?,
+        Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
+        Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
+    };
+    on_chunk(segs, audio_dur_sec);
+    Ok((lang, rtf))
 }
 
 fn use_in_process(config: &Config) -> bool {
@@ -76,7 +81,8 @@ fn run_in_process(
     audio_dur_sec: f64,
     config: &Config,
     cancelled: &dyn Fn() -> bool,
-) -> Result<(Vec<Segment>, String, f64)> {
+    on_chunk: &mut dyn FnMut(Vec<Segment>, f64),
+) -> Result<(String, f64)> {
     if cancelled() {
         return Err(Error::Cancelled);
     }
@@ -91,41 +97,20 @@ fn run_in_process(
         _ => audio_dur_sec.max(1.0),
     };
     let chunks = chunk::split_chunks(samples, chunk_sec);
-    crate::logfile::info(&format!(
-        "in-proc decode: {} samples ({:.1}s) -> {} chunk(s) of <={chunk_sec:.0}s",
-        samples.len(),
-        audio_dur_sec,
-        chunks.len(),
-    ));
 
     let t0 = std::time::Instant::now();
-    let mut all_segments: Vec<Segment> = Vec::new();
-    for (i, ch) in chunks.iter().enumerate() {
+    for ch in &chunks {
         if cancelled() {
             return Err(Error::Cancelled);
         }
         let stream = loaded.recognizer.create_stream();
         stream.accept_waveform(sample_rate, ch.samples);
-        let decode_t0 = std::time::Instant::now();
-        crate::logfile::info(&format!(
-            "in-proc decode: chunk {}/{} {:.1}-{:.1}s ({} samples) decoding…",
-            i + 1,
-            chunks.len(),
-            ch.start_sec,
-            ch.end_sec,
-            ch.samples.len(),
-        ));
         loaded.recognizer.decode(&stream);
-        crate::logfile::info(&format!(
-            "in-proc decode: chunk {}/{} done in {:.2}s",
-            i + 1,
-            chunks.len(),
-            decode_t0.elapsed().as_secs_f64(),
-        ));
         let chunk_dur = ch.end_sec - ch.start_sec;
         let result = stream
             .get_result()
             .ok_or_else(|| Error::Transcribe("empty result from recognizer".into()))?;
+        let mut chunk_segs: Vec<Segment> = Vec::new();
         for mut seg in build_segments(&result, chunk_dur) {
             let offset_ms = f64_ms(ch.start_sec);
             seg.start_ms = seg.start_ms.saturating_add(offset_ms);
@@ -134,8 +119,9 @@ fn run_in_process(
                 tok.start_ms = tok.start_ms.saturating_add(offset_ms);
                 tok.end_ms = tok.end_ms.saturating_add(offset_ms);
             }
-            all_segments.push(seg);
+            chunk_segs.push(seg);
         }
+        on_chunk(chunk_segs, ch.end_sec);
     }
     let elapsed = t0.elapsed().as_secs_f64();
     let rtf = if elapsed > 0.0 {
@@ -148,7 +134,7 @@ fn run_in_process(
     } else {
         config.language.clone()
     };
-    Ok((all_segments, detected, rtf))
+    Ok((detected, rtf))
 }
 
 fn build_segments(

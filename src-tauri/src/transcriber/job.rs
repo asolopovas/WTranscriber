@@ -31,7 +31,15 @@ use crate::{
     },
 };
 
-const SLAB_SEC: f64 = 600.0;
+const DEFAULT_SLAB_SEC: f64 = 60.0;
+
+fn slab_sec() -> f64 {
+    std::env::var("WT_SLAB_SEC")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(DEFAULT_SLAB_SEC)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
@@ -120,9 +128,10 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         last_done_sec: 0.0,
         segments: Vec::new(),
     });
+    let slab = slab_sec();
     if state.segments.is_empty() {
         logfile::info(&format!(
-            "streaming start: slab={SLAB_SEC:.0}s engine={} model={}",
+            "streaming start: slab={slab:.0}s engine={} model={}",
             config.engine.as_str(),
             config.model,
         ));
@@ -147,7 +156,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         input,
         start_ms,
         end_ms_opt,
-        SLAB_SEC,
+        slab,
         cancel_for_stream,
         |region| -> Result<bool> {
             if sink.is_cancelled() {
@@ -162,35 +171,51 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             let mut sub_progress = |_pct: f64| {};
             let cancelled = || sink.is_cancelled();
             let region_dur_sec = region.end_sec - region.start_sec;
-            logfile::info(&format!(
-                "slab #{slab_index} start {}-{} ({:.1}s audio, {} samples)",
-                format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
-                format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
-                region_dur_sec,
-                region.samples.len(),
-            ));
+            let region_start_sec = region.start_sec;
+            let region_end_sec = region.end_sec;
+            let resume_floor = state.last_done_sec;
             let t0 = std::time::Instant::now();
-            let (mut segs, slab_detected, _rtf) = engine::run(
+            let mut slab_segs_emitted: usize = 0;
+            let mut slab_dropped: usize = 0;
+            let mut save_err: Option<crate::error::Error> = None;
+            let mut on_chunk = |mut segs: Vec<Segment>, chunk_end_sec: f64| {
+                let abs_end = (region_start_sec + chunk_end_sec).min(region_end_sec);
+                if abs_end <= resume_floor + 0.001 {
+                    return;
+                }
+                let before = segs.len();
+                apply_dedup(&mut segs);
+                slab_dropped += before.saturating_sub(segs.len());
+                shift_segments(&mut segs, (region_start_sec * 1000.0) as u64);
+                for s in &segs {
+                    state.segments.push(partial::SerSegment::from(s));
+                }
+                slab_segs_emitted += segs.len();
+                state.last_done_sec = abs_end;
+                if save_err.is_none() {
+                    if let Err(e) = partial::save(&state) {
+                        save_err = Some(e);
+                    }
+                }
+                emit_pct(sink, abs_end, trimmed_dur_sec);
+            };
+            let engine_result = engine::run(
                 &region.samples,
                 region_dur_sec,
                 config,
                 &mut sub_progress,
                 &cancelled,
-            )?;
+                &mut on_chunk,
+            );
+            let (slab_detected, _rtf) = engine_result?;
+            if let Some(e) = save_err {
+                return Err(e);
+            }
             if detected_language.is_empty() && !slab_detected.is_empty() {
                 detected_language.clone_from(&slab_detected);
                 logfile::info(&format!("detected language: {slab_detected}"));
             }
             let elapsed = t0.elapsed().as_secs_f64();
-            let segs_before = segs.len();
-            apply_dedup(&mut segs);
-            let dropped = segs_before.saturating_sub(segs.len());
-            shift_segments(&mut segs, (region.start_sec * 1000.0) as u64);
-            for s in &segs {
-                state.segments.push(partial::SerSegment::from(s));
-            }
-            state.last_done_sec = region.end_sec;
-            partial::save(&state)?;
             total_audio += region_dur_sec;
             total_elapsed += elapsed;
             let slab_rtf = if elapsed > 0.0 {
@@ -199,20 +224,19 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
                 0.0
             };
             logfile::info(&format!(
-                "slab #{slab_index} {}-{} ({:.1}s audio in {:.1}s rtf={:.2}, {} segs{})",
+                "slab #{slab_index} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
                 format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
                 format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
                 region_dur_sec,
                 elapsed,
                 slab_rtf,
-                segs.len(),
-                if dropped > 0 {
-                    format!(", dropped {dropped} dedup")
+                slab_segs_emitted,
+                if slab_dropped > 0 {
+                    format!(", dropped {slab_dropped} dedup")
                 } else {
                     String::new()
                 },
             ));
-            emit_pct(sink, region.end_sec, trimmed_dur_sec);
             Ok(true)
         },
     );

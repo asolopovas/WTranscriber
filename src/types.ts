@@ -73,6 +73,7 @@ export interface Utterance {
   end_ms: number;
   speaker: string | null;
   text: string;
+  language?: string;
 }
 
 export interface Word {
