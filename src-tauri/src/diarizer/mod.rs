@@ -1,3 +1,5 @@
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod nemo;
 mod sherpa;
 
 use std::path::Path;
@@ -22,12 +24,47 @@ pub trait Backend {
         wav: &Path,
         num_speakers: u32,
         audio_dur_sec: f64,
+        cancelled: &dyn Fn() -> bool,
         on_progress: Progress<'_>,
     ) -> Result<Vec<Segment>>;
 }
 
 pub fn new(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    Ok(Box::new(SherpaDiarizer::new(num_speakers)?))
+    new_with_preference(num_speakers, false)
+}
+
+pub fn new_with_preference(num_speakers: u32, prefer_sherpa: bool) -> Result<Box<dyn Backend>> {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = prefer_sherpa;
+        return Ok(Box::new(SherpaDiarizer::new(num_speakers)?));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        if prefer_sherpa || num_speakers > 0 {
+            return new_sherpa_or_nemo(num_speakers);
+        }
+        new_nemo_or_sherpa(num_speakers)
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn new_nemo_or_sherpa(num_speakers: u32) -> Result<Box<dyn Backend>> {
+    match nemo::NemoDiarizer::new() {
+        Ok(d) => Ok(Box::new(d)),
+        Err(primary) => SherpaDiarizer::new(num_speakers)
+            .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn new_sherpa_or_nemo(num_speakers: u32) -> Result<Box<dyn Backend>> {
+    match SherpaDiarizer::new(num_speakers) {
+        Ok(d) => Ok(Box::new(d)),
+        Err(primary) => nemo::NemoDiarizer::new()
+            .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
+    }
 }
 
 pub fn speaker_id_for_time(
@@ -110,5 +147,22 @@ mod tests {
     fn hint_breaks_near_ties() {
         let diar = vec![seg(1, 0.0, 1.0), seg(2, 1.0, 2.001)];
         assert_eq!(speaker_id_for_time(0.5, 1.5, &diar, Some(1)), Some(1));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn desktop_default_prefers_nemo_for_auto_speakers() {
+        assert!(!prefers_sherpa(0, false));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn desktop_fixed_speaker_count_prefers_sherpa() {
+        assert!(prefers_sherpa(2, false));
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    const fn prefers_sherpa(num_speakers: u32, prefer_sherpa: bool) -> bool {
+        prefer_sherpa || num_speakers > 0
     }
 }

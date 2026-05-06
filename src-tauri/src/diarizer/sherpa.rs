@@ -142,8 +142,12 @@ impl Backend for SherpaDiarizer {
         wav: &Path,
         _num_speakers: u32,
         _audio_dur_sec: f64,
+        cancelled: &dyn Fn() -> bool,
         on_progress: Progress<'_>,
     ) -> Result<Vec<Segment>> {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         let mut cmd = build_command(&self.bin);
         cmd.args(self.args(wav))
             .stdout(Stdio::piped())
@@ -198,7 +202,17 @@ impl Backend for SherpaDiarizer {
             }
         }
 
-        let status = child.wait()?;
+        let status = loop {
+            if cancelled() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Cancelled);
+            }
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        };
         let (stderr_buf, progress_pcts) = stderr_handle
             .join()
             .map_err(|_| Error::Transcribe("stderr reader panicked".into()))?;

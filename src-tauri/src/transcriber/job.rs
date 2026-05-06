@@ -191,7 +191,8 @@ fn run_diarize(
     let backend = diarizer::new(speakers)?;
     let wav = ensure_wav_for_diarize(input, samples)?;
     let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
-    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &mut on_progress)?;
+    let cancelled = || sink.is_cancelled();
+    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress)?;
     Ok((segs, backend.name()))
 }
 

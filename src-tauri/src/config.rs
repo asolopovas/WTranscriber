@@ -41,7 +41,7 @@ impl Default for Config {
             model: "sherpa-whisper-turbo".into(),
             engine: Engine::WhisperOnnx,
             language: "en".into(),
-            device: Device::Cpu,
+            device: default_device(),
             threads: num_threads(),
             diarize: true,
             speakers: None,
@@ -74,4 +74,31 @@ impl Config {
 fn num_threads() -> u32 {
     u32::try_from(std::thread::available_parallelism().map_or(4, std::num::NonZero::get))
         .unwrap_or(4)
+}
+
+const fn default_device() -> Device {
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        Device::Cpu
+    } else {
+        Device::Cuda
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desktop_defaults_to_cuda() {
+        if cfg!(not(any(target_os = "android", target_os = "ios"))) {
+            assert!(matches!(Config::default().device, Device::Cuda));
+        }
+    }
+
+    #[test]
+    fn default_asr_is_best_quality_whisper_turbo() {
+        let cfg = Config::default();
+        assert_eq!(cfg.model, "sherpa-whisper-turbo");
+        assert!(matches!(cfg.engine, Engine::WhisperOnnx));
+    }
 }

@@ -128,14 +128,25 @@ fn default_catalog() -> Vec<Entry> {
             }],
         },
         Entry {
+            id: "nemo-sortformer-v2".into(),
+            family: Family::Diarizer,
+            engine: "nemo-sortformer".into(),
+            display_name: "NVIDIA NeMo Sortformer 4-speaker v2".into(),
+            description: "GPU-first NVIDIA NeMo diarization used by desktop transcription jobs.".into(),
+            languages: Vec::new(),
+            size_bytes: 0,
+            default_active: true,
+            files: Vec::new(),
+        },
+        Entry {
             id: "sherpa-pyannote-titanet".into(),
             family: Family::Diarizer,
             engine: "sherpa".into(),
             display_name: "pyannote-3.0 segmentation + TitaNet-Large".into(),
-            description: "sherpa-onnx pyannote-3.0 segmentation with NeMo TitaNet embeddings.".into(),
+            description: "CPU-compatible fallback diarizer with pyannote segmentation and NeMo TitaNet embeddings.".into(),
             languages: Vec::new(),
             size_bytes: 0,
-            default_active: true,
+            default_active: false,
             files: vec![
                 FileSpec {
                     url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx".into(),
@@ -169,7 +180,12 @@ mod tests {
     }
 
     #[test]
-    fn diarizer_family_has_one_entry() {
-        assert_eq!(by_family(Family::Diarizer).len(), 1);
+    fn diarizer_family_has_nemo_and_fallback() {
+        assert_eq!(by_family(Family::Diarizer).len(), 2);
+    }
+
+    #[test]
+    fn default_diarizer_is_nemo_sortformer() {
+        assert_eq!(default_id(Family::Diarizer), Some("nemo-sortformer-v2"));
     }
 }

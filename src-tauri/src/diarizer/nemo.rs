@@ -1,0 +1,268 @@
+#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+
+use std::{
+    collections::HashMap,
+    io::{BufRead, BufReader, Read},
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+use serde::Deserialize;
+
+use crate::{
+    diarizer::{Backend, Progress, Segment},
+    error::{Error, Result},
+    paths,
+};
+
+#[derive(Debug, Clone)]
+pub struct NemoDiarizer {
+    python: PathBuf,
+    script: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonSegment {
+    start: f64,
+    end: f64,
+    speaker: String,
+}
+
+impl NemoDiarizer {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            python: resolve_python()?,
+            script: resolve_script()?,
+        })
+    }
+}
+
+impl Backend for NemoDiarizer {
+    fn name(&self) -> String {
+        "nemo-sortformer".into()
+    }
+
+    fn diarize(
+        &self,
+        wav: &Path,
+        num_speakers: u32,
+        audio_dur_sec: f64,
+        cancelled: &dyn Fn() -> bool,
+        on_progress: Progress<'_>,
+    ) -> Result<Vec<Segment>> {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let mut args = vec![self.script.display().to_string()];
+        if num_speakers > 0 {
+            args.push("--num-speakers".into());
+            args.push(num_speakers.to_string());
+        }
+        args.push(wav.display().to_string());
+
+        let mut cmd = build_command(&self.python);
+        cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        let mut child = cmd.spawn()?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Transcribe("no stdout from nemo diarizer".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| Error::Transcribe("no stderr from nemo diarizer".into()))?;
+
+        let done = Arc::new(AtomicBool::new(false));
+        let done_for_stderr = done.clone();
+        let stderr_handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            for line in BufReader::new(stderr)
+                .lines()
+                .map_while(std::result::Result::ok)
+            {
+                if line.starts_with("done:") {
+                    done_for_stderr.store(true, Ordering::SeqCst);
+                }
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+            buf
+        });
+
+        let start = Instant::now();
+        let mut last_pct = 0.0_f64;
+        let status = loop {
+            if cancelled() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Cancelled);
+            }
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            last_pct = report_time_progress(
+                start,
+                done.load(Ordering::SeqCst),
+                audio_dur_sec,
+                last_pct,
+                on_progress,
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        };
+
+        let mut raw = Vec::new();
+        stdout.read_to_end(&mut raw)?;
+        let stderr_buf = stderr_handle
+            .join()
+            .map_err(|_| Error::Transcribe("stderr reader panicked".into()))?;
+
+        if !status.success() {
+            return Err(Error::Transcribe(format!(
+                "nemo diarizer failed: {}",
+                stderr_buf.trim()
+            )));
+        }
+
+        let parsed: Vec<JsonSegment> = serde_json::from_slice(&raw)?;
+        on_progress(100.0);
+        Ok(map_segments(parsed))
+    }
+}
+
+fn report_time_progress(
+    start: Instant,
+    done: bool,
+    audio_dur_sec: f64,
+    last_pct: f64,
+    on_progress: Progress<'_>,
+) -> f64 {
+    let pct = if done {
+        95.0
+    } else {
+        let est_total = (audio_dur_sec * 0.15).max(3.0);
+        (start.elapsed().as_secs_f64() / est_total * 90.0).min(90.0)
+    };
+    if pct > last_pct {
+        on_progress(pct);
+        pct
+    } else {
+        last_pct
+    }
+}
+
+fn map_segments(parsed: Vec<JsonSegment>) -> Vec<Segment> {
+    let mut speakers = HashMap::<String, u32>::new();
+    let mut next = 0_u32;
+    parsed
+        .into_iter()
+        .map(|seg| {
+            let speaker = *speakers.entry(seg.speaker).or_insert_with(|| {
+                let id = next;
+                next += 1;
+                id
+            });
+            Segment {
+                speaker,
+                start_sec: seg.start,
+                end_sec: seg.end,
+            }
+        })
+        .collect()
+}
+
+fn resolve_python() -> Result<PathBuf> {
+    if let Ok(p) = std::env::var("WT_PYTHON") {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+    let data = paths::data_dir()?;
+    let candidates = [
+        data.join("python").join("Scripts").join("python.exe"),
+        data.join("python").join("bin").join("python"),
+    ];
+    for candidate in candidates {
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    which::which("python")
+        .or_else(|_| which::which("python3"))
+        .map_err(|_| Error::Config("python not found for NeMo Sortformer diarization".into()))
+}
+
+fn resolve_script() -> Result<PathBuf> {
+    if let Ok(p) = std::env::var("WT_NEMO_DIARIZE_SCRIPT") {
+        let path = PathBuf::from(p);
+        if path.exists() {
+            return Ok(path);
+        }
+    }
+    let mut candidates = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        candidates.push(dir.join("diarize.py"));
+        candidates.push(dir.join("resources").join("diarize.py"));
+        candidates.push(dir.join("..").join("Resources").join("diarize.py"));
+    }
+    candidates.push(paths::data_dir()?.join("diarize.py"));
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("scripts").join("diarize.py"));
+        candidates.push(cwd.join("..").join("scripts").join("diarize.py"));
+    }
+    candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| Error::Config("diarize.py not found for NeMo Sortformer diarization".into()))
+}
+
+#[cfg(windows)]
+fn build_command(bin: &Path) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut cmd = Command::new(bin);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+#[cfg(not(windows))]
+fn build_command(bin: &Path) -> Command {
+    Command::new(bin)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_string_speakers_to_stable_numeric_ids() {
+        let out = map_segments(vec![
+            JsonSegment {
+                start: 0.0,
+                end: 1.0,
+                speaker: "SPEAKER_01".into(),
+            },
+            JsonSegment {
+                start: 1.0,
+                end: 2.0,
+                speaker: "SPEAKER_02".into(),
+            },
+            JsonSegment {
+                start: 2.0,
+                end: 3.0,
+                speaker: "SPEAKER_01".into(),
+            },
+        ]);
+        assert_eq!(out[0].speaker, 0);
+        assert_eq!(out[1].speaker, 1);
+        assert_eq!(out[2].speaker, 0);
+    }
+}
