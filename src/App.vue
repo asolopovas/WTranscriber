@@ -2,13 +2,14 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { api } from "./api";
+import { api, events } from "./api";
 import type {
   Config,
   DirEntry,
   DirListing,
   ExportFormat,
   ModelInfo,
+  TranscribeProgress,
   Transcript,
 } from "./types";
 import ModelManager from "./components/ModelManager.vue";
@@ -29,7 +30,35 @@ const error = ref<string | null>(null);
 const dragOver = ref(false);
 const saveState = ref<"idle" | "saving" | "saved">("idle");
 const busy = ref<Record<string, boolean>>({});
+const progressByPath = ref<Record<string, TranscribeProgress>>({});
 const dialogOpen = ref(false);
+
+function fmtClock(secs: number): string {
+  if (!Number.isFinite(secs) || secs < 0) secs = 0;
+  const total = Math.round(secs);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function phaseLabel(p: TranscribeProgress["phase"]): string {
+  switch (p) {
+    case "cache_check":
+      return "checking cache";
+    case "loading_audio":
+      return "loading audio";
+    case "transcribing":
+      return "transcribing";
+    case "diarizing":
+      return "diarizing";
+    case "writing":
+      return "writing";
+    case "done":
+      return "done";
+  }
+}
 
 async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
   if (dialogOpen.value) return undefined;
@@ -173,6 +202,9 @@ async function loadCached(key: string) {
 onMounted(async () => {
   version.value = await api.appVersion();
   await reload();
+  unlistenProgress = await events.onTranscribeProgress((p) => {
+    progressByPath.value = { ...progressByPath.value, [p.path]: p };
+  });
   unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
     if (tab.value !== "transcribe") return;
     if (event.payload.type === "over") dragOver.value = true;
@@ -186,7 +218,11 @@ onMounted(async () => {
 });
 
 let unlistenDrop: (() => void) | null = null;
-onUnmounted(() => unlistenDrop?.());
+let unlistenProgress: (() => void) | null = null;
+onUnmounted(() => {
+  unlistenDrop?.();
+  unlistenProgress?.();
+});
 
 watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
@@ -234,6 +270,9 @@ async function runTranscribe(entry?: DirEntry) {
     const next = { ...busy.value };
     delete next[target.path];
     busy.value = next;
+    const np = { ...progressByPath.value };
+    delete np[target.path];
+    progressByPath.value = np;
   }
 }
 
@@ -556,13 +595,26 @@ const fieldClass =
                     {{ fmtBytes(entry.size_bytes) }}
                   </td>
                   <td class="px-xs py-xs">
-                    <span
-                      v-if="busy[entry.path]"
-                      class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
-                    >
-                      <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
-                      transcribing
-                    </span>
+                    <template v-if="busy[entry.path]">
+                      <div class="flex flex-col gap-unit">
+                        <span class="font-mono text-labelSmall text-secondary flex items-center gap-unit">
+                          <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+                          <template v-if="progressByPath[entry.path]">
+                            <span v-if="progressByPath[entry.path].phase === 'transcribing'">
+                              {{ progressByPath[entry.path].displayPct.toFixed(1) }}%
+                            </span>
+                            <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
+                          </template>
+                          <span v-else>transcribing</span>
+                        </span>
+                        <span
+                          v-if="progressByPath[entry.path] && progressByPath[entry.path].phase === 'transcribing'"
+                          class="font-mono text-[10px] text-on-surface-variant"
+                        >
+                          {{ fmtClock(progressByPath[entry.path].elapsedSec) }} elapsed · {{ fmtClock(progressByPath[entry.path].etaSec) }} left
+                        </span>
+                      </div>
+                    </template>
                     <span
                       v-else-if="entry.cache_key"
                       class="font-mono text-labelSmall text-tertiary flex items-center gap-unit"
@@ -729,8 +781,28 @@ const fieldClass =
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Status</span>
                   <span :class="status === 'error' ? 'text-error' : status === 'idle' ? 'text-tertiary' : 'text-secondary'">
-                    {{ status === "idle" && transcript ? "ready" : status }}
+                    <template v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'">
+                      {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
+                      <span v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
+                        · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
+                      </span>
+                    </template>
+                    <template v-else>{{ status === "idle" && transcript ? "ready" : status }}</template>
                   </span>
+                </div>
+                <div
+                  v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running' && progressByPath[selectedEntry.path].phase === 'transcribing'"
+                  class="flex justify-between items-center"
+                >
+                  <span class="text-on-surface-variant">Elapsed</span>
+                  <span class="text-on-surface">{{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}</span>
+                </div>
+                <div
+                  v-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running' && progressByPath[selectedEntry.path].phase === 'transcribing'"
+                  class="flex justify-between items-center"
+                >
+                  <span class="text-on-surface-variant">ETA</span>
+                  <span class="text-secondary">{{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}</span>
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Duration</span>

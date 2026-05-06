@@ -1,8 +1,22 @@
-#![allow(clippy::needless_pass_by_value)]
+#![allow(
+    clippy::needless_pass_by_value,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tokio::{runtime::Handle, task::JoinHandle};
 
 use crate::{
     audio,
@@ -12,6 +26,7 @@ use crate::{
     logfile,
     models::{self, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
+    progress::{self, Phase, Sink, Smoother},
     transcriber::{self, Job, Transcript, export::Format as ExportFormat},
 };
 
@@ -67,8 +82,142 @@ pub fn probe_audio(path: PathBuf) -> Option<u64> {
     audio::probe_duration_ms(&path)
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProgressEvent {
+    path: String,
+    phase: Phase,
+    display_pct: f64,
+    elapsed_sec: f64,
+    eta_sec: f64,
+}
+
+struct TranscribeSink {
+    app: AppHandle,
+    handle: Handle,
+    file_path: String,
+    smoother: Arc<Mutex<Smoother>>,
+    current_phase: Mutex<Phase>,
+    ticker_cancel: Arc<AtomicBool>,
+    ticker_handle: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl TranscribeSink {
+    fn new(app: AppHandle, handle: Handle, file_path: String, audio_dur_sec: f64, initial_rtf: f64) -> Self {
+        Self {
+            app,
+            handle,
+            file_path,
+            smoother: Arc::new(Mutex::new(Smoother::new(audio_dur_sec, initial_rtf))),
+            current_phase: Mutex::new(Phase::CacheCheck),
+            ticker_cancel: Arc::new(AtomicBool::new(false)),
+            ticker_handle: Mutex::new(None),
+        }
+    }
+
+    fn emit(&self, phase: Phase, display_pct: f64, eta_sec: f64) {
+        let elapsed_sec = self
+            .smoother
+            .lock()
+            .map_or(0.0, |s| s.elapsed().as_secs_f64());
+        let _ = self.app.emit(
+            "transcribe:progress",
+            &ProgressEvent {
+                path: self.file_path.clone(),
+                phase,
+                display_pct,
+                elapsed_sec,
+                eta_sec,
+            },
+        );
+    }
+
+    fn start_ticker(&self) {
+        let mut handle_lock = self.ticker_handle.lock().unwrap();
+        if handle_lock.is_some() {
+            return;
+        }
+        self.ticker_cancel.store(false, Ordering::SeqCst);
+        let app = self.app.clone();
+        let path = self.file_path.clone();
+        let smoother = self.smoother.clone();
+        let cancel = self.ticker_cancel.clone();
+        let join = self.handle.spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                if cancel.load(Ordering::SeqCst) {
+                    break;
+                }
+                let (display_pct, eta_sec, elapsed_sec) = {
+                    let Ok(mut s) = smoother.lock() else { break };
+                    let (d, e) = s.snapshot();
+                    (d, e, s.elapsed().as_secs_f64())
+                };
+                let _ = app.emit(
+                    "transcribe:progress",
+                    &ProgressEvent {
+                        path: path.clone(),
+                        phase: Phase::Transcribing,
+                        display_pct,
+                        elapsed_sec,
+                        eta_sec,
+                    },
+                );
+            }
+        });
+        *handle_lock = Some(join);
+    }
+
+    fn stop_ticker(&self) {
+        self.ticker_cancel.store(true, Ordering::SeqCst);
+        let taken = self.ticker_handle.lock().unwrap().take();
+        if let Some(h) = taken {
+            h.abort();
+        }
+    }
+}
+
+impl Drop for TranscribeSink {
+    fn drop(&mut self) {
+        self.stop_ticker();
+    }
+}
+
+impl Sink for TranscribeSink {
+    fn phase(&self, phase: Phase) {
+        if let Ok(mut cur) = self.current_phase.lock() {
+            *cur = phase;
+        }
+        match phase {
+            Phase::Transcribing => self.start_ticker(),
+            _ => self.stop_ticker(),
+        }
+        self.emit(phase, 0.0, 0.0);
+    }
+
+    fn report_pct(&self, phase: Phase, pct: f64) {
+        match phase {
+            Phase::Transcribing => {
+                if let Ok(mut s) = self.smoother.lock() {
+                    s.report(pct as i32);
+                }
+            }
+            Phase::Diarizing => {
+                self.emit(phase, pct, 0.0);
+            }
+            _ => {}
+        }
+    }
+}
+
 #[tauri::command]
-pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcript> {
+pub async fn transcribe_file(
+    app: AppHandle,
+    input: PathBuf,
+    config: Config,
+) -> Result<Transcript> {
     let label = format!(
         "transcribe {} model={} engine={:?} lang={} device={:?}",
         input.display(),
@@ -78,8 +227,23 @@ pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcrip
         config.device,
     );
     logfile::process_start(&label);
+    let audio_dur_ms = audio::probe_duration_ms(&input).unwrap_or(0);
+    let audio_dur_sec = if audio_dur_ms > 0 {
+        audio_dur_ms as f64 / 1000.0
+    } else {
+        1.0
+    };
+    let device_label = format!("{:?}", config.device).to_lowercase();
+    let initial_rtf = progress::load_rtf(&config.model, &device_label);
+    let sink = Arc::new(TranscribeSink::new(
+        app,
+        Handle::current(),
+        input.to_string_lossy().into_owned(),
+        audio_dur_sec,
+        initial_rtf,
+    ));
     let job = Job { input, config };
-    match transcriber::run(&job).await {
+    match transcriber::run_with_sink(&job, sink.clone()).await {
         Ok(t) => {
             logfile::process_end(
                 &label,
@@ -91,6 +255,7 @@ pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcrip
                     t.speakers_detected
                 ),
             );
+            sink.emit(Phase::Done, 100.0, 0.0);
             Ok(t)
         }
         Err(e) => {

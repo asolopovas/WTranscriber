@@ -77,6 +77,22 @@ export interface Suggestion {
   stamp: string;
 }
 
+export type TranscribePhase =
+  | "cache_check"
+  | "loading_audio"
+  | "transcribing"
+  | "diarizing"
+  | "writing"
+  | "done";
+
+export interface TranscribeProgress {
+  path: string;
+  phase: TranscribePhase;
+  displayPct: number;
+  elapsedSec: number;
+  etaSec: number;
+}
+
 export interface Transcript {
   model: string;
   language: string;

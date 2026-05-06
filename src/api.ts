@@ -8,6 +8,7 @@ import type {
   ModelInfo,
   ModelStatus,
   Suggestion,
+  TranscribeProgress,
   Transcript,
 } from "./types";
 
@@ -45,4 +46,6 @@ export const events = {
     listen<string>("model:done", (e) => cb(e.payload)),
   onModelError: (cb: (id: string) => void): Promise<UnlistenFn> =>
     listen<string>("model:error", (e) => cb(e.payload)),
+  onTranscribeProgress: (cb: (p: TranscribeProgress) => void): Promise<UnlistenFn> =>
+    listen<TranscribeProgress>("transcribe:progress", (e) => cb(e.payload)),
 };
