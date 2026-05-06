@@ -75,7 +75,8 @@ pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
     }
     if uses_cuda(args) && is_cuda_load_failure(&stderr) {
         crate::logfile::warn(&format!(
-            "sherpa CUDA provider unavailable, falling back to CPU: {}",
+            "sherpa CUDA provider unavailable ({}); falling back to CPU. \
+             To enable GPU acceleration run `just cudnn` (Windows) or install cuDNN 9.x for CUDA 12.x.",
             cuda_failure_reason(&stderr)
         ));
         let cpu_args = swap_provider_to_cpu(args);
