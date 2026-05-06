@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AudioMeta,
   Config,
   DirListing,
   ExportFormat,
@@ -21,6 +22,9 @@ export const api = {
   installModel: (id: string) => invoke<void>("install_model", { id }),
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
+  loadAudioMeta: (path: string) => invoke<AudioMeta>("load_audio_meta", { path }),
+  saveAudioMeta: (path: string, meta: AudioMeta) =>
+    invoke<void>("save_audio_meta", { path, meta }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
   cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),

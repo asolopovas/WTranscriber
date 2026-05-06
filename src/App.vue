@@ -5,6 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, events } from "./api";
 import type {
+  AudioMeta,
   Config,
   DirEntry,
   DirListing,
@@ -13,11 +14,10 @@ import type {
   TranscribeProgress,
   Transcript,
 } from "./types";
-import ModelManager from "./components/ModelManager.vue";
 import Settings from "./components/Settings.vue";
 import LogViewer from "./components/LogViewer.vue";
 
-type Tab = "transcribe" | "models" | "settings" | "logs";
+type Tab = "transcribe" | "compute" | "logs";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -76,9 +76,8 @@ async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
-  { id: "models", label: "Models" },
+  { id: "compute", label: "Compute" },
   { id: "logs", label: "Logs" },
-  { id: "settings", label: "Settings" },
 ];
 
 const engineLabels = {
@@ -516,17 +515,24 @@ function drawWaveformFallback(canvas: HTMLCanvasElement) {
   ctx.stroke();
 }
 
-function drawWaveformPeaks(canvas: HTMLCanvasElement, peaks: number[]) {
+function drawWaveformPeaks(
+  canvas: HTMLCanvasElement,
+  peaks: number[],
+  startFrac = 0,
+  endFrac = 1,
+) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#6750a4";
   const step = canvas.width / peaks.length;
   peaks.forEach((peak, i) => {
     const amp = Math.max(0.02, Math.min(1, peak));
     const barHeight = amp * canvas.height;
     const x = i * step;
     const y = (canvas.height - barHeight) / 2;
+    const frac = (i + 0.5) / peaks.length;
+    const inside = frac >= startFrac && frac <= endFrac;
+    ctx.fillStyle = inside ? "#6750a4" : "rgba(103, 80, 164, 0.22)";
     ctx.fillRect(x, y, Math.max(1, step - 1), barHeight);
   });
 }
@@ -545,6 +551,112 @@ async function drawWaveform(path: string) {
   } catch {
     drawWaveformFallback(canvas);
   }
+}
+
+const trimming = ref(false);
+const trimTarget = ref<DirEntry | null>(null);
+const trimDuration = ref(0);
+const trimStart = ref(0);
+const trimEnd = ref(0);
+const trimPeaks = ref<number[]>([]);
+const trimCanvas = ref<HTMLCanvasElement | null>(null);
+const trimAudioSrc = ref("");
+const trimError = ref<string | null>(null);
+const trimLoading = ref(false);
+
+const trimStartFrac = computed(() =>
+  trimDuration.value > 0 ? trimStart.value / trimDuration.value : 0,
+);
+const trimEndFrac = computed(() =>
+  trimDuration.value > 0 ? trimEnd.value / trimDuration.value : 1,
+);
+
+async function openTrim(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target || !target.is_audio) return;
+  if (trimming.value || renaming.value || exporting.value || previewing.value) return;
+  trimTarget.value = target;
+  trimError.value = null;
+  trimLoading.value = true;
+  trimAudioSrc.value = convertFileSrc(target.path);
+  trimming.value = true;
+  trimPeaks.value = [];
+  try {
+    const durMs =
+      (await api.probeAudio(target.path)) ?? target.duration_ms ?? 0;
+    trimDuration.value = Math.max(0, Math.floor(durMs));
+    const meta = await api.loadAudioMeta(target.path);
+    trimStart.value = Math.min(meta.trim_start_ms ?? 0, trimDuration.value);
+    trimEnd.value = Math.min(
+      meta.trim_end_ms ?? trimDuration.value,
+      trimDuration.value,
+    );
+    if (trimEnd.value <= trimStart.value) trimEnd.value = trimDuration.value;
+    const peaks = await api.audioWaveform(target.path, 320);
+    trimPeaks.value = peaks;
+    await renderTrimWaveform();
+  } catch (e) {
+    trimError.value = String(e);
+  } finally {
+    trimLoading.value = false;
+  }
+}
+
+async function renderTrimWaveform() {
+  await nextTick();
+  const canvas = trimCanvas.value;
+  if (!canvas) return;
+  if (trimPeaks.value.length === 0) {
+    drawWaveformFallback(canvas);
+    return;
+  }
+  drawWaveformPeaks(canvas, trimPeaks.value, trimStartFrac.value, trimEndFrac.value);
+}
+
+watch([trimStart, trimEnd, trimPeaks], () => {
+  if (trimming.value) void renderTrimWaveform();
+});
+
+function onTrimStartInput(e: Event) {
+  const v = Number((e.target as HTMLInputElement).value);
+  trimStart.value = Math.min(v, Math.max(0, trimEnd.value - 100));
+}
+function onTrimEndInput(e: Event) {
+  const v = Number((e.target as HTMLInputElement).value);
+  trimEnd.value = Math.max(v, trimStart.value + 100);
+}
+
+function resetTrim() {
+  trimStart.value = 0;
+  trimEnd.value = trimDuration.value;
+}
+
+async function commitTrim() {
+  if (!trimTarget.value) return;
+  const target = trimTarget.value;
+  const start = Math.max(0, Math.floor(trimStart.value));
+  const end = Math.min(trimDuration.value, Math.floor(trimEnd.value));
+  const meta: AudioMeta = {
+    trim_start_ms: start,
+    trim_end_ms: end < trimDuration.value ? end : null,
+  };
+  if (start === 0) meta.trim_start_ms = 0;
+  try {
+    await api.saveAudioMeta(target.path, meta);
+    trimming.value = false;
+    trimTarget.value = null;
+    trimAudioSrc.value = "";
+    await refreshListing();
+  } catch (e) {
+    trimError.value = String(e);
+  }
+}
+
+function closeTrim() {
+  trimming.value = false;
+  trimTarget.value = null;
+  trimAudioSrc.value = "";
+  trimError.value = null;
 }
 
 async function copyPreviewText() {
@@ -854,6 +966,24 @@ const fieldClass =
                         play_arrow
                       </button>
                       <button
+                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant transition-colors"
+                        :class="
+                          entry.trim_start_ms || entry.trim_end_ms
+                            ? 'text-primary'
+                            : 'hover:text-primary'
+                        "
+                        :title="
+                          entry.trim_start_ms || entry.trim_end_ms
+                            ? `Trim: ${fmt(entry.trim_start_ms ?? 0)} – ${fmt(
+                                entry.trim_end_ms ?? entry.duration_ms ?? 0,
+                              )}`
+                            : 'Trim — select range to transcribe'
+                        "
+                        @click="openTrim(entry)"
+                      >
+                        content_cut
+                      </button>
+                      <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
                         title="Auto-rename (AI)"
                         @click="autoRename(entry)"
@@ -1031,36 +1161,68 @@ const fieldClass =
                   </label>
                 </div>
 
-                <div
-                  class="flex items-center justify-between bg-surface-container-high p-md rounded-lg border border-outline-variant/40"
-                >
-                  <div>
-                    <div class="text-bodyMedium text-on-surface">Diarize speakers</div>
-                    <div class="font-mono text-labelSmall text-on-surface-variant">
-                      {{
-                        config.diarize
-                          ? config.speakers
-                            ? `${config.speakers} speakers`
-                            : "auto-detect"
-                          : "disabled"
-                      }}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                    :class="
-                      config.diarize
-                        ? 'bg-primary'
-                        : 'bg-surface-container-highest border border-outline-variant'
-                    "
-                    @click="config.diarize = !config.diarize"
+                <label class="block">
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Speakers</span
                   >
-                    <span
-                      class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                      :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                    ></span>
-                  </button>
+                  <input
+                    :value="config.speakers ?? 0"
+                    type="number"
+                    min="0"
+                    max="20"
+                    :disabled="!config.diarize"
+                    :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+                    @input="
+                      (e) => {
+                        const n = Number((e.target as HTMLInputElement).value);
+                        if (config) config.speakers = n > 0 ? n : null;
+                      }
+                    "
+                  />
+                  <span class="font-mono text-labelSmall text-outline mt-unit block"
+                    >0 = auto</span
+                  >
+                </label>
+
+                <div class="flex items-center justify-between gap-xl py-xs">
+                  <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
+                    <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>
+                    <button
+                      type="button"
+                      class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                      :class="
+                        config.diarize
+                          ? 'bg-primary'
+                          : 'bg-surface-container-highest border border-outline-variant'
+                      "
+                      @click="config.diarize = !config.diarize"
+                    >
+                      <span
+                        class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                        :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                      ></span>
+                    </button>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
+                    <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
+                    <button
+                      type="button"
+                      class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                      :class="
+                        config.auto_rename
+                          ? 'bg-primary'
+                          : 'bg-surface-container-highest border border-outline-variant'
+                      "
+                      @click="config.auto_rename = !config.auto_rename"
+                    >
+                      <span
+                        class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                        :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                      ></span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1153,8 +1315,7 @@ const fieldClass =
         </aside>
       </template>
 
-      <ModelManager v-else-if="tab === 'models'" />
-      <Settings v-else-if="tab === 'settings'" />
+      <Settings v-else-if="tab === 'compute'" />
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
 
@@ -1350,6 +1511,157 @@ const fieldClass =
             class="h-full flex items-center justify-center text-outline italic"
           >
             (transcript is empty)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="trimming"
+      class="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-margin"
+      @click.self="closeTrim"
+      @keydown.escape="closeTrim"
+    >
+      <div
+        class="bg-surface-container rounded-xl border border-outline-variant/50 w-full max-w-[768px] flex flex-col overflow-hidden shadow-2xl"
+      >
+        <div
+          class="px-margin py-md border-b border-outline-variant/40 bg-surface-container-low flex items-start gap-md"
+        >
+          <span class="material-symbols-outlined text-primary text-[22px] mt-unit"
+            >content_cut</span
+          >
+          <div class="flex-1 min-w-0">
+            <h3 class="text-titleSmall text-on-surface">Select range to transcribe</h3>
+            <p
+              class="font-mono text-labelSmall text-on-surface-variant truncate"
+              :title="trimTarget?.name"
+            >
+              {{ trimTarget?.name ?? "—" }}
+            </p>
+          </div>
+          <button
+            class="material-symbols-outlined text-[20px] p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
+            title="Close"
+            @click="closeTrim"
+          >
+            close
+          </button>
+        </div>
+
+        <div
+          v-if="trimError"
+          class="mx-margin mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
+        >
+          {{ trimError }}
+        </div>
+
+        <div class="px-margin py-md space-y-md">
+          <div
+            class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md relative"
+          >
+            <div
+              v-if="trimLoading"
+              class="absolute inset-0 flex items-center justify-center text-on-surface-variant gap-xs"
+            >
+              <span class="material-symbols-outlined text-[20px] animate-pulse">graphic_eq</span>
+              <span class="font-mono text-labelSmall">analysing…</span>
+            </div>
+            <div class="relative">
+              <canvas
+                ref="trimCanvas"
+                width="720"
+                height="120"
+                class="w-full h-28 block"
+              ></canvas>
+              <div
+                class="absolute top-0 bottom-0 border-l-2 border-r-2 border-primary pointer-events-none"
+                :style="{
+                  left: trimStartFrac * 100 + '%',
+                  right: (1 - trimEndFrac) * 100 + '%',
+                }"
+              ></div>
+            </div>
+            <audio
+              v-if="trimAudioSrc"
+              class="w-full h-10 mt-md"
+              controls
+              preload="metadata"
+              :src="trimAudioSrc"
+            ></audio>
+          </div>
+
+          <div class="space-y-md">
+            <div>
+              <div
+                class="flex items-center justify-between font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide mb-unit"
+              >
+                <span>Start</span>
+                <span class="text-primary">{{ fmt(trimStart) }}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                :max="trimDuration"
+                step="100"
+                :value="trimStart"
+                class="w-full accent-primary"
+                @input="onTrimStartInput"
+              />
+            </div>
+            <div>
+              <div
+                class="flex items-center justify-between font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide mb-unit"
+              >
+                <span>End</span>
+                <span class="text-primary">{{ fmt(trimEnd) }}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                :max="trimDuration"
+                step="100"
+                :value="trimEnd"
+                class="w-full accent-primary"
+                @input="onTrimEndInput"
+              />
+            </div>
+            <div
+              class="flex justify-between font-mono text-labelSmall text-on-surface-variant pt-xs border-t border-outline-variant/40"
+            >
+              <span>0:00</span>
+              <span class="text-on-surface"
+                >selected {{ fmt(Math.max(0, trimEnd - trimStart)) }}</span
+              >
+              <span>{{ fmt(trimDuration) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="px-margin py-md border-t border-outline-variant/40 bg-surface-container-low flex justify-between items-center gap-xs"
+        >
+          <button
+            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+            @click="resetTrim"
+            title="Reset to full track"
+          >
+            <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+            Full track
+          </button>
+          <div class="flex gap-xs">
+            <button
+              class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
+              @click="closeTrim"
+            >
+              Cancel
+            </button>
+            <button
+              class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
+              @click="commitTrim"
+            >
+              Save
+            </button>
           </div>
         </div>
       </div>

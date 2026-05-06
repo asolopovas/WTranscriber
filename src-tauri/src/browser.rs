@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::{
+    audio,
     error::{Error, Result},
     transcriber::cache,
 };
@@ -22,6 +23,8 @@ pub struct DirEntry {
     pub cache_key: Option<String>,
     pub utterances: Option<usize>,
     pub duration_ms: Option<u64>,
+    pub trim_start_ms: Option<u64>,
+    pub trim_end_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +74,8 @@ pub fn list(path: &Path) -> Result<DirListing> {
         let mut cache_key = None;
         let mut utterances = None;
         let mut duration_ms = None;
+        let mut trim_start_ms = None;
+        let mut trim_end_ms = None;
         if is_audio {
             for c in &cache_index {
                 if c.source_path == path {
@@ -79,6 +84,12 @@ pub fn list(path: &Path) -> Result<DirListing> {
                     duration_ms = Some(c.duration_ms);
                     break;
                 }
+            }
+            if let Some(m) = audio::meta::load(&path) {
+                if m.trim_start_ms > 0 {
+                    trim_start_ms = Some(m.trim_start_ms);
+                }
+                trim_end_ms = m.trim_end_ms;
             }
         }
 
@@ -92,6 +103,8 @@ pub fn list(path: &Path) -> Result<DirListing> {
             cache_key,
             utterances,
             duration_ms,
+            trim_start_ms,
+            trim_end_ms,
         });
     }
 

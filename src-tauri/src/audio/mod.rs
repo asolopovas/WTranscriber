@@ -1,10 +1,14 @@
 mod cache;
 mod ffmpeg;
+pub mod meta;
 mod wav;
 
 use std::path::Path;
 
 pub use cache::audio_cache_key;
+pub use meta::AudioMeta;
+#[allow(unused_imports)]
+pub use meta::meta_path;
 #[allow(unused_imports)]
 pub use ffmpeg::find_ffprobe;
 pub use ffmpeg::{find_ffmpeg, probe_duration_ms};

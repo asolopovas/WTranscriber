@@ -91,6 +91,16 @@ pub fn audio_waveform(path: PathBuf, bins: usize) -> Result<Vec<f32>> {
     audio::waveform_peaks(&path, bins)
 }
 
+#[tauri::command]
+pub fn load_audio_meta(path: PathBuf) -> audio::AudioMeta {
+    audio::meta::load(&path).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn save_audio_meta(path: PathBuf, meta: audio::AudioMeta) -> Result<()> {
+    audio::meta::save(&path, &meta)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {

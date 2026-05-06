@@ -47,12 +47,15 @@ pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript>
 fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
     sink.phase(Phase::CacheCheck);
     let speakers = config.speakers.unwrap_or(0);
+    let trim = audio::meta::load(input).unwrap_or_default();
     let key_params = build_key_params(
         input,
         &config.model,
         &config.language,
         speakers,
         !config.diarize,
+        trim.trim_start_ms,
+        trim.trim_end_ms.unwrap_or(0),
     )?;
     let key = compute_key(&key_params);
 
@@ -66,12 +69,27 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     }
 
     sink.phase(Phase::LoadingAudio);
-    let samples = audio::load_samples(input)?;
+    let all_samples = audio::load_samples(input)?;
     if sink.is_cancelled() {
         return Err(crate::error::Error::Cancelled);
     }
-    let audio_dur_sec = samples.len() as f64 / f64::from(audio::WHISPER_SAMPLE_RATE);
-    let duration_ms = (audio_dur_sec * 1000.0) as u64;
+    let sr = f64::from(audio::WHISPER_SAMPLE_RATE);
+    let total_dur_ms = (all_samples.len() as f64 / sr * 1000.0) as u64;
+    let start_ms = trim.trim_start_ms.min(total_dur_ms);
+    let end_ms = trim
+        .trim_end_ms
+        .map_or(total_dur_ms, |e| e.min(total_dur_ms))
+        .max(start_ms);
+    let start_idx = ((start_ms as f64 / 1000.0) * sr) as usize;
+    let end_idx = ((end_ms as f64 / 1000.0) * sr) as usize;
+    let samples: Vec<f32> = if start_idx == 0 && end_idx >= all_samples.len() {
+        all_samples
+    } else {
+        all_samples[start_idx.min(all_samples.len())..end_idx.min(all_samples.len())].to_vec()
+    };
+    let audio_dur_sec = samples.len() as f64 / sr;
+    let duration_ms = total_dur_ms;
+    let offset_ms = start_ms;
 
     sink.phase(Phase::Transcribing);
     let mut on_progress = |pct: f64| {
@@ -86,6 +104,16 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         &cancelled,
     )?;
     apply_dedup(&mut segments);
+    if offset_ms > 0 {
+        for seg in &mut segments {
+            seg.start_ms = seg.start_ms.saturating_add(offset_ms);
+            seg.end_ms = seg.end_ms.saturating_add(offset_ms);
+            for tok in &mut seg.tokens {
+                tok.start_ms = tok.start_ms.saturating_add(offset_ms);
+                tok.end_ms = tok.end_ms.saturating_add(offset_ms);
+            }
+        }
+    }
 
     if sink.is_cancelled() {
         return Err(crate::error::Error::Cancelled);
@@ -99,8 +127,19 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             return Err(crate::error::Error::Cancelled);
         }
         sink.phase(Phase::Diarizing);
-        let result = run_diarize(input, &samples, audio_dur_sec, speakers, sink)
-            .map_or((Vec::new(), None), |(s, n)| (s, Some(n)));
+        let result = run_diarize(input, &samples, audio_dur_sec, speakers, sink).map_or(
+            (Vec::new(), None),
+            |(mut segs, n)| {
+                if offset_ms > 0 {
+                    let off = offset_ms as f64 / 1000.0;
+                    for s in &mut segs {
+                        s.start_sec += off;
+                        s.end_sec += off;
+                    }
+                }
+                (segs, Some(n))
+            },
+        );
         if sink.is_cancelled() {
             return Err(crate::error::Error::Cancelled);
         }

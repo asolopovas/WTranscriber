@@ -26,6 +26,13 @@ export interface DirEntry {
   cache_key: string | null;
   utterances: number | null;
   duration_ms: number | null;
+  trim_start_ms: number | null;
+  trim_end_ms: number | null;
+}
+
+export interface AudioMeta {
+  trim_start_ms: number;
+  trim_end_ms: number | null;
 }
 
 export interface DirListing {

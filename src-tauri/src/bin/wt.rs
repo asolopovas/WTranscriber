@@ -254,6 +254,8 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
             &config.language,
             speakers,
             !config.diarize,
+            0,
+            0,
         )?;
         let key = api::transcript_cache::compute_key(&key_params);
         let _ = api::transcript_cache::invalidate(&key);

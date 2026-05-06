@@ -37,6 +37,8 @@ pub struct KeyParams {
     pub language: String,
     pub speakers: u32,
     pub no_diarize: bool,
+    pub trim_start_ms: u64,
+    pub trim_end_ms: u64,
 }
 
 fn cache_root() -> Result<PathBuf> {
@@ -59,6 +61,8 @@ pub fn build_key_params(
     language: &str,
     speakers: u32,
     no_diarize: bool,
+    trim_start_ms: u64,
+    trim_end_ms: u64,
 ) -> Result<KeyParams> {
     let abs = std::path::absolute(source_path)?;
     let meta = std::fs::metadata(&abs)?;
@@ -73,19 +77,23 @@ pub fn build_key_params(
         language: language.to_owned(),
         speakers,
         no_diarize,
+        trim_start_ms,
+        trim_end_ms,
     })
 }
 
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "{}\0{}\0{}\0{}\0{}\0{}",
+        "{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.source_path.display(),
         p.mtime_ns,
         p.model,
         p.language,
         p.speakers,
-        p.no_diarize
+        p.no_diarize,
+        p.trim_start_ms,
+        p.trim_end_ms,
     );
     let hash = Sha256::digest(s.as_bytes());
     hex::encode(&hash[..16])
@@ -189,6 +197,8 @@ mod tests {
             language: "en".into(),
             speakers: 0,
             no_diarize: false,
+            trim_start_ms: 0,
+            trim_end_ms: 0,
         };
         let k1 = compute_key(&p);
         let k2 = compute_key(&p);
@@ -205,6 +215,8 @@ mod tests {
             language: "en".into(),
             speakers: 0,
             no_diarize: false,
+            trim_start_ms: 0,
+            trim_end_ms: 0,
         };
         let base = compute_key(&p);
         p.language = "fr".into();

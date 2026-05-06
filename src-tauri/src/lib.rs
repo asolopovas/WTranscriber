@@ -183,6 +183,8 @@ pub fn run() {
             commands::install_model,
             commands::probe_audio,
             commands::audio_waveform,
+            commands::load_audio_meta,
+            commands::save_audio_meta,
             commands::transcribe_file,
             commands::cancel_transcribe,
             commands::rename_file,
