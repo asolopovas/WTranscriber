@@ -1,7 +1,15 @@
 export type Device = "cpu" | "cuda";
 
+export type Engine =
+  | "whisper-onnx"
+  | "zipformer"
+  | "parakeet"
+  | "canary"
+  | "nemo-ctc";
+
 export interface Config {
   model: string;
+  engine: Engine;
   language: string;
   device: Device;
   threads: number;

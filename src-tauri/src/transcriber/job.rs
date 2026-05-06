@@ -58,7 +58,7 @@ fn run_blocking(input: &Path, config: &Config) -> Result<Transcript> {
 
     let mut on_progress = |_pct: f64| {};
     let (mut segments, detected_language, _rtf) =
-        engine::run_whisper(&samples, audio_dur_sec, config, &mut on_progress)?;
+        engine::run(&samples, audio_dur_sec, config, &mut on_progress)?;
     apply_dedup(&mut segments);
 
     let (diar_segs, diar_name) = if config.diarize {

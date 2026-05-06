@@ -1,5 +1,5 @@
 pub use crate::{
-    config::{Config, Device},
+    config::{Config, Device, Engine},
     error::{Error, Result},
     models::{Family, FileProgress, ModelInfo, ModelStatus, manager},
     transcriber::{

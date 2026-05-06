@@ -6,12 +6,24 @@ use crate::{error::Result, paths};
 #[serde(default)]
 pub struct Config {
     pub model: String,
+    pub engine: Engine,
     pub language: String,
     pub device: Device,
     pub threads: u32,
     pub diarize: bool,
     pub speakers: Option<u32>,
     pub auto_rename: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Engine {
+    #[default]
+    WhisperOnnx,
+    Zipformer,
+    Parakeet,
+    Canary,
+    NemoCtc,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -25,6 +37,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             model: "sherpa-whisper-turbo".into(),
+            engine: Engine::WhisperOnnx,
             language: "en".into(),
             device: Device::Cpu,
             threads: num_threads(),

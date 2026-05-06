@@ -7,7 +7,7 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use wtranscriber_lib::api::{
-    self, Config, Device, Family, FileProgress, Job, ModelStatus, Result, Transcript,
+    self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript,
 };
 
 #[derive(Parser, Debug)]
@@ -41,6 +41,9 @@ struct Cli {
     #[arg(long, value_enum)]
     device: Option<DeviceArg>,
 
+    #[arg(long, value_enum)]
+    engine: Option<EngineArg>,
+
     #[arg(long)]
     no_cache: bool,
 }
@@ -71,6 +74,27 @@ impl From<DeviceArg> for Device {
         match d {
             DeviceArg::Cpu => Self::Cpu,
             DeviceArg::Cuda => Self::Cuda,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+enum EngineArg {
+    WhisperOnnx,
+    Zipformer,
+    Parakeet,
+    Canary,
+    NemoCtc,
+}
+
+impl From<EngineArg> for Engine {
+    fn from(e: EngineArg) -> Self {
+        match e {
+            EngineArg::WhisperOnnx => Self::WhisperOnnx,
+            EngineArg::Zipformer => Self::Zipformer,
+            EngineArg::Parakeet => Self::Parakeet,
+            EngineArg::Canary => Self::Canary,
+            EngineArg::NemoCtc => Self::NemoCtc,
         }
     }
 }
@@ -189,6 +213,9 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
     }
     if let Some(d) = cli.device {
         config.device = d.into();
+    }
+    if let Some(e) = cli.engine {
+        config.engine = e.into();
     }
     if cli.no_diarize {
         config.diarize = false;
