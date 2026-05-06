@@ -41,6 +41,7 @@ export type ModelStatus = "not_installed" | "downloading" | "installed";
 export interface ModelInfo {
   id: string;
   family: Family;
+  engine: string;
   display_name: string;
   description: string;
   size_bytes: number;

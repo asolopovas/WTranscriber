@@ -28,6 +28,19 @@ pub enum Engine {
     NemoCtc,
 }
 
+impl Engine {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::WhisperOnnx => "whisper-onnx",
+            Self::Zipformer => "zipformer",
+            Self::Parakeet => "parakeet",
+            Self::Canary => "canary",
+            Self::NemoCtc => "nemo-ctc",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {
@@ -100,5 +113,14 @@ mod tests {
         let cfg = Config::default();
         assert_eq!(cfg.model, "sherpa-whisper-turbo");
         assert!(matches!(cfg.engine, Engine::WhisperOnnx));
+    }
+
+    #[test]
+    fn engine_string_matches_catalog_values() {
+        assert_eq!(Engine::WhisperOnnx.as_str(), "whisper-onnx");
+        assert_eq!(Engine::Zipformer.as_str(), "zipformer");
+        assert_eq!(Engine::Parakeet.as_str(), "parakeet");
+        assert_eq!(Engine::Canary.as_str(), "canary");
+        assert_eq!(Engine::NemoCtc.as_str(), "nemo-ctc");
     }
 }

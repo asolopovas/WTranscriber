@@ -25,7 +25,7 @@ use crate::{
     config::Config,
     error::{Error, Result},
     logfile,
-    models::{self, FileProgress, ModelInfo, ModelStatus},
+    models::{self, Family, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
     progress::{self, Phase, Sink, Smoother},
     transcriber::{self, Job, Transcript, export::Format as ExportFormat},
@@ -231,6 +231,7 @@ impl Sink for TranscribeSink {
 
 #[tauri::command]
 pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> Result<Transcript> {
+    validate_transcription_model(&config)?;
     let label = format!(
         "transcribe {} model={} engine={:?} lang={} device={:?}",
         input.display(),
@@ -291,6 +292,27 @@ pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> 
         cancels.remove(&input_key);
     }
     result
+}
+
+fn validate_transcription_model(config: &Config) -> Result<()> {
+    let Some(model) = models::by_id(&config.model) else {
+        return Ok(());
+    };
+    if model.family != Family::Asr {
+        return Err(Error::Config(format!(
+            "{} is not a transcription model",
+            config.model
+        )));
+    }
+    if model.engine != config.engine.as_str() {
+        return Err(Error::Config(format!(
+            "{} requires {} engine, not {}",
+            config.model,
+            model.engine,
+            config.engine.as_str()
+        )));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -446,4 +468,27 @@ pub async fn suggest_filename(transcript: Transcript) -> Result<Suggestion> {
     tokio::task::spawn_blocking(move || namer::suggest(&transcript, chrono::Local::now()))
         .await
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Engine;
+
+    #[test]
+    fn rejects_catalog_model_with_wrong_engine() {
+        let cfg = Config {
+            engine: Engine::Zipformer,
+            ..Config::default()
+        };
+
+        assert!(validate_transcription_model(&cfg).is_err());
+    }
+
+    #[test]
+    fn accepts_catalog_model_with_matching_engine() {
+        let cfg = Config::default();
+
+        assert!(validate_transcription_model(&cfg).is_ok());
+    }
 }

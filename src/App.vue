@@ -81,7 +81,17 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
-const engineOptions = [
+const engineLabels = {
+  "whisper-onnx": "Whisper (ONNX)",
+  zipformer: "Zipformer",
+  parakeet: "Parakeet (NeMo)",
+  canary: "Canary",
+  "nemo-ctc": "NeMo CTC",
+} as const;
+
+const engineOptions = Object.entries(engineLabels).map(([value, label]) => ({ value, label }));
+
+const fallbackEngineOptions = [
   { value: "whisper-onnx", label: "Whisper (ONNX)" },
   { value: "zipformer", label: "Zipformer" },
   { value: "parakeet", label: "Parakeet (NeMo)" },
@@ -103,6 +113,48 @@ const asrModels = computed(() =>
   models.value.filter((m) => m.family === "asr" && m.status === "installed"),
 );
 
+const availableEngineOptions = computed(() => {
+  const engines = new Set(asrModels.value.map((m) => m.engine));
+  const options = engineOptions.filter((o) => engines.has(o.value));
+  return options.length ? options : fallbackEngineOptions;
+});
+
+const compatibleAsrModels = computed(() =>
+  asrModels.value.filter((m) => m.engine === config.value?.engine),
+);
+
+function syncEngineAndModel(next: Config, preferEngine = false) {
+  const installed = asrModels.value;
+  if (!installed.length) return;
+
+  if (preferEngine) {
+    const engineModel = installed.find((m) => m.engine === next.engine);
+    if (engineModel && !installed.some((m) => m.id === next.model && m.engine === next.engine)) {
+      next.model = engineModel.id;
+    }
+    return;
+  }
+
+  const model = installed.find((m) => m.id === next.model);
+  if (model) {
+    if (next.engine !== model.engine) next.engine = model.engine as Config["engine"];
+    return;
+  }
+
+  const engineModel = installed.find((m) => m.engine === next.engine);
+  const fallback = engineModel ?? installed.find((m) => m.default_active) ?? installed[0];
+  next.engine = fallback.engine as Config["engine"];
+  next.model = fallback.id;
+}
+
+function onEngineChanged() {
+  if (config.value) syncEngineAndModel(config.value, true);
+}
+
+function onModelChanged() {
+  if (config.value) syncEngineAndModel(config.value);
+}
+
 const selectedEntry = computed<DirEntry | null>(() => {
   if (!listing.value || !selectedPath.value) return null;
   return listing.value.entries.find((e) => e.path === selectedPath.value) ?? null;
@@ -119,6 +171,7 @@ const untranscribedEntries = computed<DirEntry[]>(() =>
 async function reload() {
   config.value = await api.loadConfig();
   models.value = await api.listModels();
+  syncEngineAndModel(config.value);
   if (!listing.value) {
     const start = config.value.last_dir || (await api.defaultDir());
     await openDir(start);
@@ -879,8 +932,12 @@ const fieldClass =
                     class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
                     >Engine</span
                   >
-                  <select v-model="config.engine" :class="[fieldClass, 'mt-unit']">
-                    <option v-for="o in engineOptions" :key="o.value" :value="o.value">
+                  <select
+                    v-model="config.engine"
+                    :class="[fieldClass, 'mt-unit']"
+                    @change="onEngineChanged"
+                  >
+                    <option v-for="o in availableEngineOptions" :key="o.value" :value="o.value">
                       {{ o.label }}
                     </option>
                   </select>
@@ -891,11 +948,15 @@ const fieldClass =
                     class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
                     >Model</span
                   >
-                  <select v-model="config.model" :class="[fieldClass, 'mt-unit']">
+                  <select
+                    v-model="config.model"
+                    :class="[fieldClass, 'mt-unit']"
+                    @change="onModelChanged"
+                  >
                     <option v-if="!asrModels.length" :value="config.model" disabled>
                       No installed models — open Models tab
                     </option>
-                    <option v-for="m in asrModels" :key="m.id" :value="m.id">
+                    <option v-for="m in compatibleAsrModels" :key="m.id" :value="m.id">
                       {{ m.display_name }}
                     </option>
                   </select>

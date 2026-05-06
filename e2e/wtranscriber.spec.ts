@@ -133,6 +133,7 @@ async function installTauriMocks(page: Page) {
               {
                 id: "sherpa-whisper-turbo",
                 family: "asr",
+                engine: "whisper-onnx",
                 display_name: "Whisper large-v3-turbo (ONNX, multilingual)",
                 description: "Best default ASR model",
                 size_bytes: 1_036_613_791,
@@ -140,8 +141,19 @@ async function installTauriMocks(page: Page) {
                 status: "installed",
               },
               {
+                id: "sherpa-zipformer-en",
+                family: "asr",
+                engine: "zipformer",
+                display_name: "Zipformer English",
+                description: "Fast English transducer",
+                size_bytes: 125_000_000,
+                default_active: false,
+                status: "installed",
+              },
+              {
                 id: "nemo-sortformer-v2",
                 family: "diarizer",
+                engine: "nemo-sortformer",
                 display_name: "NVIDIA NeMo Sortformer 4-speaker v2",
                 description: "GPU-first NVIDIA NeMo diarization",
                 size_bytes: 0,
@@ -151,6 +163,7 @@ async function installTauriMocks(page: Page) {
               {
                 id: "sherpa-pyannote-titanet",
                 family: "diarizer",
+                engine: "sherpa",
                 display_name: "pyannote-3.0 segmentation + TitaNet-Large",
                 description: "Fallback diarizer",
                 size_bytes: 107_398_406,
@@ -238,6 +251,20 @@ test("loads the transcribe workspace with GPU defaults", async ({ page }) => {
   await expect(page.locator("select").filter({ hasText: "CUDA" })).toHaveValue("cuda");
   await expect(page.getByText("Diarize speakers")).toBeVisible();
   await expect(page.getByRole("button", { name: "Transcribe all" })).toBeEnabled();
+});
+
+test("keeps engine and model selections compatible", async ({ page }) => {
+  const engine = page.locator("label").filter({ hasText: "Engine" }).locator("select");
+  const model = page.locator("label").filter({ hasText: "Model" }).locator("select");
+
+  await expect(engine).toHaveValue("whisper-onnx");
+  await expect(model).toHaveValue("sherpa-whisper-turbo");
+  await engine.selectOption("zipformer");
+  await expect(model).toHaveValue("sherpa-zipformer-en");
+  await expect(model.getByRole("option", { name: "Whisper large-v3-turbo" })).toHaveCount(0);
+  await engine.selectOption("whisper-onnx");
+  await expect(model).toHaveValue("sherpa-whisper-turbo");
+  await expect(model.getByRole("option", { name: "Zipformer English" })).toHaveCount(0);
 });
 
 test("runs the folder queue and updates rows", async ({ page }) => {

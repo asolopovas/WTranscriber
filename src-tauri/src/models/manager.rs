@@ -25,6 +25,7 @@ pub enum ModelStatus {
 pub struct ModelInfo {
     pub id: String,
     pub family: Family,
+    pub engine: String,
     pub display_name: String,
     pub description: String,
     pub size_bytes: u64,
@@ -75,6 +76,7 @@ impl Manager {
         Ok(ModelInfo {
             id: entry.id.clone(),
             family: entry.family,
+            engine: entry.engine.clone(),
             display_name: entry.display_name.clone(),
             description: entry.description.clone(),
             size_bytes: entry.size_bytes,
