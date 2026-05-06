@@ -30,6 +30,9 @@ pub fn run() {
             commands::install_model,
             commands::probe_audio,
             commands::transcribe_file,
+            commands::history_list,
+            commands::history_load,
+            commands::history_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -48,6 +48,20 @@ export interface Word {
   confidence: number;
 }
 
+export interface CacheEntry {
+  key: string;
+  source_path: string;
+  source_name: string;
+  model: string;
+  language: string;
+  speakers: number;
+  no_diarize: boolean;
+  utterances: number;
+  duration_ms: number;
+  created_at: string;
+  size_bytes: number;
+}
+
 export interface Transcript {
   model: string;
   language: string;

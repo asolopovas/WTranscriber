@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     error::Result,
     models::{self, FileProgress, ModelInfo, ModelStatus},
-    transcriber::{self, Job, Transcript},
+    transcriber::{self, CacheEntry, Job, Transcript},
 };
 
 #[tauri::command]
@@ -59,4 +59,19 @@ pub fn probe_audio(path: PathBuf) -> Option<u64> {
 pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcript> {
     let job = Job { input, config };
     transcriber::run(&job).await
+}
+
+#[tauri::command]
+pub fn history_list() -> Vec<CacheEntry> {
+    transcriber::cache_list()
+}
+
+#[tauri::command]
+pub fn history_load(key: String) -> Result<Option<Transcript>> {
+    transcriber::cache::load(&key)
+}
+
+#[tauri::command]
+pub fn history_delete(key: String) -> Result<()> {
+    transcriber::cache::invalidate(&key)
 }

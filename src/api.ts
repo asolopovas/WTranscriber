@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { Config, FileProgress, ModelInfo, ModelStatus, Transcript } from "./types";
+import type {
+  CacheEntry,
+  Config,
+  FileProgress,
+  ModelInfo,
+  ModelStatus,
+  Transcript,
+} from "./types";
 
 export const api = {
   appVersion: () => invoke<string>("app_version"),
@@ -12,6 +19,9 @@ export const api = {
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
+  historyList: () => invoke<CacheEntry[]>("history_list"),
+  historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
+  historyDelete: (key: string) => invoke<void>("history_delete", { key }),
 };
 
 export const events = {

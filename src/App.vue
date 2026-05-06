@@ -4,8 +4,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
 import type { Config, Transcript } from "./types";
 import ModelManager from "./components/ModelManager.vue";
+import History from "./components/History.vue";
 
-const tab = ref<"transcribe" | "models">("transcribe");
+const tab = ref<"transcribe" | "models" | "history">("transcribe");
 
 const version = ref("");
 const config = ref<Config | null>(null);
@@ -48,12 +49,17 @@ function fmt(ms: number): string {
       <h1>WTranscriber</h1>
       <nav>
         <button :class="{ active: tab === 'transcribe' }" @click="tab = 'transcribe'">Transcribe</button>
+        <button :class="{ active: tab === 'history' }" @click="tab = 'history'">History</button>
         <button :class="{ active: tab === 'models' }" @click="tab = 'models'">Models</button>
       </nav>
       <span class="version">v{{ version }}</span>
     </header>
 
     <ModelManager v-if="tab === 'models'" />
+    <History
+      v-else-if="tab === 'history'"
+      @open="(t) => { transcript = t; tab = 'transcribe'; }"
+    />
     <template v-else>
 
     <section class="controls">
