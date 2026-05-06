@@ -8,7 +8,7 @@ use crate::{
     runtimes::{extract, locate_bin_dir, move_or_copy_dir},
 };
 
-pub const VERSION: &str = "v1.13.0";
+pub const VERSION: &str = include_str!("../../sherpa-version.txt").trim_ascii_end();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Variant {

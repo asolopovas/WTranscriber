@@ -1,6 +1,9 @@
 use std::{
     path::PathBuf,
-    sync::{Mutex, MutexGuard, OnceLock},
+    sync::{
+        Mutex, MutexGuard, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use sherpa_onnx::{
@@ -29,6 +32,7 @@ pub struct Loaded {
 }
 
 static CACHE: OnceLock<Mutex<Option<Loaded>>> = OnceLock::new();
+static CUDA_DISABLED: AtomicBool = AtomicBool::new(false);
 
 fn cache() -> &'static Mutex<Option<Loaded>> {
     CACHE.get_or_init(|| Mutex::new(None))
@@ -68,40 +72,63 @@ pub fn key_for(config: &Config) -> CacheKey {
     }
 }
 
-fn provider(device: Device) -> &'static str {
+fn provider_for(device: Device) -> &'static str {
+    if !cfg!(feature = "cuda") || CUDA_DISABLED.load(Ordering::Relaxed) {
+        return "cpu";
+    }
     match device {
         Device::Cuda => "cuda",
         Device::Cpu => "cpu",
     }
 }
 
+fn build_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
+    match config.engine {
+        Engine::WhisperOnnx => whisper_config(config, provider),
+        Engine::Zipformer | Engine::Parakeet => transducer_config(config, provider),
+        Engine::NemoCtc => nemo_ctc_config(config, provider),
+        Engine::Canary => Err(Error::Config(
+            "canary engine in-process path not yet implemented".into(),
+        )),
+    }
+}
+
 fn build(config: &Config) -> Result<OfflineRecognizer> {
     let t0 = std::time::Instant::now();
-    let cfg = match config.engine {
-        Engine::WhisperOnnx => whisper_config(config)?,
-        Engine::Zipformer => transducer_config(config, "zipformer")?,
-        Engine::Parakeet => transducer_config(config, "parakeet")?,
-        Engine::NemoCtc => nemo_ctc_config(config)?,
-        Engine::Canary => {
-            return Err(Error::Config(
-                "canary engine in-process path not yet implemented".into(),
-            ));
-        }
-    };
+    let provider = provider_for(config.device);
     logfile::info(&format!(
         "engine init: model={} engine={} device={} threads={}",
         config.model,
         config.engine.as_str(),
-        provider(config.device),
+        provider,
         config.threads,
     ));
-    let recognizer = OfflineRecognizer::create(&cfg)
-        .ok_or_else(|| Error::Transcribe("OfflineRecognizer::create returned None".into()))?;
-    logfile::info(&format!(
-        "engine ready in {:.2}s",
-        t0.elapsed().as_secs_f64()
-    ));
-    Ok(recognizer)
+    let cfg = build_config(config, provider)?;
+    if let Some(rec) = OfflineRecognizer::create(&cfg) {
+        logfile::info(&format!(
+            "engine ready in {:.2}s",
+            t0.elapsed().as_secs_f64()
+        ));
+        return Ok(rec);
+    }
+    if provider == "cuda" && !CUDA_DISABLED.swap(true, Ordering::Relaxed) {
+        logfile::warn(
+            "OfflineRecognizer::create failed with provider=cuda; falling back to CPU. \
+             Verify CUDA 12.x runtime, cuDNN 9, and the prebuilt sherpa-onnx CUDA archive \
+             (run `just sherpa-cuda` and `just cudnn`).",
+        );
+        let cfg = build_config(config, "cpu")?;
+        if let Some(rec) = OfflineRecognizer::create(&cfg) {
+            logfile::info(&format!(
+                "engine ready (cpu fallback) in {:.2}s",
+                t0.elapsed().as_secs_f64()
+            ));
+            return Ok(rec);
+        }
+    }
+    Err(Error::Transcribe(
+        "OfflineRecognizer::create returned None".into(),
+    ))
 }
 
 fn model_dir(model_id: &str) -> Result<PathBuf> {
@@ -138,12 +165,15 @@ fn locate_three(
     )))
 }
 
-fn whisper_config(config: &Config) -> Result<OfflineRecognizerConfig> {
+fn whisper_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
-    let [encoder, decoder, tokens] =
-        locate_three(&dir, &config.model, &["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"])?;
-    let language = (config.language != "auto" && !config.language.is_empty())
-        .then(|| config.language.clone());
+    let [encoder, decoder, tokens] = locate_three(
+        &dir,
+        &config.model,
+        &["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"],
+    )?;
+    let language =
+        (config.language != "auto" && !config.language.is_empty()).then(|| config.language.clone());
     let mut rc = OfflineRecognizerConfig::default();
     rc.model_config = OfflineModelConfig {
         whisper: OfflineWhisperModelConfig {
@@ -156,7 +186,7 @@ fn whisper_config(config: &Config) -> Result<OfflineRecognizerConfig> {
             enable_segment_timestamps: false,
         },
         tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider(config.device).into()),
+        provider: Some(provider.into()),
         num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
         debug: false,
         ..OfflineModelConfig::default()
@@ -164,10 +194,13 @@ fn whisper_config(config: &Config) -> Result<OfflineRecognizerConfig> {
     Ok(rc)
 }
 
-fn transducer_config(config: &Config, _kind: &str) -> Result<OfflineRecognizerConfig> {
+fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
-    let [encoder, decoder, joiner] =
-        locate_three(&dir, &config.model, &["encoder.onnx", "decoder.onnx", "joiner.onnx"])?;
+    let [encoder, decoder, joiner] = locate_three(
+        &dir,
+        &config.model,
+        &["encoder.onnx", "decoder.onnx", "joiner.onnx"],
+    )?;
     let tokens = dir.join("tokens.txt");
     if !tokens.exists() {
         return Err(Error::Transcribe(format!(
@@ -183,7 +216,7 @@ fn transducer_config(config: &Config, _kind: &str) -> Result<OfflineRecognizerCo
             joiner: Some(joiner.to_string_lossy().into_owned()),
         },
         tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider(config.device).into()),
+        provider: Some(provider.into()),
         num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
         debug: false,
         ..OfflineModelConfig::default()
@@ -191,7 +224,7 @@ fn transducer_config(config: &Config, _kind: &str) -> Result<OfflineRecognizerCo
     Ok(rc)
 }
 
-fn nemo_ctc_config(config: &Config) -> Result<OfflineRecognizerConfig> {
+fn nemo_ctc_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
     let model = dir.join("model.onnx");
     let tokens = dir.join("tokens.txt");
@@ -207,7 +240,7 @@ fn nemo_ctc_config(config: &Config) -> Result<OfflineRecognizerConfig> {
             model: Some(model.to_string_lossy().into_owned()),
         },
         tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider(config.device).into()),
+        provider: Some(provider.into()),
         num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
         debug: false,
         ..OfflineModelConfig::default()

@@ -22,7 +22,7 @@
 
 [CmdletBinding()]
 param(
-  [string]$Version = 'v1.13.0',
+  [string]$Version,
   [switch]$Force
 )
 
@@ -37,14 +37,26 @@ if ($IsLinux -or $IsMacOS) {
   exit 1
 }
 
+if (-not $Version) {
+  $versionFile = Join-Path $PSScriptRoot '..\src-tauri\sherpa-version.txt'
+  if (-not (Test-Path $versionFile)) {
+    Write-Error "Version not provided and $versionFile not found."
+    exit 1
+  }
+  $Version = (Get-Content $versionFile -Raw).Trim()
+}
+
 $stem        = "sherpa-onnx-$Version-cuda-12.x-cudnn-9.x-win-x64-cuda"
 $installRoot = Join-Path $env:LOCALAPPDATA "Programs\sherpa-onnx-cuda\$Version"
-$libDir      = Join-Path $installRoot "$stem\lib"
+$extractDir  = Join-Path $installRoot $stem
+$libDir      = Join-Path $extractDir 'lib'
+$binDir      = Join-Path $extractDir 'bin'
 $cacheDir    = Join-Path $env:APPDATA 'asolopovas\wtranscriber\data\cache\sherpa-onnx-cuda'
 $archive     = "$stem.tar.bz2"
 $archiveUrl  = "https://github.com/k2-fsa/sherpa-onnx/releases/download/$Version/$archive"
 $archivePath = Join-Path $cacheDir $archive
 $libPath     = Join-Path $libDir 'sherpa-onnx-c-api.lib'
+$dllPath     = Join-Path $binDir 'sherpa-onnx-c-api.dll'
 
 if ((Test-Path $libPath) -and -not $Force) {
   Write-Ok "sherpa-onnx CUDA already installed at $libPath"
@@ -74,7 +86,12 @@ if ((Test-Path $libPath) -and -not $Force) {
     Write-Error "Installation incomplete: $libPath missing"
     exit 1
   }
+  if (-not (Test-Path $dllPath)) {
+    Write-Error "Installation incomplete: $dllPath missing"
+    exit 1
+  }
   Write-Ok "Installed: $libPath"
+  Write-Ok "Installed: $dllPath"
 }
 
 Write-Step 'Setting SHERPA_ONNX_LIB_DIR'
@@ -85,12 +102,15 @@ Write-Step 'Updating user PATH'
 $currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not $currentPath) { $currentPath = '' }
 $entries = $currentPath -split ';' | Where-Object { $_ -ne '' }
-if ($entries -contains $libDir) {
+$toAdd = @($binDir) | Where-Object { $entries -notcontains $_ }
+if (-not $toAdd) {
   Write-Ok 'Already on user PATH.'
 } else {
-  $newPath = if ($currentPath -eq '') { $libDir } else { "$currentPath;$libDir" }
+  $newPath = (@($entries) + $toAdd) -join ';'
   [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-  Write-Ok "Added to user PATH: $libDir"
+  foreach ($p in $toAdd) { Write-Ok "Added to user PATH: $p" }
 }
 
 Write-Step 'Done. Open a new shell before running `just build-cuda`.'
+Write-Ok 'Reminder: CUDA 12.x runtime (cudart64_12.dll) and cuDNN 9 must also be installed.'
+Write-Ok '         Run `just cudnn` for cuDNN. Install the CUDA Toolkit from https://developer.nvidia.com/cuda-downloads.'

@@ -31,6 +31,23 @@ just test         # cargo test
 
 Run `just` with no arguments to list all recipes.
 
+## CUDA build (Windows, optional)
+
+The default build links sherpa-onnx statically and runs on CPU. To enable
+in-process GPU acceleration:
+
+```powershell
+just sherpa-cuda     # downloads prebuilt sherpa-onnx CUDA archive, sets SHERPA_ONNX_LIB_DIR + PATH
+just cudnn           # installs cuDNN 9 for CUDA 12
+just build-cuda      # tauri build --no-default-features --features cuda
+```
+
+Requires NVIDIA CUDA 12.x runtime (`cudart64_12.dll`) installed system-wide
+— get it from the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads).
+The sidecar `sherpa-onnx-offline.exe` runs CUDA independently of the build
+feature; toggling Device → GPU in the UI will use the sidecar even on a
+default static build, with automatic CPU fallback if CUDA fails to load.
+
 ## CLI
 
 ```bash
