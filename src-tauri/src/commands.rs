@@ -9,6 +9,7 @@ use crate::{
     config::Config,
     error::Result,
     models::{self, FileProgress, ModelInfo, ModelStatus},
+    namer::{self, Suggestion},
     transcriber::{self, CacheEntry, Job, Transcript},
 };
 
@@ -74,4 +75,11 @@ pub fn history_load(key: String) -> Result<Option<Transcript>> {
 #[tauri::command]
 pub fn history_delete(key: String) -> Result<()> {
     transcriber::cache::invalidate(&key)
+}
+
+#[tauri::command]
+pub async fn suggest_filename(transcript: Transcript) -> Result<Suggestion> {
+    tokio::task::spawn_blocking(move || namer::suggest(&transcript, chrono::Local::now()))
+        .await
+        .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }

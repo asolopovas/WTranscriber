@@ -6,6 +6,7 @@ import type {
   FileProgress,
   ModelInfo,
   ModelStatus,
+  Suggestion,
   Transcript,
 } from "./types";
 
@@ -22,6 +23,8 @@ export const api = {
   historyList: () => invoke<CacheEntry[]>("history_list"),
   historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
   historyDelete: (key: string) => invoke<void>("history_delete", { key }),
+  suggestFilename: (transcript: Transcript) =>
+    invoke<Suggestion>("suggest_filename", { transcript }),
 };
 
 export const events = {

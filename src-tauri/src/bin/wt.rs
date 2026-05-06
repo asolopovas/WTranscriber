@@ -6,8 +6,9 @@ use std::{
 };
 
 use clap::{Parser, Subcommand, ValueEnum};
-use wtranscriber_lib::api::{
-    self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript,
+use wtranscriber_lib::{
+    api::{self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript},
+    namer,
 };
 
 #[derive(Parser, Debug)]
@@ -46,6 +47,9 @@ struct Cli {
 
     #[arg(long)]
     no_cache: bool,
+
+    #[arg(long)]
+    rename: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -225,14 +229,14 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
     }
 
     for input in cli.inputs {
-        if let Err(e) = transcribe_one(&input, &config, cli.no_cache).await {
+        if let Err(e) = transcribe_one(&input, &config, cli.no_cache, cli.rename).await {
             eprintln!("{}: {e}", input.display());
         }
     }
     Ok(())
 }
 
-async fn transcribe_one(input: &Path, config: &Config, no_cache: bool) -> Result<()> {
+async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: bool) -> Result<()> {
     let canonical = std::path::absolute(input)?;
     if !canonical.exists() {
         return Err(api::Error::Config(format!(
@@ -264,6 +268,24 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool) -> Result
     let dst = output_path(&canonical, &config.model);
     write_transcript(&dst, &transcript)?;
     println!("{}", dst.display());
+
+    if rename
+        && let Err(e) = auto_rename(&canonical, &transcript).await
+    {
+        eprintln!("auto-rename failed: {e}");
+    }
+    Ok(())
+}
+
+async fn auto_rename(audio: &Path, transcript: &Transcript) -> Result<()> {
+    let t = transcript.clone();
+    let suggestion = tokio::task::spawn_blocking(move || {
+        namer::suggest(&t, chrono::Local::now())
+    })
+    .await
+    .map_err(|e| api::Error::Transcribe(format!("namer task: {e}")))??;
+    let target = namer::rename_with_suggestion(audio, &suggestion)?;
+    eprintln!("renamed: {} -> {}", audio.display(), target.display());
     Ok(())
 }
 

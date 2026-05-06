@@ -107,6 +107,22 @@ fn default_catalog() -> Vec<Entry> {
             ],
         },
         Entry {
+            id: "qwen3-0.6b-q4km".into(),
+            family: Family::Llm,
+            engine: "llama-cli".into(),
+            display_name: "Qwen3 0.6B (Q4_K_M, namer)".into(),
+            description: "Compact GGUF used by the auto-rename feature.".into(),
+            languages: Vec::new(),
+            size_bytes: 396_705_472,
+            default_active: true,
+            files: vec![FileSpec {
+                url: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf".into(),
+                rel_path: "qwen3-0.6b-q4km.gguf".into(),
+                size_bytes: 396_705_472,
+                sha256: "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a".into(),
+            }],
+        },
+        Entry {
             id: "sherpa-pyannote-titanet".into(),
             family: Family::Diarizer,
             engine: "sherpa".into(),

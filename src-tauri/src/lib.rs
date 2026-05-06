@@ -4,7 +4,9 @@ mod config;
 mod diarizer;
 mod engine;
 mod error;
+mod llm;
 mod models;
+pub mod namer;
 mod paths;
 mod transcriber;
 
@@ -35,6 +37,7 @@ pub fn run() {
             commands::history_list,
             commands::history_load,
             commands::history_delete,
+            commands::suggest_filename,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

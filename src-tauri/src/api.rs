@@ -2,6 +2,7 @@ pub use crate::{
     config::{Config, Device, Engine},
     error::{Error, Result},
     models::{Family, FileProgress, ModelInfo, ModelStatus, manager},
+    namer::Suggestion,
     transcriber::{
         CacheEntry, Transcript, Utterance, Word,
         cache::{self as transcript_cache},

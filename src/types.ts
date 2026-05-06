@@ -70,6 +70,11 @@ export interface CacheEntry {
   size_bytes: number;
 }
 
+export interface Suggestion {
+  topic: string;
+  stamp: string;
+}
+
 export interface Transcript {
   model: string;
   language: string;
