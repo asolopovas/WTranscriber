@@ -24,11 +24,6 @@ fn install_cuda_dlls() {
         return;
     };
 
-    println!(
-        "cargo:warning=cuda-dll-install: src={} dst={}",
-        src_dir.display(),
-        dst_dir.display()
-    );
     println!("cargo:rerun-if-changed={}", src_dir.display());
     println!("cargo:rerun-if-env-changed=WT_CUDA_DLL_SRC");
 
@@ -49,12 +44,16 @@ fn install_cuda_dlls() {
             continue;
         }
         match std::fs::copy(&src, &dst) {
-            Ok(_) => println!("cargo:warning=cuda-dll-install: copied {name}"),
+            Ok(_) => {}
             Err(e) => {
                 if same_file(&src, &dst) {
                     continue;
                 }
-                println!("cargo:warning=cuda-dll-install: copy {name} failed: {e}");
+                println!(
+                    "cargo:warning=cuda-dll-install: copy {name} failed: {e} (src={}, dst={})",
+                    src.display(),
+                    dst.display()
+                );
             }
         }
     }
