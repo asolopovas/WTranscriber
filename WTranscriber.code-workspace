@@ -1,0 +1,186 @@
+{
+  "folders": [
+    {
+      "name": "WTranscriber",
+      "path": "."
+    },
+    {
+      "name": "src-tauri",
+      "path": "src-tauri"
+    }
+  ],
+  "settings": {
+    "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"],
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.extraArgs": ["--", "-D", "warnings"],
+    "[rust]": {
+      "editor.defaultFormatter": "rust-lang.rust-analyzer",
+      "editor.formatOnSave": true
+    },
+    "[vue]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
+      "editor.formatOnSave": true
+    },
+    "[json]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/target": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/target": true,
+      "**/bun.lock": true
+    },
+    "terminal.integrated.defaultProfile.windows": "PowerShell"
+  },
+  "extensions": {
+    "recommendations": [
+      "rust-lang.rust-analyzer",
+      "tauri-apps.tauri-vscode",
+      "vue.volar",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "skellock.just",
+      "tamasfe.even-better-toml"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "setup",
+        "detail": "bun install",
+        "type": "shell",
+        "command": "just setup",
+        "problemMatcher": []
+      },
+      {
+        "label": "dev",
+        "detail": "Run Tauri app in dev mode",
+        "type": "shell",
+        "command": "just dev",
+        "isBackground": true,
+        "group": { "kind": "build", "isDefault": true },
+        "problemMatcher": []
+      },
+      {
+        "label": "build",
+        "detail": "Production bundle",
+        "type": "shell",
+        "command": "just build",
+        "group": "build",
+        "problemMatcher": []
+      },
+      {
+        "label": "build-cli",
+        "detail": "Build headless wt CLI",
+        "type": "shell",
+        "command": "just build-cli",
+        "group": "build",
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "preview",
+        "type": "shell",
+        "command": "just preview",
+        "problemMatcher": []
+      },
+      {
+        "label": "typecheck",
+        "type": "shell",
+        "command": "just typecheck",
+        "problemMatcher": []
+      },
+      {
+        "label": "fmt",
+        "detail": "Format Rust + TS/Vue",
+        "type": "shell",
+        "command": "just fmt",
+        "problemMatcher": []
+      },
+      {
+        "label": "fmt-check",
+        "type": "shell",
+        "command": "just fmt-check",
+        "problemMatcher": []
+      },
+      {
+        "label": "lint",
+        "detail": "clippy -D warnings + vue-tsc",
+        "type": "shell",
+        "command": "just lint",
+        "group": "test",
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "test",
+        "type": "shell",
+        "command": "just test",
+        "group": { "kind": "test", "isDefault": true },
+        "problemMatcher": ["$rustc"]
+      },
+      {
+        "label": "clean",
+        "type": "shell",
+        "command": "just clean",
+        "problemMatcher": []
+      },
+      {
+        "label": "icons",
+        "detail": "Regenerate icon set",
+        "type": "shell",
+        "command": "just icons",
+        "problemMatcher": []
+      },
+      {
+        "label": "check (fmt-check + lint + test)",
+        "dependsOrder": "sequence",
+        "dependsOn": ["fmt-check", "lint", "test"],
+        "group": "test",
+        "problemMatcher": []
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug Tauri (dev)",
+        "type": "lldb",
+        "request": "launch",
+        "cargo": {
+          "args": [
+            "build",
+            "--manifest-path=src-tauri/Cargo.toml",
+            "--no-default-features"
+          ]
+        },
+        "preLaunchTask": "dev",
+        "cwd": "${workspaceFolder:WTranscriber}"
+      },
+      {
+        "name": "Debug wt CLI",
+        "type": "lldb",
+        "request": "launch",
+        "cargo": {
+          "args": [
+            "build",
+            "--manifest-path=src-tauri/Cargo.toml",
+            "--bin=wt"
+          ],
+          "filter": { "name": "wt", "kind": "bin" }
+        },
+        "args": [],
+        "cwd": "${workspaceFolder:WTranscriber}"
+      }
+    ]
+  }
+}
