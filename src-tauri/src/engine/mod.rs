@@ -86,11 +86,22 @@ fn run_in_process(
     let t0 = std::time::Instant::now();
     let stream = loaded.recognizer.create_stream();
     let sample_rate = i32::try_from(crate::audio::WHISPER_SAMPLE_RATE).unwrap_or(16_000);
+    crate::logfile::info(&format!(
+        "in-proc decode: feeding {} samples ({:.1}s) at {sample_rate} Hz",
+        samples.len(),
+        audio_dur_sec,
+    ));
     stream.accept_waveform(sample_rate, samples);
     if cancelled() {
         return Err(Error::Cancelled);
     }
+    let decode_t0 = std::time::Instant::now();
+    crate::logfile::info("in-proc decode: starting recognizer.decode()");
     loaded.recognizer.decode(&stream);
+    crate::logfile::info(&format!(
+        "in-proc decode: recognizer.decode() returned in {:.2}s",
+        decode_t0.elapsed().as_secs_f64(),
+    ));
     if cancelled() {
         return Err(Error::Cancelled);
     }

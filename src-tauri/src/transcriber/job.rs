@@ -162,6 +162,13 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             let mut sub_progress = |_pct: f64| {};
             let cancelled = || sink.is_cancelled();
             let region_dur_sec = region.end_sec - region.start_sec;
+            logfile::info(&format!(
+                "slab #{slab_index} start {}-{} ({:.1}s audio, {} samples)",
+                format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
+                format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
+                region_dur_sec,
+                region.samples.len(),
+            ));
             let t0 = std::time::Instant::now();
             let (mut segs, slab_detected, _rtf) = engine::run(
                 &region.samples,
