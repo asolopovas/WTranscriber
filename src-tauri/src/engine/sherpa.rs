@@ -157,12 +157,19 @@ fn build_command(bin: &Path) -> Command {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut cmd = Command::new(bin);
     cmd.creation_flags(CREATE_NO_WINDOW);
+    if let Some(path) = crate::runtimes::cudnn::augmented_path() {
+        cmd.env("PATH", path);
+    }
     cmd
 }
 
 #[cfg(not(windows))]
 fn build_command(bin: &Path) -> Command {
-    Command::new(bin)
+    let mut cmd = Command::new(bin);
+    if let Some(path) = crate::runtimes::cudnn::augmented_path() {
+        cmd.env("PATH", path);
+    }
+    cmd
 }
 
 pub fn parse_json(stdout: &str) -> Result<SherpaResult> {

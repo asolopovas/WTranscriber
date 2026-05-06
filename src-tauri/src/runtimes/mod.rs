@@ -1,3 +1,4 @@
+pub mod cudnn;
 pub mod llama;
 pub mod sherpa;
 
@@ -8,6 +9,7 @@ use std::{
 
 use crate::error::{Error, Result};
 
+pub use cudnn::{ensure as ensure_cudnn, is_installed as cudnn_installed, supported as cudnn_supported};
 pub use llama::{ensure as ensure_llama, is_installed as llama_installed};
 pub use sherpa::{
     Variant as SherpaVariant, ensure as ensure_sherpa, is_installed as sherpa_installed,

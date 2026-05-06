@@ -30,7 +30,32 @@ async fn ensure_runtimes(app: &tauri::AppHandle) {
     let cfg = config::Config::load().unwrap_or_default();
     let variant = runtimes::SherpaVariant::from_device(cfg.device);
     install_sherpa(app, variant).await;
+    if matches!(variant, runtimes::SherpaVariant::Cuda) && runtimes::cudnn_supported() {
+        install_cudnn(app).await;
+    }
     install_llama(app).await;
+}
+
+async fn install_cudnn(app: &tauri::AppHandle) {
+    let id = "cudnn".to_string();
+    if runtimes::cudnn_installed() {
+        logfile::info(&format!("runtime {id} already installed"));
+    } else {
+        logfile::info(&format!("runtime install {id} starting (~700 MB, one-time)"));
+        let mut on_progress = progress_emitter(app, id.clone());
+        match runtimes::ensure_cudnn(&mut on_progress).await {
+            Ok(dll) => {
+                logfile::info(&format!("runtime install {id} ok ({})", dll.display()));
+                let _ = app.emit("runtime:done", &id);
+            }
+            Err(e) => {
+                logfile::error(&format!("runtime install {id}: {e}"));
+                let _ = app.emit("runtime:error", &id);
+                return;
+            }
+        }
+    }
+    runtimes::cudnn::ensure_on_path();
 }
 
 async fn install_sherpa(app: &tauri::AppHandle, variant: runtimes::SherpaVariant) {

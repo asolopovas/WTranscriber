@@ -1,15 +1,15 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Install NVIDIA cuDNN 9 (for CUDA 12) DLLs alongside the sherpa-onnx CUDA runtime.
+  Install NVIDIA cuDNN 9 (for CUDA 12) globally on Windows and add it to user PATH.
 
 .DESCRIPTION
-  The sherpa-onnx CUDA build is linked against cuDNN 9.x but does not bundle
-  cudnn64_9.dll. This script downloads the public cuDNN 9 redistributable
-  archive from NVIDIA and copies its bin DLLs next to sherpa-onnx-offline.exe
-  inside the WTranscriber data directory.
+  WTranscriber's auto-installer normally fetches cuDNN on first start when
+  device=cuda. This script does the same thing manually, useful if you want
+  to install cuDNN ahead of time or repair a broken install.
 
-  The downloaded archive is cached so re-running is cheap.
+  Installs to:  %LOCALAPPDATA%\Programs\cuDNN\v9
+  Adds to user PATH:  %LOCALAPPDATA%\Programs\cuDNN\v9\bin
 
 .PARAMETER Version
   cuDNN version to install. Defaults to 9.21.1.3.
@@ -33,83 +33,72 @@ $ProgressPreference = 'Continue'
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
-function Write-Warn2($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
 
 if ($IsLinux -or $IsMacOS) {
-  Write-Error 'This script is Windows-only. cuDNN on Linux/macOS is installed via your package manager.'
+  Write-Error 'This script is Windows-only.'
   exit 1
 }
 
-$dataRoot   = Join-Path $env:APPDATA 'asolopovas\wtranscriber\data'
-$cudaBin    = Join-Path $dataRoot 'third_party\sherpa-onnx\v1.13.0-cuda\bin'
-$cacheDir   = Join-Path $dataRoot 'cache\cudnn'
-$archive    = "cudnn-windows-x86_64-${Version}_cuda12-archive.zip"
-$archiveUrl = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/$archive"
+$installRoot = Join-Path $env:LOCALAPPDATA 'Programs\cuDNN\v9'
+$installBin  = Join-Path $installRoot 'bin'
+$cacheDir    = Join-Path $env:APPDATA 'asolopovas\wtranscriber\data\cache\cudnn'
+$archive     = "cudnn-windows-x86_64-${Version}_cuda12-archive.zip"
+$archiveUrl  = "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/$archive"
 $archivePath = Join-Path $cacheDir $archive
-$extractDir  = Join-Path $cacheDir ([IO.Path]::GetFileNameWithoutExtension($archive))
+$stagingDir  = Join-Path $cacheDir 'staging'
+$dllPath     = Join-Path $installBin 'cudnn64_9.dll'
 
-if (-not (Test-Path $cudaBin)) {
-  Write-Error @"
-sherpa-onnx CUDA runtime not found at:
-  $cudaBin
-
-Run the WTranscriber app once with device=cuda so the runtime is auto-installed,
-then re-run this script.
-"@
-  exit 1
-}
-
-$cudnnTarget = Join-Path $cudaBin 'cudnn64_9.dll'
-if ((Test-Path $cudnnTarget) -and -not $Force) {
-  Write-Ok "cuDNN already installed at $cudnnTarget"
+if ((Test-Path $dllPath) -and -not $Force) {
+  Write-Ok "cuDNN already installed at $dllPath"
   Write-Ok 'Use -Force to reinstall.'
-  exit 0
-}
+} else {
+  New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
 
-New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
-
-if (-not (Test-Path $archivePath)) {
-  Write-Step "Downloading $archive (~700 MB)"
-  Write-Host "    $archiveUrl"
-  try {
+  if (-not (Test-Path $archivePath)) {
+    Write-Step "Downloading $archive (~700 MB)"
+    Write-Host "    $archiveUrl"
     Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
-  } catch {
-    Write-Error "Download failed: $($_.Exception.Message)`nVerify version $Version exists at:`nhttps://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/"
+    Write-Ok "Cached: $archivePath"
+  } else {
+    Write-Ok "Using cached archive: $archivePath"
+  }
+
+  Write-Step 'Extracting'
+  if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
+  Expand-Archive -Path $archivePath -DestinationPath $stagingDir -Force
+
+  $srcRoot = Get-ChildItem $stagingDir -Directory |
+    Where-Object { Test-Path (Join-Path $_.FullName 'bin\cudnn64_9.dll') } |
+    Select-Object -First 1
+  if ($null -eq $srcRoot) {
+    Write-Error "Archive layout unexpected: no bin/cudnn64_9.dll under $stagingDir"
     exit 1
   }
-  Write-Ok "Cached: $archivePath"
+
+  Write-Step "Installing to $installRoot"
+  if (Test-Path $installRoot) { Remove-Item -Recurse -Force $installRoot }
+  New-Item -ItemType Directory -Path (Split-Path $installRoot -Parent) -Force | Out-Null
+  Move-Item -Path $srcRoot.FullName -Destination $installRoot
+  Remove-Item -Recurse -Force $stagingDir
+
+  if (-not (Test-Path $dllPath)) {
+    Write-Error "Installation incomplete: $dllPath missing"
+    exit 1
+  }
+  Write-Ok "Installed: $dllPath"
+}
+
+Write-Step 'Updating user PATH'
+$currentPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (-not $currentPath) { $currentPath = '' }
+$entries = $currentPath -split ';' | Where-Object { $_ -ne '' }
+if ($entries -contains $installBin) {
+  Write-Ok 'Already on user PATH.'
 } else {
-  Write-Ok "Using cached archive: $archivePath"
-}
-
-Write-Step 'Extracting archive'
-if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
-Expand-Archive -Path $archivePath -DestinationPath $cacheDir -Force
-if (-not (Test-Path $extractDir)) {
-  $candidate = Get-ChildItem $cacheDir -Directory | Where-Object { $_.Name -like 'cudnn-windows-x86_64-*' } | Select-Object -First 1
-  if ($null -ne $candidate) { $extractDir = $candidate.FullName }
-}
-
-$srcBin = Join-Path $extractDir 'bin'
-if (-not (Test-Path $srcBin)) {
-  Write-Error "Archive layout unexpected: no bin/ inside $extractDir"
-  exit 1
-}
-
-Write-Step "Copying cuDNN DLLs to $cudaBin"
-$copied = 0
-Get-ChildItem -Path $srcBin -Filter '*.dll' | ForEach-Object {
-  $dst = Join-Path $cudaBin $_.Name
-  Copy-Item -Path $_.FullName -Destination $dst -Force
-  $copied++
-}
-Write-Ok "Copied $copied DLL(s)"
-
-if (-not (Test-Path $cudnnTarget)) {
-  Write-Error "Installation incomplete: $cudnnTarget missing"
-  exit 1
+  $newPath = if ($currentPath -eq '') { $installBin } else { "$currentPath;$installBin" }
+  [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+  Write-Ok "Added to user PATH: $installBin"
+  Write-Ok 'Open a new shell (or restart WTranscriber) for PATH to take effect.'
 }
 
 Write-Step 'Done.'
-Write-Ok "cudnn64_9.dll -> $cudnnTarget"
-Write-Ok 'Restart WTranscriber. Transcription will now use the GPU.'
