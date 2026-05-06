@@ -5,6 +5,7 @@ mod diarizer;
 mod engine;
 mod error;
 mod llm;
+mod logfile;
 mod models;
 pub mod namer;
 mod paths;
@@ -19,6 +20,11 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
+
+    logfile::info(&format!(
+        "wtranscriber v{} starting",
+        env!("CARGO_PKG_VERSION")
+    ));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -38,6 +44,9 @@ pub fn run() {
             commands::history_load,
             commands::history_delete,
             commands::suggest_filename,
+            commands::log_path,
+            commands::log_tail,
+            commands::log_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

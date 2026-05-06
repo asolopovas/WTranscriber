@@ -8,6 +8,7 @@ use crate::{
     audio,
     config::Config,
     error::Result,
+    logfile,
     models::{self, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
     transcriber::{self, CacheEntry, Job, Transcript},
@@ -43,7 +44,12 @@ pub async fn install_model(app: AppHandle, id: String) -> Result<()> {
     let mut on_progress = |p: FileProgress| {
         let _ = app.emit("model:progress", &p);
     };
+    logfile::info(&format!("install_model {id} starting"));
     let result = models::manager().install(&id, &mut on_progress).await;
+    match &result {
+        Ok(()) => logfile::info(&format!("install_model {id} ok")),
+        Err(e) => logfile::error(&format!("install_model {id}: {e}")),
+    }
     let _ = app.emit(
         if result.is_ok() {
             "model:done"
@@ -62,8 +68,51 @@ pub fn probe_audio(path: PathBuf) -> Option<u64> {
 
 #[tauri::command]
 pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcript> {
+    let label = format!(
+        "transcribe {} model={} engine={:?} lang={} device={:?}",
+        input.display(),
+        config.model,
+        config.engine,
+        config.language,
+        config.device,
+    );
+    logfile::process_start(&label);
     let job = Job { input, config };
-    transcriber::run(&job).await
+    match transcriber::run(&job).await {
+        Ok(t) => {
+            logfile::process_end(
+                &label,
+                "ok",
+                &format!(
+                    "{} utterances, {} ms, {} speakers",
+                    t.utterances.len(),
+                    t.duration_ms,
+                    t.speakers_detected
+                ),
+            );
+            Ok(t)
+        }
+        Err(e) => {
+            logfile::error(&format!("{label}: {e}"));
+            logfile::process_end(&label, "failed", &e.to_string());
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn log_path() -> Result<String> {
+    Ok(logfile::log_path()?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn log_tail(max_bytes: Option<u64>) -> String {
+    logfile::read_tail(max_bytes.unwrap_or(256 * 1024))
+}
+
+#[tauri::command]
+pub fn log_clear() -> Result<()> {
+    logfile::clear()
 }
 
 #[tauri::command]

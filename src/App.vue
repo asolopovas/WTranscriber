@@ -7,8 +7,9 @@ import type { Config, ModelInfo, Suggestion, Transcript } from "./types";
 import ModelManager from "./components/ModelManager.vue";
 import History from "./components/History.vue";
 import Settings from "./components/Settings.vue";
+import LogViewer from "./components/LogViewer.vue";
 
-type Tab = "transcribe" | "models" | "history" | "settings";
+type Tab = "transcribe" | "models" | "history" | "settings" | "logs";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -26,6 +27,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
   { id: "history", label: "History" },
   { id: "models", label: "Models" },
+  { id: "logs", label: "Logs" },
   { id: "settings", label: "Settings" },
 ];
 
@@ -216,6 +218,7 @@ const fieldClass =
           <div v-if="error" class="mb-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs">
             <span class="material-symbols-outlined text-[18px] mt-[1px] shrink-0">error</span>
             <span class="flex-1 break-words font-mono text-labelMedium">{{ error }}</span>
+            <button class="text-titleSmall underline hover:opacity-80 shrink-0" @click="tab = 'logs'">View log</button>
             <button class="material-symbols-outlined text-[18px] hover:opacity-70" @click="error = null">close</button>
           </div>
 
@@ -379,6 +382,7 @@ const fieldClass =
       <ModelManager v-else-if="tab === 'models'" />
       <Settings v-else-if="tab === 'settings'" />
       <History v-else-if="tab === 'history'" @open="openHistoryItem" />
+      <LogViewer v-else-if="tab === 'logs'" />
     </main>
   </div>
 </template>

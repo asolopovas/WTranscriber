@@ -25,6 +25,9 @@ export const api = {
   historyDelete: (key: string) => invoke<void>("history_delete", { key }),
   suggestFilename: (transcript: Transcript) =>
     invoke<Suggestion>("suggest_filename", { transcript }),
+  logPath: () => invoke<string>("log_path"),
+  logTail: (maxBytes?: number) => invoke<string>("log_tail", { maxBytes }),
+  logClear: () => invoke<void>("log_clear"),
 };
 
 export const events = {
