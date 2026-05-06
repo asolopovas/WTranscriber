@@ -4,7 +4,7 @@ pub use crate::{
     models::{Family, FileProgress, ModelInfo, ModelStatus, manager},
     namer::Suggestion,
     transcriber::{
-        CacheEntry, Transcript, Utterance, Word,
+        Transcript, Utterance, Word,
         cache::{self as transcript_cache},
         run as transcribe,
     },

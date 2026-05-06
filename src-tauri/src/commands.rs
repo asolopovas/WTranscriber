@@ -12,7 +12,7 @@ use crate::{
     logfile,
     models::{self, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
-    transcriber::{self, CacheEntry, Job, Transcript, export::Format as ExportFormat},
+    transcriber::{self, Job, Transcript, export::Format as ExportFormat},
 };
 
 #[tauri::command]
@@ -117,18 +117,8 @@ pub fn log_clear() -> Result<()> {
 }
 
 #[tauri::command]
-pub fn history_list() -> Vec<CacheEntry> {
-    transcriber::cache_list()
-}
-
-#[tauri::command]
 pub fn history_load(key: String) -> Result<Option<Transcript>> {
     transcriber::cache::load(&key)
-}
-
-#[tauri::command]
-pub fn history_delete(key: String) -> Result<()> {
-    transcriber::cache::invalidate(&key)
 }
 
 #[tauri::command]

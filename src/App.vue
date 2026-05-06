@@ -12,11 +12,10 @@ import type {
   Transcript,
 } from "./types";
 import ModelManager from "./components/ModelManager.vue";
-import History from "./components/History.vue";
 import Settings from "./components/Settings.vue";
 import LogViewer from "./components/LogViewer.vue";
 
-type Tab = "transcribe" | "models" | "history" | "settings" | "logs";
+type Tab = "transcribe" | "models" | "settings" | "logs";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -44,7 +43,6 @@ async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
-  { id: "history", label: "History" },
   { id: "models", label: "Models" },
   { id: "logs", label: "Logs" },
   { id: "settings", label: "Settings" },
@@ -389,12 +387,6 @@ function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-function openHistoryItem(t: Transcript) {
-  transcript.value = t;
-  selectedPath.value = "";
-  tab.value = "transcribe";
-}
-
 const fieldClass =
   "w-full bg-surface-container-high border border-outline-variant/60 text-on-surface text-bodyMedium px-md py-xs rounded-lg appearance-none focus:outline-none focus:border-primary transition-colors";
 </script>
@@ -700,7 +692,6 @@ const fieldClass =
 
       <ModelManager v-else-if="tab === 'models'" />
       <Settings v-else-if="tab === 'settings'" />
-      <History v-else-if="tab === 'history'" @open="openHistoryItem" />
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
 
