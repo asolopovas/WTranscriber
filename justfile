@@ -18,14 +18,14 @@ install-hooks:
 dev:
     bun run tauri dev
 
-dev-cuda:
-    bun run tauri dev -- --no-default-features --features cuda
+dev-cpu:
+    bun run tauri dev -- --no-default-features --features sherpa-static
 
 build:
     bun run tauri build
 
-build-cuda:
-    bun run tauri build -- --no-default-features --features cuda
+build-cpu:
+    bun run tauri build -- --no-default-features --features sherpa-static
 
 build-cli:
     cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt

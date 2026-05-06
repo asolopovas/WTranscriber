@@ -11,7 +11,7 @@ publish = false
 default-run = "wtranscriber"
 
 [features]
-default = ["sherpa-static"]
+default = ["cuda"]
 sherpa-static = ["sherpa-onnx/static"]
 cuda = ["sherpa-onnx/shared"]
 
