@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WTranscriber</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+      rel="stylesheet"
+    />
     <script>
       tailwind.config = {
         darkMode: "class",
@@ -18,57 +24,106 @@
               "surface-container-low": "#171c21",
               "surface-container-highest": "#30353b",
               "surface-container-high": "#252a30",
-              "tertiary": "#b3f2bb",
-              "background": "#0f1419",
+              tertiary: "#b3f2bb",
+              background: "#0f1419",
               "primary-fixed-dim": "#8fcdff",
               "on-surface": "#dee3ea",
               "on-tertiary-container": "#245e34",
               "on-surface-variant": "#c0c7d0",
               "primary-container": "#8fcdff",
               "on-primary-container": "#005783",
-              "secondary": "#edbf78",
+              secondary: "#edbf78",
               "surface-container": "#1b2025",
               "error-container": "#93000a",
               "surface-container-lowest": "#0a0f14",
-              "outline": "#8a9199",
+              outline: "#8a9199",
               "secondary-container": "#604103",
               "on-secondary-container": "#daae68",
               "outline-variant": "#41484e",
               "on-primary": "#00344f",
               "on-secondary": "#432c00",
               "surface-variant": "#30353b",
-              "error": "#ffb4ab",
-              "primary": "#cbe6ff",
-              "surface": "#0f1419",
+              error: "#ffb4ab",
+              primary: "#cbe6ff",
+              surface: "#0f1419",
               "on-background": "#dee3ea",
             },
             borderRadius: { DEFAULT: "0.25rem", lg: "0.5rem", xl: "0.75rem", full: "9999px" },
-            spacing: { xs: "8px", margin: "16px", lg: "16px", unit: "4px", xl: "24px", md: "12px", gutter: "12px" },
+            spacing: {
+              xs: "8px",
+              margin: "16px",
+              lg: "16px",
+              unit: "4px",
+              xl: "24px",
+              md: "12px",
+              gutter: "12px",
+            },
             fontFamily: {
               mono: ["JetBrains Mono", "ui-monospace", "monospace"],
               sans: ["Inter", "system-ui", "sans-serif"],
             },
             fontSize: {
-              labelMedium: ["12px", { lineHeight: "16px", letterSpacing: "0.5px", fontWeight: "500" }],
+              labelMedium: [
+                "12px",
+                { lineHeight: "16px", letterSpacing: "0.5px", fontWeight: "500" },
+              ],
               titleMedium: ["16px", { lineHeight: "24px", fontWeight: "500" }],
               titleSmall: ["14px", { lineHeight: "20px", fontWeight: "500" }],
               bodyMedium: ["13px", { lineHeight: "20px", fontWeight: "400" }],
-              labelSmall: ["11px", { lineHeight: "16px", letterSpacing: "0.5px", fontWeight: "500" }],
+              labelSmall: [
+                "11px",
+                { lineHeight: "16px", letterSpacing: "0.5px", fontWeight: "500" },
+              ],
             },
           },
         },
       };
     </script>
     <style>
-      html, body, #app { height: 100%; }
-      body { margin: 0; background: #0f1419; color: #dee3ea; font-family: Inter, system-ui, sans-serif; font-size: 13px; }
-      .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
-      .material-symbols-outlined.fill { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-      .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
-      .scroll-thin::-webkit-scrollbar-track { background: transparent; }
-      .scroll-thin::-webkit-scrollbar-thumb { background: #30353b; border-radius: 9999px; }
-      .scroll-thin::-webkit-scrollbar-thumb:hover { background: #41484e; }
-      input[type="checkbox"] { accent-color: #cbe6ff; }
+      html,
+      body,
+      #app {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: #0f1419;
+        color: #dee3ea;
+        font-family: Inter, system-ui, sans-serif;
+        font-size: 13px;
+      }
+      .material-symbols-outlined {
+        font-variation-settings:
+          "FILL" 0,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+        vertical-align: middle;
+      }
+      .material-symbols-outlined.fill {
+        font-variation-settings:
+          "FILL" 1,
+          "wght" 400,
+          "GRAD" 0,
+          "opsz" 24;
+      }
+      .scroll-thin::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .scroll-thin::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .scroll-thin::-webkit-scrollbar-thumb {
+        background: #30353b;
+        border-radius: 9999px;
+      }
+      .scroll-thin::-webkit-scrollbar-thumb:hover {
+        background: #41484e;
+      }
+      input[type="checkbox"] {
+        accent-color: #cbe6ff;
+      }
     </style>
   </head>
   <body>

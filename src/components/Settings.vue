@@ -220,9 +220,7 @@ const fieldClass =
                     default
                   </div>
                 </td>
-                <td
-                  class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap"
-                >
+                <td class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap">
                   {{ fmtSize(m.size_bytes) }}
                 </td>
                 <td class="px-margin py-md align-top">

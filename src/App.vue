@@ -515,12 +515,7 @@ function drawWaveformFallback(canvas: HTMLCanvasElement) {
   ctx.stroke();
 }
 
-function drawWaveformPeaks(
-  canvas: HTMLCanvasElement,
-  peaks: number[],
-  startFrac = 0,
-  endFrac = 1,
-) {
+function drawWaveformPeaks(canvas: HTMLCanvasElement, peaks: number[], startFrac = 0, endFrac = 1) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -582,15 +577,11 @@ async function openTrim(entry?: DirEntry) {
   trimming.value = true;
   trimPeaks.value = [];
   try {
-    const durMs =
-      (await api.probeAudio(target.path)) ?? target.duration_ms ?? 0;
+    const durMs = (await api.probeAudio(target.path)) ?? target.duration_ms ?? 0;
     trimDuration.value = Math.max(0, Math.floor(durMs));
     const meta = await api.loadAudioMeta(target.path);
     trimStart.value = Math.min(meta.trim_start_ms ?? 0, trimDuration.value);
-    trimEnd.value = Math.min(
-      meta.trim_end_ms ?? trimDuration.value,
-      trimDuration.value,
-    );
+    trimEnd.value = Math.min(meta.trim_end_ms ?? trimDuration.value, trimDuration.value);
     if (trimEnd.value <= trimStart.value) trimEnd.value = trimDuration.value;
     const peaks = await api.audioWaveform(target.path, 320);
     trimPeaks.value = peaks;
@@ -1585,12 +1576,7 @@ const fieldClass =
               <span class="font-mono text-labelSmall">analysing…</span>
             </div>
             <div class="relative">
-              <canvas
-                ref="trimCanvas"
-                width="720"
-                height="120"
-                class="w-full h-28 block"
-              ></canvas>
+              <canvas ref="trimCanvas" width="720" height="120" class="w-full h-28 block"></canvas>
               <div
                 class="absolute top-0 bottom-0 border-l-2 border-r-2 border-primary pointer-events-none"
                 :style="{

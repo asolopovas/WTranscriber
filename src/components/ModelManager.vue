@@ -62,7 +62,9 @@ onUnmounted(() => unlisten.forEach((u) => u()));
       <div class="flex items-end justify-between pb-md border-b border-outline-variant/50">
         <div>
           <h1 class="text-[24px] leading-[32px] font-bold text-on-surface">Local Models</h1>
-          <p class="text-bodyMedium text-on-surface-variant mt-unit">Install and manage on-device models for transcription, diarization, and naming.</p>
+          <p class="text-bodyMedium text-on-surface-variant mt-unit">
+            Install and manage on-device models for transcription, diarization, and naming.
+          </p>
         </div>
       </div>
 
@@ -71,17 +73,29 @@ onUnmounted(() => unlisten.forEach((u) => u()));
         :key="g.id"
         class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
       >
-        <div class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs">
+        <div
+          class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
+        >
           <span class="material-symbols-outlined text-tertiary">{{ g.icon }}</span>
           <h2 class="text-titleMedium text-on-surface">{{ g.label }}</h2>
         </div>
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="border-b border-outline-variant/40 bg-surface-container-highest/40">
-              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium">Name</th>
-              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-28">Size</th>
-              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-48">Status</th>
-              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium text-right w-32">Actions</th>
+              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium">
+                Name
+              </th>
+              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-28">
+                Size
+              </th>
+              <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-48">
+                Status
+              </th>
+              <th
+                class="px-margin py-md text-titleSmall text-on-surface-variant font-medium text-right w-32"
+              >
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -92,16 +106,31 @@ onUnmounted(() => unlisten.forEach((u) => u()));
             >
               <td class="px-margin py-md align-top">
                 <div class="font-mono text-labelMedium text-on-surface">{{ m.id }}</div>
-                <div class="text-bodyMedium text-on-surface-variant mt-unit">{{ m.description }}</div>
-                <div v-if="m.default_active" class="font-mono text-labelSmall text-secondary mt-unit uppercase tracking-wide">default</div>
+                <div class="text-bodyMedium text-on-surface-variant mt-unit">
+                  {{ m.description }}
+                </div>
+                <div
+                  v-if="m.default_active"
+                  class="font-mono text-labelSmall text-secondary mt-unit uppercase tracking-wide"
+                >
+                  default
+                </div>
               </td>
-              <td class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap">{{ fmtSize(m.size_bytes) }}</td>
+              <td class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap">
+                {{ fmtSize(m.size_bytes) }}
+              </td>
               <td class="px-margin py-md align-top">
                 <div v-if="progress[m.id]" class="flex flex-col gap-unit w-40">
                   <div class="h-1 bg-surface-container-highest rounded-full overflow-hidden">
-                    <div class="h-full bg-primary transition-all" :style="{ width: pct(progress[m.id]) + '%' }"></div>
+                    <div
+                      class="h-full bg-primary transition-all"
+                      :style="{ width: pct(progress[m.id]) + '%' }"
+                    ></div>
                   </div>
-                  <span class="font-mono text-labelSmall text-primary">{{ pct(progress[m.id]).toFixed(0) }}% · file {{ progress[m.id].file_index + 1 }}/{{ progress[m.id].file_count }}</span>
+                  <span class="font-mono text-labelSmall text-primary"
+                    >{{ pct(progress[m.id]).toFixed(0) }}% · file
+                    {{ progress[m.id].file_index + 1 }}/{{ progress[m.id].file_count }}</span
+                  >
                 </div>
                 <span
                   v-else-if="m.status === 'installed'"
@@ -135,7 +164,8 @@ onUnmounted(() => unlisten.forEach((u) => u()));
                   v-else-if="m.status === 'installed'"
                   class="text-outline material-symbols-outlined text-[20px] cursor-not-allowed"
                   title="Installed"
-                >check</span>
+                  >check</span
+                >
               </td>
             </tr>
           </tbody>

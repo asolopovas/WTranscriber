@@ -23,8 +23,7 @@ export const api = {
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
   loadAudioMeta: (path: string) => invoke<AudioMeta>("load_audio_meta", { path }),
-  saveAudioMeta: (path: string, meta: AudioMeta) =>
-    invoke<void>("save_audio_meta", { path, meta }),
+  saveAudioMeta: (path: string, meta: AudioMeta) => invoke<void>("save_audio_meta", { path, meta }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
   cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),
