@@ -12,6 +12,8 @@ pub struct Config {
     pub threads: u32,
     pub diarize: bool,
     pub speakers: Option<u32>,
+    #[serde(default)]
+    pub diarizer: DiarizerChoice,
     pub auto_rename: bool,
     #[serde(default)]
     pub last_dir: Option<std::path::PathBuf>,
@@ -48,6 +50,26 @@ pub enum Device {
     Cuda,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiarizerChoice {
+    #[default]
+    Auto,
+    Nemo,
+    Sherpa,
+}
+
+impl DiarizerChoice {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Nemo => "nemo-sortformer",
+            Self::Sherpa => "sherpa-pyannote-titanet",
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -58,6 +80,7 @@ impl Default for Config {
             threads: num_threads(),
             diarize: true,
             speakers: None,
+            diarizer: DiarizerChoice::default(),
             auto_rename: false,
             last_dir: None,
         }

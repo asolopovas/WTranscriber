@@ -66,6 +66,32 @@ fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
     read_pcm16_wav(&target)
 }
 
+pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    {
+        return Ok(path.to_path_buf());
+    }
+    let ffmpeg = find_ffmpeg().ok_or_else(|| {
+        Error::Transcribe("ffmpeg not found; install ffmpeg or provide a 16 kHz mono WAV".into())
+    })?;
+    let cache_dir = crate::paths::cache_dir()?;
+    let name = audio_cache_key(path)?;
+    let target = cache_dir.join(name);
+    if target.exists() {
+        return Ok(target);
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if let Err(err) = ffmpeg::run(&ffmpeg, path, &target) {
+        let _ = std::fs::remove_file(&target);
+        return Err(err);
+    }
+    Ok(target)
+}
+
 pub fn clear_cache() -> Result<u64> {
     let cache_dir = crate::paths::cache_dir()?;
     std::fs::create_dir_all(&cache_dir)?;

@@ -15,7 +15,7 @@ use crate::{
     transcriber::{Segment, Token},
 };
 
-const DEFAULT_CHUNK_SEC: f64 = 30.0;
+const DEFAULT_CHUNK_SEC: f64 = 15.0;
 const BOUNDARY_SEARCH_SEC: f64 = 2.0;
 const BOUNDARY_WINDOW_SEC: f64 = 0.2;
 const BOUNDARY_MIN_ADVANCE_SEC: f64 = 0.5;

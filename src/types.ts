@@ -2,6 +2,8 @@ export type Device = "cpu" | "cuda";
 
 export type Engine = "whisper-onnx" | "zipformer" | "parakeet" | "canary" | "nemo-ctc";
 
+export type DiarizerChoice = "auto" | "nemo" | "sherpa";
+
 export interface Config {
   model: string;
   engine: Engine;
@@ -10,6 +12,7 @@ export interface Config {
   threads: number;
   diarize: boolean;
   speakers: number | null;
+  diarizer: DiarizerChoice;
   auto_rename: boolean;
   last_dir?: string | null;
 }

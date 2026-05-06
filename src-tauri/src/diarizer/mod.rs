@@ -4,7 +4,7 @@ mod sherpa;
 
 use std::path::Path;
 
-use crate::error::Result;
+use crate::{config::DiarizerChoice, error::Result};
 
 pub use sherpa::SherpaDiarizer;
 
@@ -30,23 +30,45 @@ pub trait Backend {
 }
 
 pub fn new(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    new_with_preference(num_speakers, false)
+    new_with_choice(num_speakers, DiarizerChoice::Auto)
 }
 
-pub fn new_with_preference(num_speakers: u32, prefer_sherpa: bool) -> Result<Box<dyn Backend>> {
+pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = prefer_sherpa;
+        let _ = choice;
         return Ok(Box::new(SherpaDiarizer::new(num_speakers)?));
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        if prefer_sherpa || num_speakers > 0 {
-            return new_sherpa_or_nemo(num_speakers);
+        match choice {
+            DiarizerChoice::Nemo => nemo::NemoDiarizer::new()
+                .map(|d| Box::new(d) as Box<dyn Backend>),
+            DiarizerChoice::Sherpa => SherpaDiarizer::new(num_speakers)
+                .map(|d| Box::new(d) as Box<dyn Backend>),
+            DiarizerChoice::Auto => {
+                if num_speakers > 0 {
+                    new_sherpa_or_nemo(num_speakers)
+                } else {
+                    new_nemo_or_sherpa(num_speakers)
+                }
+            }
         }
-        new_nemo_or_sherpa(num_speakers)
     }
+}
+
+#[deprecated(note = "use new_with_choice")]
+#[allow(dead_code)]
+pub fn new_with_preference(num_speakers: u32, prefer_sherpa: bool) -> Result<Box<dyn Backend>> {
+    new_with_choice(
+        num_speakers,
+        if prefer_sherpa {
+            DiarizerChoice::Sherpa
+        } else {
+            DiarizerChoice::Auto
+        },
+    )
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

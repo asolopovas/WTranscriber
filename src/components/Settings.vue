@@ -151,15 +151,8 @@ const fieldClass =
             <span class="material-symbols-outlined text-secondary">memory</span>
             <h2 class="text-titleMedium text-on-surface">Runtime</h2>
           </div>
-          <div class="p-margin grid grid-cols-1 md:grid-cols-2 gap-margin">
-            <label class="flex flex-col gap-unit">
-              <span class="text-titleSmall text-on-surface">Device</span>
-              <select v-model="config.device" :class="fieldClass">
-                <option value="cpu">CPU</option>
-                <option value="cuda">CUDA</option>
-              </select>
-            </label>
-            <label class="flex flex-col gap-unit">
+          <div class="p-margin">
+            <label class="flex flex-col gap-unit max-w-sm">
               <span class="text-titleSmall text-on-surface">Threads</span>
               <input
                 v-model.number="config.threads"

@@ -5,6 +5,7 @@ mod transcript;
 pub mod cache;
 pub mod dedup;
 pub mod export;
+pub mod partial;
 
 #[allow(unused_imports, dead_code)]
 pub use cache::{KeyParams, build_key_params, compute_key};

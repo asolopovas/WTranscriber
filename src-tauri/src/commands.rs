@@ -7,7 +7,7 @@
 
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, LazyLock, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -27,6 +27,7 @@ use crate::{
     logfile,
     models::{self, Family, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
+    paths,
     progress::{self, Phase, Sink, Smoother},
     transcriber::{self, Job, Transcript, export::Format as ExportFormat},
 };
@@ -247,15 +248,9 @@ impl Sink for TranscribeSink {
 #[tauri::command]
 pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> Result<Transcript> {
     validate_transcription_model(&config)?;
-    let label = format!(
-        "transcribe {} model={} engine={:?} lang={} device={:?}",
-        input.display(),
-        config.model,
-        config.engine,
-        config.language,
-        config.device,
-    );
+    let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
+    log_preflight(&input, &config);
     let audio_dur_ms = audio::probe_duration_ms(&input).unwrap_or(0);
     let audio_dur_sec = if audio_dur_ms > 0 {
         audio_dur_ms as f64 / 1000.0
@@ -307,6 +302,65 @@ pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> 
         cancels.remove(&input_key);
     }
     result
+}
+
+fn log_preflight(input: &Path, config: &Config) {
+    use std::fmt::Write as _;
+    let mut buf = String::new();
+    let _ = writeln!(buf, "Settings:");
+    let _ = writeln!(buf, "  Engine    : {}", config.engine.as_str());
+    let model_path = paths::models_dir()
+        .map(|p| p.join(&config.model))
+        .ok()
+        .filter(|p| p.exists())
+        .map_or_else(
+            || config.model.clone(),
+            |p| format!("{} ({})", config.model, p.display()),
+        );
+    let _ = writeln!(buf, "  Model     : {model_path}");
+    let device_label = match config.device {
+        crate::config::Device::Cuda => "GPU CUDA",
+        crate::config::Device::Cpu => "CPU",
+    };
+    let _ = writeln!(buf, "  Device    : {device_label}");
+    let _ = writeln!(buf, "  Language  : {}", config.language);
+    let _ = writeln!(buf, "  Threads   : {}", config.threads);
+    if !config.diarize {
+        let _ = writeln!(buf, "  Diarizer  : off");
+    } else {
+        let _ = writeln!(
+            buf,
+            "  Diarizer  : {} (speakers={})",
+            config.diarizer.as_str(),
+            config.speakers.unwrap_or(0),
+        );
+    }
+    let _ = writeln!(buf, "  Auto-rename: {}", config.auto_rename);
+    if let Some(meta) = audio::meta::load(input) {
+        let start = meta.trim_start_ms;
+        let end = meta.trim_end_ms;
+        if start > 0 || end.is_some() {
+            let _ = writeln!(
+                buf,
+                "  Trim      : {}ms–{}",
+                start,
+                end.map_or("end".into(), |e| format!("{e}ms")),
+            );
+        }
+    }
+    let _ = writeln!(
+        buf,
+        "System    : {} cores ({}), pid={}",
+        std::thread::available_parallelism().map_or(0, std::num::NonZero::get),
+        std::env::consts::ARCH,
+        std::process::id(),
+    );
+    if let Some(meta) = std::fs::metadata(input).ok() {
+        let _ = writeln!(buf, "Input     : {} bytes", meta.len());
+    }
+    for line in buf.lines() {
+        logfile::info(line);
+    }
 }
 
 fn validate_transcription_model(config: &Config) -> Result<()> {

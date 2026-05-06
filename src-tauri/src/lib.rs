@@ -1,4 +1,5 @@
 mod audio;
+mod audio_toolkit;
 mod browser;
 mod commands;
 mod config;

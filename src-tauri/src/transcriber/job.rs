@@ -11,8 +11,11 @@ use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use crate::{
     audio,
+    audio_toolkit::stream::stream_slabs,
     config::Config,
     diarizer::{self, Segment as DiarSegment},
     engine,
@@ -20,10 +23,12 @@ use crate::{
     progress::{self, NoopSink, Phase, Sink},
     transcriber::{
         cache::{self, Entry as CacheEntry, build_key_params, compute_key},
-        dedup,
+        dedup, partial,
         transcript::{self, Meta, Segment, Transcript},
     },
 };
+
+const SLAB_SEC: f64 = 25.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
@@ -69,84 +74,128 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     }
 
     sink.phase(Phase::LoadingAudio);
-    let all_samples = audio::load_samples(input)?;
-    if sink.is_cancelled() {
-        return Err(crate::error::Error::Cancelled);
-    }
-    let sr = f64::from(audio::WHISPER_SAMPLE_RATE);
-    let total_dur_ms = (all_samples.len() as f64 / sr * 1000.0) as u64;
-    let start_ms = trim.trim_start_ms.min(total_dur_ms);
-    let end_ms = trim
-        .trim_end_ms
-        .map_or(total_dur_ms, |e| e.min(total_dur_ms))
-        .max(start_ms);
-    let start_idx = ((start_ms as f64 / 1000.0) * sr) as usize;
-    let end_idx = ((end_ms as f64 / 1000.0) * sr) as usize;
-    let samples: Vec<f32> = if start_idx == 0 && end_idx >= all_samples.len() {
-        all_samples
-    } else {
-        all_samples[start_idx.min(all_samples.len())..end_idx.min(all_samples.len())].to_vec()
-    };
-    let audio_dur_sec = samples.len() as f64 / sr;
-    let duration_ms = total_dur_ms;
-    let offset_ms = start_ms;
+    let total_dur_ms = audio::probe_duration_ms(input).unwrap_or(0);
+    let start_ms = trim.trim_start_ms.min(total_dur_ms.max(trim.trim_start_ms));
+    let end_ms_opt = trim.trim_end_ms.map(|e| {
+        if total_dur_ms > 0 {
+            e.min(total_dur_ms)
+        } else {
+            e
+        }
+    });
+    let trimmed_dur_ms = end_ms_opt
+        .map(|e| e.saturating_sub(start_ms))
+        .or_else(|| (total_dur_ms > 0).then(|| total_dur_ms.saturating_sub(start_ms)));
+    let trimmed_dur_sec = trimmed_dur_ms.map_or(0.0, |ms| ms as f64 / 1000.0);
+
+    let mut state = partial::load(&key).unwrap_or(partial::Partial {
+        key: key.clone(),
+        last_done_sec: 0.0,
+        segments: Vec::new(),
+    });
 
     sink.phase(Phase::Transcribing);
-    let mut on_progress = |pct: f64| {
-        sink.report_pct(Phase::Transcribing, pct);
-    };
-    let cancelled = || sink.is_cancelled();
-    let (mut segments, detected_language, observed_rtf) = engine::run(
-        &samples,
-        audio_dur_sec,
-        config,
-        &mut on_progress,
-        &cancelled,
-    )?;
-    apply_dedup(&mut segments);
-    if offset_ms > 0 {
-        for seg in &mut segments {
-            seg.start_ms = seg.start_ms.saturating_add(offset_ms);
-            seg.end_ms = seg.end_ms.saturating_add(offset_ms);
-            for tok in &mut seg.tokens {
-                tok.start_ms = tok.start_ms.saturating_add(offset_ms);
-                tok.end_ms = tok.end_ms.saturating_add(offset_ms);
-            }
-        }
-    }
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let cancel_for_stream = cancel_flag.clone();
+    let mut total_audio = 0.0_f64;
+    let mut total_elapsed = 0.0_f64;
+    let mut detected_language = String::new();
 
+    let stream_result = stream_slabs(
+        input,
+        start_ms,
+        end_ms_opt,
+        SLAB_SEC,
+        cancel_for_stream,
+        |region| -> Result<bool> {
+            if sink.is_cancelled() {
+                cancel_flag.store(true, Ordering::SeqCst);
+                return Err(crate::error::Error::Cancelled);
+            }
+            if region.end_sec <= state.last_done_sec + 0.001 {
+                emit_pct(sink, region.end_sec, trimmed_dur_sec);
+                return Ok(true);
+            }
+            let mut sub_progress = |_pct: f64| {};
+            let cancelled = || sink.is_cancelled();
+            let region_dur_sec = region.end_sec - region.start_sec;
+            let t0 = std::time::Instant::now();
+            let (mut segs, slab_detected, _rtf) = engine::run(
+                &region.samples,
+                region_dur_sec,
+                config,
+                &mut sub_progress,
+                &cancelled,
+            )?;
+            if detected_language.is_empty() && !slab_detected.is_empty() {
+                detected_language = slab_detected;
+            }
+            let elapsed = t0.elapsed().as_secs_f64();
+            apply_dedup(&mut segs);
+            shift_segments(&mut segs, (region.start_sec * 1000.0) as u64);
+            for s in &segs {
+                state.segments.push(partial::SerSegment::from(s));
+            }
+            state.last_done_sec = region.end_sec;
+            partial::save(&state)?;
+            total_audio += region_dur_sec;
+            total_elapsed += elapsed;
+            emit_pct(sink, region.end_sec, trimmed_dur_sec);
+            Ok(true)
+        },
+    );
+
+    let scanned_end = stream_result?;
     if sink.is_cancelled() {
         return Err(crate::error::Error::Cancelled);
     }
 
+    let observed_rtf = if total_elapsed > 0.0 {
+        total_audio / total_elapsed
+    } else {
+        0.0
+    };
     let device_label = format!("{:?}", config.device).to_lowercase();
-    progress::save_rtf(&config.model, &device_label, observed_rtf);
+    if observed_rtf > 0.0 {
+        progress::save_rtf(&config.model, &device_label, observed_rtf);
+    }
+
+    let mut segments: Vec<Segment> = state
+        .segments
+        .iter()
+        .cloned()
+        .map(Segment::from)
+        .collect();
+    apply_dedup(&mut segments);
+
+    if detected_language.is_empty() {
+        detected_language = config.language.clone();
+    }
+    let duration_ms = if total_dur_ms > 0 {
+        total_dur_ms
+    } else {
+        ((scanned_end + start_ms as f64 / 1000.0) * 1000.0) as u64
+    };
+    let _ = start_ms;
 
     let (diar_segs, diar_name) = if config.diarize {
         if sink.is_cancelled() {
             return Err(crate::error::Error::Cancelled);
         }
         sink.phase(Phase::Diarizing);
-        let result = run_diarize(input, &samples, audio_dur_sec, speakers, sink).map_or(
-            (Vec::new(), None),
-            |(mut segs, n)| {
-                if offset_ms > 0 {
-                    let off = offset_ms as f64 / 1000.0;
-                    for s in &mut segs {
-                        s.start_sec += off;
-                        s.end_sec += off;
-                    }
-                }
-                (segs, Some(n))
-            },
-        );
-        if sink.is_cancelled() {
-            return Err(crate::error::Error::Cancelled);
-        }
-        result
+        let diar_dur_sec = if total_dur_ms > 0 {
+            total_dur_ms as f64 / 1000.0
+        } else {
+            scanned_end
+        };
+        run_diarize_streaming(input, diar_dur_sec, speakers, sink, config)
+            .map_or((Vec::new(), None), |(segs, n)| (segs, Some(n)))
     } else {
         (Vec::new(), None)
     };
+    if sink.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
 
     sink.phase(Phase::Writing);
 
@@ -169,7 +218,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     );
 
     let entry = CacheEntry {
-        key,
+        key: key.clone(),
         source_path: key_params.source_path.clone(),
         source_name: key_params
             .source_path
@@ -186,8 +235,46 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         size_bytes: 0,
     };
     cache::store(entry, &transcript)?;
+    let _ = partial::clear(&key);
     sink.phase(Phase::Done);
     Ok(transcript)
+}
+
+fn emit_pct(sink: &dyn Sink, done_sec: f64, total_sec: f64) {
+    if total_sec <= 0.0 {
+        return;
+    }
+    let pct = (done_sec / total_sec * 100.0).clamp(0.0, 99.9);
+    sink.report_pct(Phase::Transcribing, pct);
+}
+
+fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
+    if offset_ms == 0 {
+        return;
+    }
+    for seg in segments.iter_mut() {
+        seg.start_ms = seg.start_ms.saturating_add(offset_ms);
+        seg.end_ms = seg.end_ms.saturating_add(offset_ms);
+        for tok in &mut seg.tokens {
+            tok.start_ms = tok.start_ms.saturating_add(offset_ms);
+            tok.end_ms = tok.end_ms.saturating_add(offset_ms);
+        }
+    }
+}
+
+fn run_diarize_streaming(
+    input: &Path,
+    audio_dur_sec: f64,
+    speakers: u32,
+    sink: &dyn Sink,
+    config: &Config,
+) -> Result<(Vec<DiarSegment>, String)> {
+    let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
+    let wav = audio::ensure_cached_wav(input)?;
+    let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
+    let cancelled = || sink.is_cancelled();
+    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress)?;
+    Ok((segs, backend.name()))
 }
 
 fn apply_dedup(segments: &mut Vec<Segment>) {
@@ -220,34 +307,4 @@ fn rebuild_from_tokens(seg: &mut Segment) {
     seg.end_ms = seg.tokens.last().unwrap().end_ms;
 }
 
-fn run_diarize(
-    input: &Path,
-    samples: &[f32],
-    audio_dur_sec: f64,
-    speakers: u32,
-    sink: &dyn Sink,
-) -> Result<(Vec<DiarSegment>, String)> {
-    let backend = diarizer::new(speakers)?;
-    let wav = ensure_wav_for_diarize(input, samples)?;
-    let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
-    let cancelled = || sink.is_cancelled();
-    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress)?;
-    Ok((segs, backend.name()))
-}
 
-fn ensure_wav_for_diarize(input: &Path, samples: &[f32]) -> Result<PathBuf> {
-    if input
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
-    {
-        return Ok(input.to_path_buf());
-    }
-    let cache_dir = crate::paths::cache_dir()?;
-    let key = audio::audio_cache_key(input)?;
-    let cached = cache_dir.join(key);
-    if cached.exists() {
-        return Ok(cached);
-    }
-    audio::write_pcm16_wav(&cached, samples, audio::WHISPER_SAMPLE_RATE)?;
-    Ok(cached)
-}

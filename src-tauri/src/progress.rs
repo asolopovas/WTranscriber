@@ -19,7 +19,8 @@ use crate::{error::Result, paths};
 const RTF_WINDOW_SIZE: usize = 6;
 const RTF_PRIOR_WEIGHT: f64 = 0.7;
 const RTF_SAMPLE_ALPHA: f64 = 0.35;
-const DISPLAY_MAX_ADVANCE: f64 = 0.25;
+const DISPLAY_MAX_ADVANCE: f64 = 0.10;
+const ETA_SMOOTH_ALPHA: f64 = 0.25;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +49,7 @@ pub struct Smoother {
     last_tick: Instant,
     start_time: Instant,
     display_shown: f64,
+    eta_shown: f64,
 }
 
 impl Smoother {
@@ -70,6 +72,7 @@ impl Smoother {
             last_tick: now,
             start_time: now,
             display_shown: 0.0,
+            eta_shown: 0.0,
         }
     }
 
@@ -153,8 +156,17 @@ impl Smoother {
         if remaining_audio < 0.0 {
             remaining_audio = 0.0;
         }
-        let eta_sec = remaining_audio / rtf;
-        (display, eta_sec)
+        let raw_eta = remaining_audio / rtf;
+        if self.eta_shown <= 0.0 {
+            self.eta_shown = raw_eta;
+        } else {
+            self.eta_shown =
+                (1.0 - ETA_SMOOTH_ALPHA) * self.eta_shown + ETA_SMOOTH_ALPHA * raw_eta;
+        }
+        if self.eta_shown < 0.0 {
+            self.eta_shown = 0.0;
+        }
+        (display, self.eta_shown)
     }
 
     #[must_use]
