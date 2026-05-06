@@ -79,7 +79,17 @@ pub fn run_cmd(
     } else {
         args.to_vec()
     };
+    let provider = if uses_cuda(&effective) { "cuda" } else { "cpu" };
+    let wav_arg = effective.last().cloned().unwrap_or_default();
+    crate::logfile::info(&format!(
+        "sherpa spawn: provider={provider} wav={wav_arg}",
+    ));
     let out = exec(bin, &effective, cancelled)?;
+    crate::logfile::info(&format!(
+        "sherpa exit: provider={provider} elapsed={:.2}s status={}",
+        start.elapsed().as_secs_f64(),
+        if out.status.success() { "ok" } else { "fail" },
+    ));
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if out.status.success() {
