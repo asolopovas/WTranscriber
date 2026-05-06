@@ -83,11 +83,11 @@ fn provider_for(device: Device) -> &'static str {
     }
 }
 
-fn build_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
+fn build_config(config: &Config, provider: &str, threads: u32) -> Result<OfflineRecognizerConfig> {
     match config.engine {
-        Engine::WhisperOnnx => whisper_config(config, provider),
-        Engine::Zipformer | Engine::Parakeet => transducer_config(config, provider),
-        Engine::NemoCtc => nemo_ctc_config(config, provider),
+        Engine::WhisperOnnx => whisper_config(config, provider, threads),
+        Engine::Zipformer | Engine::Parakeet => transducer_config(config, provider, threads),
+        Engine::NemoCtc => nemo_ctc_config(config, provider, threads),
         Engine::Canary => Err(Error::Config(
             "canary engine in-process path not yet implemented".into(),
         )),
@@ -97,14 +97,15 @@ fn build_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConf
 fn build(config: &Config) -> Result<OfflineRecognizer> {
     let t0 = std::time::Instant::now();
     let provider = provider_for(config.device);
+    let threads = crate::engine::threads(config);
     logfile::info(&format!(
         "engine init: model={} engine={} device={} threads={}",
         config.model,
         config.engine.as_str(),
         provider,
-        config.threads,
+        threads,
     ));
-    let cfg = build_config(config, provider)?;
+    let cfg = build_config(config, provider, threads)?;
     if let Some(rec) = OfflineRecognizer::create(&cfg) {
         logfile::info(&format!(
             "engine ready in {:.2}s",
@@ -118,7 +119,7 @@ fn build(config: &Config) -> Result<OfflineRecognizer> {
              Verify CUDA 12.x runtime, cuDNN 9, and the prebuilt sherpa-onnx CUDA archive \
              (run `just sherpa-cuda` and `just cudnn`).",
         );
-        let cfg = build_config(config, "cpu")?;
+        let cfg = build_config(config, "cpu", threads)?;
         if let Some(rec) = OfflineRecognizer::create(&cfg) {
             logfile::info(&format!(
                 "engine ready (cpu fallback) in {:.2}s",
@@ -166,7 +167,11 @@ fn locate_three(
     )))
 }
 
-fn whisper_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
+fn whisper_config(
+    config: &Config,
+    provider: &str,
+    threads: u32,
+) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
     let [encoder, decoder, tokens] = locate_three(
         &dir,
@@ -188,7 +193,7 @@ fn whisper_config(config: &Config, provider: &str) -> Result<OfflineRecognizerCo
             },
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
-            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
             debug: false,
             ..OfflineModelConfig::default()
         },
@@ -196,7 +201,11 @@ fn whisper_config(config: &Config, provider: &str) -> Result<OfflineRecognizerCo
     })
 }
 
-fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
+fn transducer_config(
+    config: &Config,
+    provider: &str,
+    threads: u32,
+) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
     let [encoder, decoder, joiner] = locate_three(
         &dir,
@@ -219,7 +228,7 @@ fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognize
             },
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
-            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
             debug: false,
             ..OfflineModelConfig::default()
         },
@@ -227,7 +236,11 @@ fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognize
     })
 }
 
-fn nemo_ctc_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
+fn nemo_ctc_config(
+    config: &Config,
+    provider: &str,
+    threads: u32,
+) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
     let model = dir.join("model.onnx");
     let tokens = dir.join("tokens.txt");
@@ -244,7 +257,7 @@ fn nemo_ctc_config(config: &Config, provider: &str) -> Result<OfflineRecognizerC
             },
             tokens: Some(tokens.to_string_lossy().into_owned()),
             provider: Some(provider.into()),
-            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
             debug: false,
             ..OfflineModelConfig::default()
         },
