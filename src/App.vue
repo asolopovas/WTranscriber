@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -462,6 +462,7 @@ const previewTranscript = ref<Transcript | null>(null);
 const previewLoading = ref(false);
 const previewError = ref<string | null>(null);
 const previewAudioSrc = ref("");
+const previewWaveform = ref<HTMLCanvasElement | null>(null);
 
 async function openPreview(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
@@ -472,6 +473,7 @@ async function openPreview(entry?: DirEntry) {
   previewTranscript.value = null;
   previewAudioSrc.value = target.is_audio ? convertFileSrc(target.path) : "";
   previewing.value = true;
+  if (target.is_audio) void drawWaveform(target.path);
   let t: Transcript | null = null;
   if (transcript.value && selectedEntry.value && selectedEntry.value.path === target.path) {
     t = transcript.value;
@@ -498,6 +500,51 @@ function closePreview() {
   previewTranscript.value = null;
   previewError.value = null;
   previewAudioSrc.value = "";
+}
+
+function drawWaveformFallback(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "#6750a4";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+}
+
+function drawWaveformPeaks(canvas: HTMLCanvasElement, peaks: number[]) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#6750a4";
+  const step = canvas.width / peaks.length;
+  peaks.forEach((peak, i) => {
+    const amp = Math.max(0.02, Math.min(1, peak));
+    const barHeight = amp * canvas.height;
+    const x = i * step;
+    const y = (canvas.height - barHeight) / 2;
+    ctx.fillRect(x, y, Math.max(1, step - 1), barHeight);
+  });
+}
+
+async function drawWaveform(path: string) {
+  await nextTick();
+  const canvas = previewWaveform.value;
+  if (!canvas || !path) return;
+  try {
+    const peaks = await api.audioWaveform(path, 160);
+    if (peaks.length) {
+      drawWaveformPeaks(canvas, peaks);
+    } else {
+      drawWaveformFallback(canvas);
+    }
+  } catch {
+    drawWaveformFallback(canvas);
+  }
 }
 
 async function copyPreviewText() {
@@ -1249,7 +1296,21 @@ const fieldClass =
         </div>
 
         <div v-if="previewAudioSrc" class="px-margin pt-md">
-          <audio class="w-full h-10" controls preload="metadata" :src="previewAudioSrc"></audio>
+          <div class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md">
+            <canvas
+              ref="previewWaveform"
+              data-testid="preview-waveform"
+              width="640"
+              height="96"
+              class="w-full h-16 block"
+            ></canvas>
+            <audio
+              class="w-full h-10 mt-md"
+              controls
+              preload="metadata"
+              :src="previewAudioSrc"
+            ></audio>
+          </div>
         </div>
 
         <div class="flex-1 overflow-y-auto scroll-thin px-margin py-md">

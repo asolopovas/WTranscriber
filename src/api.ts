@@ -20,6 +20,7 @@ export const api = {
   modelStatus: (id: string) => invoke<ModelStatus>("model_status", { id }),
   installModel: (id: string) => invoke<void>("install_model", { id }),
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
+  audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
   cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),
@@ -29,6 +30,8 @@ export const api = {
   logPath: () => invoke<string>("log_path"),
   logTail: (maxBytes?: number) => invoke<string>("log_tail", { maxBytes }),
   logClear: () => invoke<void>("log_clear"),
+  resetTranscriptCache: () => invoke<number>("reset_transcript_cache"),
+  resetAudioCache: () => invoke<number>("reset_audio_cache"),
   listDirectory: (path?: string) => invoke<DirListing>("list_directory", { path }),
   defaultDir: () => invoke<string>("default_dir"),
   renameFile: (source: string, newName: string) =>

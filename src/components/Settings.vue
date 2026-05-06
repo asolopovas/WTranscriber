@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { api } from "../api";
 import type { Config, ModelInfo } from "../types";
 
@@ -7,6 +8,7 @@ const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
 const status = ref<"idle" | "saving" | "saved" | "error">("idle");
 const error = ref<string | null>(null);
+const maintenanceStatus = ref<string | null>(null);
 
 const asrModels = computed(() =>
   models.value.filter((m) => m.family === "asr" && m.status === "installed"),
@@ -68,6 +70,20 @@ function onEngineChanged() {
 
 function onModelChanged() {
   if (config.value) syncEngineAndModel(config.value);
+}
+
+async function resetTranscriptCache() {
+  const ok = await confirm("Clear saved transcript previews and cached transcription results?");
+  if (!ok) return;
+  const removed = await api.resetTranscriptCache();
+  maintenanceStatus.value = `Transcript cache reset (${removed} files removed).`;
+}
+
+async function resetAudioCache() {
+  const ok = await confirm("Clear converted audio cache files?");
+  if (!ok) return;
+  const removed = await api.resetAudioCache();
+  maintenanceStatus.value = `Audio cache reset (${removed} files removed).`;
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -172,6 +188,70 @@ const fieldClass =
                 <option v-for="l in languageOptions" :key="l" :value="l">{{ l }}</option>
               </select>
             </label>
+            <div class="flex justify-between items-start gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">Diarize speakers</h3>
+                <p class="text-bodyMedium text-on-surface-variant">Identify who spoke when.</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Toggle diarize speakers"
+                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                :class="
+                  config.diarize
+                    ? 'bg-primary'
+                    : 'bg-surface-container-highest border border-outline-variant'
+                "
+                @click="config.diarize = !config.diarize"
+              >
+                <span
+                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                  :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                ></span>
+              </button>
+            </div>
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Speaker count</span>
+              <input
+                :value="config.speakers ?? 0"
+                type="number"
+                min="0"
+                max="20"
+                :disabled="!config.diarize"
+                :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
+                @input="
+                  (e) => {
+                    const n = Number((e.target as HTMLInputElement).value);
+                    if (config) config.speakers = n > 0 ? n : null;
+                  }
+                "
+              />
+              <span class="text-bodyMedium text-on-surface-variant">0 = auto-detect.</span>
+            </label>
+            <div class="flex justify-between items-start gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">Auto-rename via LLM</h3>
+                <p class="text-bodyMedium text-on-surface-variant">
+                  Suggest filenames after transcription.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Toggle auto rename"
+                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                :class="
+                  config.auto_rename
+                    ? 'bg-primary'
+                    : 'bg-surface-container-highest border border-outline-variant'
+                "
+                @click="config.auto_rename = !config.auto_rename"
+              >
+                <span
+                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                  :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                ></span>
+              </button>
+            </div>
           </div>
         </section>
 
@@ -214,74 +294,45 @@ const fieldClass =
           <div
             class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
           >
-            <span class="material-symbols-outlined text-tertiary">groups</span>
-            <h2 class="text-titleMedium text-on-surface">Diarization &amp; Automation</h2>
+            <span class="material-symbols-outlined text-tertiary">cleaning_services</span>
+            <h2 class="text-titleMedium text-on-surface">Maintenance</h2>
           </div>
-          <div class="p-margin grid grid-cols-1 md:grid-cols-3 gap-margin">
-            <div class="flex justify-between items-start gap-md">
+          <div class="p-margin grid grid-cols-1 md:grid-cols-2 gap-margin">
+            <div class="flex flex-col gap-md">
               <div>
-                <h3 class="text-titleSmall text-on-surface">Diarize speakers</h3>
-                <p class="text-bodyMedium text-on-surface-variant">Identify who spoke when.</p>
-              </div>
-              <button
-                type="button"
-                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                :class="
-                  config.diarize
-                    ? 'bg-primary'
-                    : 'bg-surface-container-highest border border-outline-variant'
-                "
-                @click="config.diarize = !config.diarize"
-              >
-                <span
-                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                  :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                ></span>
-              </button>
-            </div>
-
-            <label class="flex flex-col gap-unit">
-              <span class="text-titleSmall text-on-surface">Speaker count</span>
-              <input
-                :value="config.speakers ?? 0"
-                type="number"
-                min="0"
-                max="20"
-                :disabled="!config.diarize"
-                :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
-                @input="
-                  (e) => {
-                    const n = Number((e.target as HTMLInputElement).value);
-                    if (config) config.speakers = n > 0 ? n : null;
-                  }
-                "
-              />
-              <span class="text-bodyMedium text-on-surface-variant">0 = auto-detect.</span>
-            </label>
-
-            <div class="flex justify-between items-start gap-md">
-              <div>
-                <h3 class="text-titleSmall text-on-surface">Auto-rename via LLM</h3>
+                <h3 class="text-titleSmall text-on-surface">Transcript cache</h3>
                 <p class="text-bodyMedium text-on-surface-variant">
-                  Suggest filenames after transcription.
+                  Clears saved transcript previews and cached transcription results.
                 </p>
               </div>
               <button
                 type="button"
-                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                :class="
-                  config.auto_rename
-                    ? 'bg-primary'
-                    : 'bg-surface-container-highest border border-outline-variant'
-                "
-                @click="config.auto_rename = !config.auto_rename"
+                class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors inline-flex items-center gap-unit w-fit"
+                @click="resetTranscriptCache"
               >
-                <span
-                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                  :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                ></span>
+                <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                Reset transcript cache
               </button>
             </div>
+            <div class="flex flex-col gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">Audio cache</h3>
+                <p class="text-bodyMedium text-on-surface-variant">
+                  Clears converted WAV files created for non-WAV audio inputs.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors inline-flex items-center gap-unit w-fit"
+                @click="resetAudioCache"
+              >
+                <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
+                Reset audio cache
+              </button>
+            </div>
+            <p v-if="maintenanceStatus" class="md:col-span-2 text-bodyMedium text-tertiary">
+              {{ maintenanceStatus }}
+            </p>
           </div>
         </section>
       </div>

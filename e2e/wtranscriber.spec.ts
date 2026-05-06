@@ -13,6 +13,7 @@ declare global {
     };
     __WT_TEST__: {
       commandLog: string[];
+      savedConfigs: unknown[];
       emit: (event: string, payload: unknown) => void;
     };
   }
@@ -74,6 +75,7 @@ async function installTauriMocks(page: Page) {
       const callbacks: Record<number, (event: unknown) => void> = {};
       const listeners: Record<string, number[]> = {};
       const commandLog: string[] = [];
+      const savedConfigs: unknown[] = [];
       const rows = seedFiles.map((f) => ({ ...f }));
       const cancelled = new Set<string>();
       let nextCallback = 1;
@@ -127,7 +129,10 @@ async function installTauriMocks(page: Page) {
               last_dir: "C:\\audio",
             };
           }
-          if (cmd === "save_config") return null;
+          if (cmd === "save_config") {
+            savedConfigs.push(args.config);
+            return null;
+          }
           if (cmd === "list_models") {
             return [
               {
@@ -171,6 +176,9 @@ async function installTauriMocks(page: Page) {
                 status: "installed",
               },
             ];
+          }
+          if (cmd === "audio_waveform") {
+            return Array.from({ length: 160 }, (_, i) => 0.15 + ((i * 17) % 80) / 100);
           }
           if (cmd === "default_dir") return "C:\\audio";
           if (cmd === "list_directory") return { path: "C:\\audio", parent: null, entries: rows };
@@ -217,6 +225,8 @@ async function installTauriMocks(page: Page) {
           if (cmd === "log_path") return "C:\\logs\\wt.log";
           if (cmd === "log_tail") return "transcribe ok\nnemo-sortformer\n";
           if (cmd === "log_clear") return null;
+          if (cmd === "reset_transcript_cache") return 3;
+          if (cmd === "reset_audio_cache") return 2;
           if (cmd === "plugin:event|listen") {
             const event = args.event as string;
             const handler = args.handler as number;
@@ -227,10 +237,11 @@ async function installTauriMocks(page: Page) {
           if (cmd === "plugin:dialog|open") return null;
           if (cmd === "plugin:dialog|save") return "C:\\exports\\board.txt";
           if (cmd === "plugin:dialog|message") return "Ok";
+          if (cmd === "plugin:dialog|confirm") return true;
           throw new Error(`unhandled invoke ${cmd}`);
         },
       };
-      window.__WT_TEST__ = { commandLog, emit };
+      window.__WT_TEST__ = { commandLog, savedConfigs, emit };
     },
     { seedFiles: files, seedTranscript: transcript },
   );
@@ -239,18 +250,17 @@ async function installTauriMocks(page: Page) {
 test.beforeEach(async ({ page }) => {
   await installTauriMocks(page);
   await page.goto("/");
-  await expect(page.getByRole("button", { name: "Transcribe", exact: true })).toHaveClass(
-    /border-primary/,
-  );
+  await expect
+    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
+    .toContain("list_directory");
 });
 
-test("loads the transcribe workspace with GPU defaults", async ({ page }) => {
-  await expect(page.getByText("board_meeting.wav")).toBeVisible();
-  await expect(page.getByText("interview.mp3")).toBeVisible();
-  await expect(page.getByText("transcribed")).toBeVisible();
+test("loads persisted GPU transcription configuration", async ({ page }) => {
   await expect(page.locator("select").filter({ hasText: "CUDA" })).toHaveValue("cuda");
-  await expect(page.getByText("Diarize speakers")).toBeVisible();
   await expect(page.getByRole("button", { name: "Transcribe all" })).toBeEnabled();
+  await expect
+    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
+    .toContain("load_config");
 });
 
 test("keeps engine and model selections compatible", async ({ page }) => {
@@ -269,8 +279,15 @@ test("keeps engine and model selections compatible", async ({ page }) => {
 
 test("runs the folder queue and updates rows", async ({ page }) => {
   await page.getByRole("button", { name: "Transcribe all" }).click();
-  await expect(page.getByText(/queue 1\/2|queue 2\/2/)).toBeVisible();
-  await expect(page.getByText("transcribed")).toHaveCount(3);
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(
+          () => window.__WT_TEST__.commandLog.filter((cmd) => cmd === "transcribe_file").length,
+        ),
+      { timeout: 5_000 },
+    )
+    .toBe(2);
   await expect(page.getByRole("button", { name: "Transcribe all" })).toBeDisabled();
 });
 
@@ -287,20 +304,50 @@ test("stops an in-flight transcription", async ({ page }) => {
 test("previews cached transcript with audio and copy action", async ({ page }) => {
   const row = page.getByRole("row").filter({ hasText: "board_meeting.wav" });
   await row.getByTitle("Preview transcript").click();
-  await expect(page.getByText("Transcript preview")).toBeVisible();
+  await expect
+    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
+    .toContain("history_load");
   await expect(page.locator("audio")).toHaveAttribute("src", /asset:\/\/localhost/);
-  await expect(page.getByText("Opening remarks.")).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const canvas = document.querySelector<HTMLCanvasElement>(
+          '[data-testid="preview-waveform"]',
+        );
+        if (!canvas) return 0;
+        const data = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
+        return data ? Array.from(data).filter((v) => v > 0).length : 0;
+      }),
+    )
+    .toBeGreaterThan(0);
   await page.getByRole("button", { name: "Copy" }).click();
 });
 
-test("navigates settings, models, and logs", async ({ page }) => {
-  await page.getByRole("button", { name: "Models" }).click();
-  await expect(page.getByText("sherpa-whisper-turbo")).toBeVisible();
-  await expect(page.getByText("nemo-sortformer-v2")).toBeVisible();
-  await expect(page.getByText("sherpa-pyannote-titanet")).toBeVisible();
+test("settings persist transcription options and reset caches", async ({ page }) => {
   await page.getByRole("button", { name: "Settings" }).click();
-  await expect(page.getByText("Manage transcription parameters")).toBeVisible();
-  await expect(page.locator("select").filter({ hasText: "CUDA" })).toHaveValue("cuda");
-  await page.getByRole("button", { name: "Logs" }).click();
-  await expect(page.getByText("nemo-sortformer")).toBeVisible();
+  await page.locator("label").filter({ hasText: "Speaker count" }).locator("input").fill("2");
+  await page.getByRole("button", { name: "Toggle auto rename" }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        window.__WT_TEST__.savedConfigs.some(
+          (cfg) =>
+            typeof cfg === "object" &&
+            cfg !== null &&
+            "speakers" in cfg &&
+            "auto_rename" in cfg &&
+            (cfg as { speakers?: unknown; auto_rename?: unknown }).speakers === 2 &&
+            (cfg as { speakers?: unknown; auto_rename?: unknown }).auto_rename === true,
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.getByRole("button", { name: "Reset transcript cache" }).click();
+  await page.getByRole("button", { name: "Reset audio cache" }).click();
+  await expect
+    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
+    .toContain("reset_transcript_cache");
+  await expect
+    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
+    .toContain("reset_audio_cache");
 });

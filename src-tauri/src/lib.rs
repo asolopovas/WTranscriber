@@ -182,6 +182,7 @@ pub fn run() {
             commands::model_status,
             commands::install_model,
             commands::probe_audio,
+            commands::audio_waveform,
             commands::transcribe_file,
             commands::cancel_transcribe,
             commands::rename_file,
@@ -195,6 +196,8 @@ pub fn run() {
             commands::log_path,
             commands::log_tail,
             commands::log_clear,
+            commands::reset_transcript_cache,
+            commands::reset_audio_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

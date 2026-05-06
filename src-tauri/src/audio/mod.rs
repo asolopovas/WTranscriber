@@ -61,3 +61,36 @@ fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
 
     read_pcm16_wav(&target)
 }
+
+pub fn clear_cache() -> Result<u64> {
+    let cache_dir = crate::paths::cache_dir()?;
+    std::fs::create_dir_all(&cache_dir)?;
+    let mut removed = 0_u64;
+    for entry in std::fs::read_dir(cache_dir)? {
+        let path = entry?.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+        {
+            std::fs::remove_file(path)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
+pub fn waveform_peaks(path: &Path, bins: usize) -> Result<Vec<f32>> {
+    let samples = load_samples(path)?;
+    if samples.is_empty() || bins == 0 {
+        return Ok(Vec::new());
+    }
+    let bins = bins.min(samples.len());
+    let step = samples.len().div_ceil(bins);
+    let mut peaks = Vec::with_capacity(bins);
+    for chunk in samples.chunks(step) {
+        let peak = chunk.iter().fold(0.0_f32, |acc, v| acc.max(v.abs()));
+        peaks.push(peak.min(1.0));
+    }
+    Ok(peaks)
+}

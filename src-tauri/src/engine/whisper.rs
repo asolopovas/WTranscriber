@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     config::Config,
     engine::{
-        chunk::{ChunkProcessor, run_single, segments_from_sherpa},
+        chunk::{ChunkProcessor, run_chunked, segments_from_sherpa},
         runtime,
         sherpa::{find_binary, parse_json, run_cmd},
     },
@@ -110,7 +110,7 @@ pub fn run(
         language: language.clone(),
         cancelled,
     };
-    let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
+    let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
     let detected = language.unwrap_or_else(|| config.language.clone());
     Ok((segs, detected, rtf))
 }

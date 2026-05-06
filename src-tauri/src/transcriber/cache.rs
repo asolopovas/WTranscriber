@@ -162,6 +162,20 @@ pub fn invalidate(key: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn clear_all() -> Result<u64> {
+    let root = cache_root()?;
+    let mut removed = 0_u64;
+    for entry in std::fs::read_dir(&root)? {
+        let path = entry?.path();
+        if path.is_file() {
+            std::fs::remove_file(path)?;
+            removed += 1;
+        }
+    }
+    save_index(&[])?;
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -86,6 +86,11 @@ pub fn probe_audio(path: PathBuf) -> Option<u64> {
     audio::probe_duration_ms(&path)
 }
 
+#[tauri::command]
+pub fn audio_waveform(path: PathBuf, bins: usize) -> Result<Vec<f32>> {
+    audio::waveform_peaks(&path, bins)
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {
@@ -342,6 +347,16 @@ pub fn log_tail(max_bytes: Option<u64>) -> String {
 #[tauri::command]
 pub fn log_clear() -> Result<()> {
     logfile::clear()
+}
+
+#[tauri::command]
+pub fn reset_transcript_cache() -> Result<u64> {
+    transcriber::cache::clear_all()
+}
+
+#[tauri::command]
+pub fn reset_audio_cache() -> Result<u64> {
+    audio::clear_cache()
 }
 
 #[tauri::command]
