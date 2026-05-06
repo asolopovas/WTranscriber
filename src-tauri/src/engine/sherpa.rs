@@ -67,19 +67,77 @@ pub fn find_binary() -> Result<PathBuf> {
 
 pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
     let start = Instant::now();
-    let mut cmd = build_command(bin);
-    cmd.args(args);
-    let out = cmd.output()?;
-    let elapsed = start.elapsed().as_secs_f64();
+    let out = exec(bin, args)?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    if !out.status.success() {
-        return Err(Error::Transcribe(format!(
-            "sherpa subprocess failed: {}",
-            stderr.trim()
-        )));
+    if out.status.success() {
+        return Ok((stdout, stderr, start.elapsed().as_secs_f64()));
     }
-    Ok((stdout, stderr, elapsed))
+    if uses_cuda(args) && is_cuda_load_failure(&stderr) {
+        crate::logfile::warn(&format!(
+            "sherpa CUDA provider unavailable, falling back to CPU: {}",
+            cuda_failure_reason(&stderr)
+        ));
+        let cpu_args = swap_provider_to_cpu(args);
+        let out2 = exec(bin, &cpu_args)?;
+        let stdout2 = String::from_utf8_lossy(&out2.stdout).into_owned();
+        let stderr2 = String::from_utf8_lossy(&out2.stderr).into_owned();
+        if !out2.status.success() {
+            return Err(Error::Transcribe(format!(
+                "sherpa subprocess failed (after CPU fallback): {}",
+                stderr2.trim()
+            )));
+        }
+        return Ok((stdout2, stderr2, start.elapsed().as_secs_f64()));
+    }
+    Err(Error::Transcribe(format!(
+        "sherpa subprocess failed: {}",
+        stderr.trim()
+    )))
+}
+
+fn exec(bin: &Path, args: &[String]) -> Result<std::process::Output> {
+    let mut cmd = build_command(bin);
+    cmd.args(args);
+    Ok(cmd.output()?)
+}
+
+fn uses_cuda(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--provider=cuda")
+}
+
+fn swap_provider_to_cpu(args: &[String]) -> Vec<String> {
+    args.iter()
+        .map(|a| {
+            if a == "--provider=cuda" {
+                "--provider=cpu".to_owned()
+            } else {
+                a.clone()
+            }
+        })
+        .collect()
+}
+
+pub fn is_cuda_load_failure(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    s.contains("cudnn")
+        || s.contains("cudaproviderfactory")
+        || s.contains("onnxruntime_providers_cuda")
+        || (s.contains("cuda") && s.contains("error loading"))
+}
+
+fn cuda_failure_reason(stderr: &str) -> String {
+    for line in stderr.lines() {
+        let l = line.trim();
+        if l.is_empty() {
+            continue;
+        }
+        let lower = l.to_lowercase();
+        if lower.contains("cudnn") || lower.contains("error loading") {
+            return l.chars().take(200).collect();
+        }
+    }
+    "CUDA provider failed to initialize".into()
 }
 
 #[cfg(windows)]
