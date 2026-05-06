@@ -18,6 +18,9 @@ install-hooks:
 dev:
     bun run tauri dev
 
+dev-cuda:
+    bun run tauri dev -- -- --no-default-features --features cuda
+
 build:
     bun run tauri build
 
