@@ -5195,6 +5195,7 @@ dependencies = [
  "chrono",
  "directories",
  "hex",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

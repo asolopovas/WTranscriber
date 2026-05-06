@@ -1,6 +1,14 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+use crate::diarizer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transcript {
@@ -58,14 +66,10 @@ pub struct Segment {
     pub tokens: Vec<Token>,
 }
 
-#[derive(Debug, Clone)]
-pub struct DiarSegment {
-    pub start_ms: u64,
-    pub end_ms: u64,
-    pub speaker: u32,
-}
+pub use diarizer::Segment as DiarSegment;
 
 pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcript {
+    let mut hint: Option<u32> = None;
     let mut labels: HashMap<u32, String> = HashMap::new();
     let mut next: u32 = 1;
     let mut label_for = |id: Option<u32>| -> Option<String> {
@@ -79,10 +83,23 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
         Some(l)
     };
 
+    let mut lookup = |start_ms: u64, end_ms: u64| -> Option<u32> {
+        let id = diarizer::speaker_id_for_time(
+            start_ms as f64 / 1000.0,
+            end_ms as f64 / 1000.0,
+            diar,
+            hint,
+        );
+        if let Some(v) = id {
+            hint = Some(v);
+        }
+        id
+    };
+
     let mut words = Vec::new();
     for seg in segments {
         if seg.tokens.is_empty() {
-            let speaker = label_for(speaker_at(seg.start_ms, seg.end_ms, diar));
+            let speaker = label_for(lookup(seg.start_ms, seg.end_ms));
             words.push(Word {
                 text: seg.text.clone(),
                 start_ms: seg.start_ms,
@@ -93,7 +110,7 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
             continue;
         }
         for tok in &seg.tokens {
-            let speaker = label_for(speaker_at(tok.start_ms, tok.end_ms, diar));
+            let speaker = label_for(lookup(tok.start_ms, tok.end_ms));
             words.push(Word {
                 text: tok.text.clone(),
                 start_ms: tok.start_ms,
@@ -124,16 +141,6 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
         utterances,
         words,
     }
-}
-
-fn speaker_at(start_ms: u64, end_ms: u64, diar: &[DiarSegment]) -> Option<u32> {
-    if diar.is_empty() {
-        return None;
-    }
-    let mid = u64::midpoint(start_ms, end_ms);
-    diar.iter()
-        .find(|s| mid >= s.start_ms && mid < s.end_ms)
-        .map(|s| s.speaker)
 }
 
 fn smooth_flickers(words: &mut [Word]) {
