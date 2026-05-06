@@ -1,7 +1,8 @@
-set windows-shell := ["pwsh.exe", "-NoLogoProfile", "-NoProfile", "-Command"]
+set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 set dotenv-load := false
 
-export PATH := env_var('USERPROFILE') / '.cargo' / 'bin' + if os() == 'windows' { ';' } else { ':' } + env_var('PATH')
+_sep := if os() == 'windows' { ';' } else { ':' }
+export PATH := env_var('USERPROFILE') / '.cargo' / 'bin' + _sep + env_var('PATH')
 
 default:
     @just --list

@@ -90,7 +90,12 @@ pub fn run(
     let bin = find_binary()?;
     let paths = resolve(&config.model)?;
     let lang = canary_lang(config);
-    let processor = Processor { bin, paths, config, lang: lang.clone() };
+    let processor = Processor {
+        bin,
+        paths,
+        config,
+        lang: lang.clone(),
+    };
     let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
     Ok((segs, lang, rtf))
 }

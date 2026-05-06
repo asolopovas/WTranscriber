@@ -149,8 +149,7 @@ fn smooth_flickers(words: &mut [Word]) {
         return;
     }
     for i in 1..n - 1 {
-        if words[i].speaker != words[i - 1].speaker
-            && words[i - 1].speaker == words[i + 1].speaker
+        if words[i].speaker != words[i - 1].speaker && words[i - 1].speaker == words[i + 1].speaker
         {
             let prev = words[i - 1].speaker.clone();
             words[i].speaker.clone_from(&prev);
@@ -176,18 +175,15 @@ fn group_words(words: &[Word]) -> Vec<Utterance> {
     let mut parts = vec![words[0].text.clone()];
     let mut prev_end = is_sentence_end(&words[0].text);
 
-    let flush = |out: &mut Vec<Utterance>,
-                 start: u64,
-                 end: u64,
-                 spk: &Option<String>,
-                 parts: &[String]| {
-        out.push(Utterance {
-            start_ms: start,
-            end_ms: end,
-            speaker: spk.clone(),
-            text: join_words(parts),
-        });
-    };
+    let flush =
+        |out: &mut Vec<Utterance>, start: u64, end: u64, spk: &Option<String>, parts: &[String]| {
+            out.push(Utterance {
+                start_ms: start,
+                end_ms: end,
+                speaker: spk.clone(),
+                text: join_words(parts),
+            });
+        };
 
     for w in &words[1..] {
         if w.speaker != cur_spk || prev_end {
@@ -232,9 +228,27 @@ mod tests {
     #[test]
     fn smooths_isolated_flicker() {
         let mut words = vec![
-            Word { text: "a".into(), start_ms: 0, end_ms: 1, speaker: Some("A".into()), confidence: 0.0 },
-            Word { text: "b".into(), start_ms: 1, end_ms: 2, speaker: Some("B".into()), confidence: 0.0 },
-            Word { text: "c".into(), start_ms: 2, end_ms: 3, speaker: Some("A".into()), confidence: 0.0 },
+            Word {
+                text: "a".into(),
+                start_ms: 0,
+                end_ms: 1,
+                speaker: Some("A".into()),
+                confidence: 0.0,
+            },
+            Word {
+                text: "b".into(),
+                start_ms: 1,
+                end_ms: 2,
+                speaker: Some("B".into()),
+                confidence: 0.0,
+            },
+            Word {
+                text: "c".into(),
+                start_ms: 2,
+                end_ms: 3,
+                speaker: Some("A".into()),
+                confidence: 0.0,
+            },
         ];
         smooth_flickers(&mut words);
         assert_eq!(words[1].speaker.as_deref(), Some("A"));

@@ -5,12 +5,12 @@ mod wav;
 use std::path::Path;
 
 pub use cache::audio_cache_key;
-pub use ffmpeg::{find_ffmpeg, probe_duration_ms};
 #[allow(unused_imports)]
 pub use ffmpeg::find_ffprobe;
-pub use wav::{WHISPER_SAMPLE_RATE, read_pcm16_wav};
+pub use ffmpeg::{find_ffmpeg, probe_duration_ms};
 #[allow(unused_imports, dead_code)]
 pub use wav::write_pcm16_wav;
+pub use wav::{WHISPER_SAMPLE_RATE, read_pcm16_wav};
 
 use crate::error::{Error, Result};
 
@@ -21,7 +21,9 @@ pub fn load_samples(path: &Path) -> Result<Vec<f32>> {
             path.display()
         )));
     }
-    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
         && let Ok(samples) = read_pcm16_wav(path)
     {
         return Ok(samples);
@@ -45,12 +47,8 @@ fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
         return read_pcm16_wav(target);
     }
 
-    let target = cached.unwrap_or_else(|| {
-        std::env::temp_dir().join(format!(
-            "wt-{}.wav",
-            std::process::id()
-        ))
-    });
+    let target = cached
+        .unwrap_or_else(|| std::env::temp_dir().join(format!("wt-{}.wav", std::process::id())));
 
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;

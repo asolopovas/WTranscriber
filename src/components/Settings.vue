@@ -54,7 +54,13 @@ watch(
     <header>
       <h2>Settings</h2>
       <span class="status" :data-state="status">{{
-        status === "saving" ? "saving…" : status === "saved" ? "saved" : status === "error" ? "error" : ""
+        status === "saving"
+          ? "saving…"
+          : status === "saved"
+            ? "saved"
+            : status === "error"
+              ? "error"
+              : ""
       }}</span>
     </header>
 
@@ -109,10 +115,12 @@ watch(
         type="number"
         min="0"
         max="20"
-        @input="(e) => {
-          const n = Number((e.target as HTMLInputElement).value);
-          if (config) config.speakers = n > 0 ? n : null;
-        }"
+        @input="
+          (e) => {
+            const n = Number((e.target as HTMLInputElement).value);
+            if (config) config.speakers = n > 0 ? n : null;
+          }
+        "
       />
     </div>
 

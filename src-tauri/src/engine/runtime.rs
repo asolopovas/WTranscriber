@@ -23,5 +23,9 @@ pub const fn provider(config: &Config) -> Provider {
 }
 
 pub const fn threads(config: &Config) -> u32 {
-    if config.threads > 0 { config.threads } else { 4 }
+    if config.threads > 0 {
+        config.threads
+    } else {
+        4
+    }
 }

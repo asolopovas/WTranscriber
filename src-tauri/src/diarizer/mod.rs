@@ -86,7 +86,11 @@ mod tests {
     use super::*;
 
     fn seg(speaker: u32, start: f64, end: f64) -> Segment {
-        Segment { speaker, start_sec: start, end_sec: end }
+        Segment {
+            speaker,
+            start_sec: start,
+            end_sec: end,
+        }
     }
 
     #[test]

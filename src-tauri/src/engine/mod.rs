@@ -29,12 +29,20 @@ pub fn run(
 ) -> Result<(Vec<Segment>, String, f64)> {
     match config.engine {
         Engine::WhisperOnnx => whisper::run(samples, audio_dur_sec, config, on_progress),
-        Engine::Zipformer => {
-            transducer::run(transducer::Kind::Zipformer, samples, audio_dur_sec, config, on_progress)
-        }
-        Engine::Parakeet => {
-            transducer::run(transducer::Kind::Parakeet, samples, audio_dur_sec, config, on_progress)
-        }
+        Engine::Zipformer => transducer::run(
+            transducer::Kind::Zipformer,
+            samples,
+            audio_dur_sec,
+            config,
+            on_progress,
+        ),
+        Engine::Parakeet => transducer::run(
+            transducer::Kind::Parakeet,
+            samples,
+            audio_dur_sec,
+            config,
+            on_progress,
+        ),
         Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress),
         Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress),
     }

@@ -7,7 +7,9 @@ use std::{
 
 use clap::{Parser, Subcommand, ValueEnum};
 use wtranscriber_lib::{
-    api::{self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript},
+    api::{
+        self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript,
+    },
     namer,
 };
 
@@ -107,8 +109,7 @@ impl From<EngineArg> for Engine {
 async fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -269,9 +270,7 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
     write_transcript(&dst, &transcript)?;
     println!("{}", dst.display());
 
-    if rename
-        && let Err(e) = auto_rename(&canonical, &transcript).await
-    {
+    if rename && let Err(e) = auto_rename(&canonical, &transcript).await {
         eprintln!("auto-rename failed: {e}");
     }
     Ok(())
@@ -279,11 +278,9 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
 
 async fn auto_rename(audio: &Path, transcript: &Transcript) -> Result<()> {
     let t = transcript.clone();
-    let suggestion = tokio::task::spawn_blocking(move || {
-        namer::suggest(&t, chrono::Local::now())
-    })
-    .await
-    .map_err(|e| api::Error::Transcribe(format!("namer task: {e}")))??;
+    let suggestion = tokio::task::spawn_blocking(move || namer::suggest(&t, chrono::Local::now()))
+        .await
+        .map_err(|e| api::Error::Transcribe(format!("namer task: {e}")))??;
     let target = namer::rename_with_suggestion(audio, &suggestion)?;
     eprintln!("renamed: {} -> {}", audio.display(), target.display());
     Ok(())

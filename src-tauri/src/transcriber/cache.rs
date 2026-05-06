@@ -92,7 +92,9 @@ pub fn compute_key(p: &KeyParams) -> String {
 }
 
 fn load_index() -> Vec<Entry> {
-    let Ok(path) = index_path() else { return Vec::new() };
+    let Ok(path) = index_path() else {
+        return Vec::new();
+    };
     let Ok(raw) = std::fs::read_to_string(&path) else {
         return Vec::new();
     };
@@ -155,10 +157,7 @@ pub fn invalidate(key: &str) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
-    let entries: Vec<Entry> = load_index()
-        .into_iter()
-        .filter(|e| e.key != key)
-        .collect();
+    let entries: Vec<Entry> = load_index().into_iter().filter(|e| e.key != key).collect();
     save_index(&entries)?;
     Ok(())
 }

@@ -127,7 +127,12 @@ fn rebuild_from_tokens(seg: &mut Segment) {
         seg.text.clear();
         return;
     }
-    seg.text = seg.tokens.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" ");
+    seg.text = seg
+        .tokens
+        .iter()
+        .map(|t| t.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
     seg.start_ms = seg.tokens.first().unwrap().start_ms;
     seg.end_ms = seg.tokens.last().unwrap().end_ms;
 }
@@ -146,7 +151,10 @@ fn run_diarize(
 }
 
 fn ensure_wav_for_diarize(input: &Path, samples: &[f32]) -> Result<PathBuf> {
-    if input.extension().is_some_and(|e| e.eq_ignore_ascii_case("wav")) {
+    if input
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    {
         return Ok(input.to_path_buf());
     }
     let cache_dir = crate::paths::cache_dir()?;

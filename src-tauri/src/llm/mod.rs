@@ -26,7 +26,11 @@ pub struct Options {
 }
 
 const fn binary_name() -> &'static str {
-    if cfg!(windows) { "llama-cli.exe" } else { "llama-cli" }
+    if cfg!(windows) {
+        "llama-cli.exe"
+    } else {
+        "llama-cli"
+    }
 }
 
 fn find_binary() -> Result<PathBuf> {
@@ -48,7 +52,9 @@ fn find_binary() -> Result<PathBuf> {
     if let Ok(p) = which::which(name) {
         return Ok(p);
     }
-    Err(Error::Transcribe(format!("{name} not found (set WT_LLM_DIR or install llama.cpp)")))
+    Err(Error::Transcribe(format!(
+        "{name} not found (set WT_LLM_DIR or install llama.cpp)"
+    )))
 }
 
 fn first_installed_llm() -> Option<PathBuf> {
@@ -83,11 +89,19 @@ impl Runner {
         let binary = find_binary()?;
         let model = first_installed_llm()
             .ok_or_else(|| Error::Transcribe("no LLM installed (download one in Models)".into()))?;
-        Ok(Self { binary, model, threads: default_threads() })
+        Ok(Self {
+            binary,
+            model,
+            threads: default_threads(),
+        })
     }
 
     pub fn generate(&self, opts: &Options) -> Result<String> {
-        let max_tokens = if opts.max_tokens == 0 { 128 } else { opts.max_tokens };
+        let max_tokens = if opts.max_tokens == 0 {
+            128
+        } else {
+            opts.max_tokens
+        };
         let temp = if opts.temp == 0.0 { 0.1 } else { opts.temp };
 
         let prompt_file = write_temp("wt-llm-prompt-", ".txt", &opts.prompt)?;
@@ -96,14 +110,30 @@ impl Runner {
             None => None,
         };
 
-        let stdout = self.run_once(&prompt_file, grammar_file.as_deref(), max_tokens, temp, false)?;
+        let stdout = self.run_once(
+            &prompt_file,
+            grammar_file.as_deref(),
+            max_tokens,
+            temp,
+            false,
+        )?;
         if let Some(json) = last_balanced_json(&stdout) {
             return Ok(json);
         }
 
-        let stdout_cpu = self.run_once(&prompt_file, grammar_file.as_deref(), max_tokens, temp, true)?;
-        last_balanced_json(&stdout_cpu)
-            .ok_or_else(|| Error::Transcribe(format!("no JSON object in llm output: {}", tail(&stdout_cpu, 400))))
+        let stdout_cpu = self.run_once(
+            &prompt_file,
+            grammar_file.as_deref(),
+            max_tokens,
+            temp,
+            true,
+        )?;
+        last_balanced_json(&stdout_cpu).ok_or_else(|| {
+            Error::Transcribe(format!(
+                "no JSON object in llm output: {}",
+                tail(&stdout_cpu, 400)
+            ))
+        })
     }
 
     fn run_once(
@@ -115,8 +145,10 @@ impl Runner {
         cpu_only: bool,
     ) -> Result<String> {
         let mut cmd = build_command(&self.binary);
-        cmd.arg("-m").arg(&self.model)
-            .arg("-f").arg(prompt)
+        cmd.arg("-m")
+            .arg(&self.model)
+            .arg("-f")
+            .arg(prompt)
             .args(["-n", &max_tokens.to_string()])
             .args(["-t", &self.threads.to_string()])
             .args(["--temp", &format!("{temp:.2}")])

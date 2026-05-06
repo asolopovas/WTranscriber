@@ -57,11 +57,7 @@ onUnmounted(() => unlisten.forEach((u) => u()));
       <footer>
         <span class="status">{{ m.status }}</span>
         <button v-if="m.status === 'not_installed'" @click="install(m.id)">Install</button>
-        <progress
-          v-if="progress[m.id]"
-          :value="pct(progress[m.id])"
-          max="100"
-        />
+        <progress v-if="progress[m.id]" :value="pct(progress[m.id])" max="100" />
       </footer>
     </article>
   </section>

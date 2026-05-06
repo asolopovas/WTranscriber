@@ -45,10 +45,7 @@ pub fn manager() -> &'static Manager {
 
 impl Manager {
     pub fn list(&self) -> Result<Vec<ModelInfo>> {
-        catalog::catalog()
-            .iter()
-            .map(|e| self.info(e))
-            .collect()
+        catalog::catalog().iter().map(|e| self.info(e)).collect()
     }
 
     #[allow(dead_code)]
@@ -91,9 +88,8 @@ impl Manager {
         id: &str,
         on_progress: &mut (dyn FnMut(FileProgress) + Send),
     ) -> Result<()> {
-        let entry = catalog::by_id(id).ok_or_else(|| {
-            crate::error::Error::Config(format!("unknown model id {id}"))
-        })?;
+        let entry = catalog::by_id(id)
+            .ok_or_else(|| crate::error::Error::Config(format!("unknown model id {id}")))?;
 
         self.in_flight.lock().unwrap().insert(id.to_owned());
         let result = self.install_inner(entry, on_progress).await;

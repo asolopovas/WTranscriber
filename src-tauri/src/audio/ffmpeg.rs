@@ -16,7 +16,9 @@ static FFMPEG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static FFPROBE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 pub fn find_ffmpeg() -> Option<PathBuf> {
-    FFMPEG.get_or_init(|| which::which("ffmpeg").ok().or_else(find_ffmpeg_windows)).clone()
+    FFMPEG
+        .get_or_init(|| which::which("ffmpeg").ok().or_else(find_ffmpeg_windows))
+        .clone()
 }
 
 pub fn find_ffprobe() -> Option<PathBuf> {
@@ -76,9 +78,12 @@ pub fn probe_duration_ms(path: &Path) -> Option<u64> {
     if let Some(probe) = find_ffprobe() {
         let out = quiet_command(&probe)
             .args([
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
             ])
             .arg(path)
             .output()
@@ -109,17 +114,17 @@ fn parse_ffmpeg_duration(stderr: &str) -> Option<u64> {
 
 pub fn run(ffmpeg: &Path, input: &Path, output: &Path) -> Result<()> {
     let out = quiet_command(ffmpeg)
-        .args([
-            "-loglevel", "error",
-            "-y",
-            "-i",
-        ])
+        .args(["-loglevel", "error", "-y", "-i"])
         .arg(input)
         .args([
-            "-ar", "16000",
-            "-ac", "1",
-            "-sample_fmt", "s16",
-            "-f", "wav",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-sample_fmt",
+            "s16",
+            "-f",
+            "wav",
         ])
         .arg(output)
         .output()?;

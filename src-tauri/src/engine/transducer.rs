@@ -109,7 +109,12 @@ pub fn run(
 ) -> Result<(Vec<Segment>, String, f64)> {
     let bin = find_binary()?;
     let paths = resolve(&config.model)?;
-    let processor = Processor { bin, paths, config, kind };
+    let processor = Processor {
+        bin,
+        paths,
+        config,
+        kind,
+    };
     let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
     let _ = kind.name();
     Ok((segs, "en".into(), rtf))

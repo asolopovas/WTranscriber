@@ -21,6 +21,7 @@ pub struct Progress {
     pub total: u64,
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn download_file(
     dst: &Path,
     url: &str,
@@ -74,7 +75,10 @@ pub async fn download_file(
         }
 
         let total = resp.content_length().unwrap_or(0) + written;
-        on_progress(Progress { downloaded: written, total });
+        on_progress(Progress {
+            downloaded: written,
+            total,
+        });
 
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
@@ -100,7 +104,10 @@ pub async fn download_file(
                     }
                     written += bytes.len() as u64;
                     if last_report.elapsed() >= REPORT_INTERVAL {
-                        on_progress(Progress { downloaded: written, total });
+                        on_progress(Progress {
+                            downloaded: written,
+                            total,
+                        });
                         last_report = Instant::now();
                     }
                 }
@@ -115,7 +122,10 @@ pub async fn download_file(
 
         match copy_err {
             None => {
-                on_progress(Progress { downloaded: written, total });
+                on_progress(Progress {
+                    downloaded: written,
+                    total,
+                });
                 if let Some(expected) = expected_sha256
                     && !expected.is_empty()
                 {

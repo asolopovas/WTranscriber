@@ -69,7 +69,12 @@ pub fn paths_for(entry: &Entry) -> Result<Vec<PathBuf>> {
     Ok(entry
         .files
         .iter()
-        .map(|f| root.join(f.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR.as_ref())))
+        .map(|f| {
+            root.join(
+                f.rel_path
+                    .replace('/', std::path::MAIN_SEPARATOR_STR.as_ref()),
+            )
+        })
         .collect())
 }
 

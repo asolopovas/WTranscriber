@@ -69,7 +69,9 @@ function fmt(ms: number): string {
     <header>
       <h1>WTranscriber</h1>
       <nav>
-        <button :class="{ active: tab === 'transcribe' }" @click="tab = 'transcribe'">Transcribe</button>
+        <button :class="{ active: tab === 'transcribe' }" @click="tab = 'transcribe'">
+          Transcribe
+        </button>
         <button :class="{ active: tab === 'history' }" @click="tab = 'history'">History</button>
         <button :class="{ active: tab === 'models' }" @click="tab = 'models'">Models</button>
         <button :class="{ active: tab === 'settings' }" @click="tab = 'settings'">Settings</button>
@@ -81,39 +83,52 @@ function fmt(ms: number): string {
     <Settings v-else-if="tab === 'settings'" />
     <History
       v-else-if="tab === 'history'"
-      @open="(t) => { transcript = t; tab = 'transcribe'; }"
+      @open="
+        (t) => {
+          transcript = t;
+          tab = 'transcribe';
+        }
+      "
     />
     <template v-else>
+      <section class="controls">
+        <button
+          :disabled="status === 'running' || status === 'renaming'"
+          @click="pickAndTranscribe"
+        >
+          {{
+            status === "running"
+              ? "Transcribing…"
+              : status === "renaming"
+                ? "Naming…"
+                : "Pick audio file"
+          }}
+        </button>
+        <span v-if="config" class="meta">
+          {{ config.model }} · {{ config.language }} · {{ config.device }}
+        </span>
+      </section>
 
-    <section class="controls">
-      <button :disabled="status === 'running' || status === 'renaming'" @click="pickAndTranscribe">
-        {{ status === "running" ? "Transcribing…" : status === "renaming" ? "Naming…" : "Pick audio file" }}
-      </button>
-      <span v-if="config" class="meta">
-        {{ config.model }} · {{ config.language }} · {{ config.device }}
-      </span>
-    </section>
+      <section v-if="error" class="error">{{ error }}</section>
 
-    <section v-if="error" class="error">{{ error }}</section>
+      <section v-if="transcript" class="summary">
+        {{ transcript.utterances.length }} utterances · {{ transcript.speakers_detected }} speakers
+        ·
+        {{ fmt(transcript.duration_ms) }}
+      </section>
 
-    <section v-if="transcript" class="summary">
-      {{ transcript.utterances.length }} utterances ·
-      {{ transcript.speakers_detected }} speakers ·
-      {{ fmt(transcript.duration_ms) }}
-    </section>
+      <section v-if="suggestion" class="suggestion">
+        Suggested filename: <code>{{ suggestion.topic }}_{{ suggestion.stamp }}</code>
+      </section>
 
-    <section v-if="suggestion" class="suggestion">
-      Suggested filename: <code>{{ suggestion.topic }}_{{ suggestion.stamp }}</code>
-    </section>
-
-    <section class="transcript">
-      <p v-if="!transcript?.utterances.length" class="empty">No transcript yet.</p>
-      <article v-for="(u, i) in transcript?.utterances ?? []" :key="i" class="utterance">
-        <span class="ts">{{ fmt(u.start_ms) }} → {{ fmt(u.end_ms) }}</span>
-        <span v-if="u.speaker" class="speaker">{{ u.speaker }}</span>
-        <p>{{ u.text }}</p>
-      </article>
-    </section>
+      <section class="transcript">
+        <p v-if="!transcript?.utterances.length" class="empty">No transcript yet.</p>
+        <article v-for="(u, i) in transcript?.utterances ?? []" :key="i" class="utterance">
+          <span class="ts">{{ fmt(u.start_ms) }} → {{ fmt(u.end_ms) }}</span>
+          <span v-if="u.speaker" class="speaker">{{ u.speaker }}</span>
+          <p>{{ u.text }}</p>
+        </article>
+      </section>
     </template>
   </main>
 </template>

@@ -32,7 +32,9 @@ const fn samples_at(sec: f64) -> usize {
 
 fn snap_boundary(samples: &[f32], target: usize) -> usize {
     let window = samples_at(BOUNDARY_SEARCH_SEC);
-    let lo = target.saturating_sub(window).max(samples_at(BOUNDARY_MIN_ADVANCE_SEC));
+    let lo = target
+        .saturating_sub(window)
+        .max(samples_at(BOUNDARY_MIN_ADVANCE_SEC));
     let hi = (target + window).min(samples.len());
     if lo >= hi {
         return target;

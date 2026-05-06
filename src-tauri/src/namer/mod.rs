@@ -110,7 +110,10 @@ pub fn sanitize_topic(s: &str) -> String {
     s
 }
 
-pub fn rename_with_suggestion(original: &Path, suggestion: &Suggestion) -> Result<std::path::PathBuf> {
+pub fn rename_with_suggestion(
+    original: &Path,
+    suggestion: &Suggestion,
+) -> Result<std::path::PathBuf> {
     let parent = original.parent().unwrap_or_else(|| Path::new("."));
     let ext = original
         .extension()
@@ -128,7 +131,10 @@ mod tests {
 
     #[test]
     fn sanitizes_punctuation_and_case() {
-        assert_eq!(sanitize_topic("  Kitchen Renovation Quote!  "), "kitchen-renovation-quote");
+        assert_eq!(
+            sanitize_topic("  Kitchen Renovation Quote!  "),
+            "kitchen-renovation-quote"
+        );
     }
 
     #[test]

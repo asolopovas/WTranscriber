@@ -45,7 +45,11 @@ pub async fn install_model(app: AppHandle, id: String) -> Result<()> {
     };
     let result = models::manager().install(&id, &mut on_progress).await;
     let _ = app.emit(
-        if result.is_ok() { "model:done" } else { "model:error" },
+        if result.is_ok() {
+            "model:done"
+        } else {
+            "model:error"
+        },
         &id,
     );
     result

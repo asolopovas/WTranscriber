@@ -75,6 +75,10 @@ pub fn run(
     let processor = Processor { bin, paths, config };
     let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
     let lang = config.language.trim().to_lowercase();
-    let detected = if lang == "auto" || lang.is_empty() { String::new() } else { lang };
+    let detected = if lang == "auto" || lang.is_empty() {
+        String::new()
+    } else {
+        lang
+    };
     Ok((segs, detected, rtf))
 }

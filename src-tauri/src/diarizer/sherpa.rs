@@ -87,9 +87,7 @@ fn resolve_models() -> Result<(PathBuf, PathBuf)> {
 }
 
 fn diarizer_threads() -> u32 {
-    let n = std::thread::available_parallelism()
-        .map_or(4, std::num::NonZero::get)
-        / 2;
+    let n = std::thread::available_parallelism().map_or(4, std::num::NonZero::get) / 2;
     u32::try_from(n).unwrap_or(4).clamp(2, 8)
 }
 
@@ -97,7 +95,12 @@ impl SherpaDiarizer {
     pub fn new(num_speakers: u32) -> Result<Self> {
         let bin = find_bin()?;
         let (seg_model, emb_model) = resolve_models()?;
-        Ok(Self { bin, seg_model, emb_model, num_speakers })
+        Ok(Self {
+            bin,
+            seg_model,
+            emb_model,
+            num_speakers,
+        })
     }
 
     fn args(&self, wav: &Path) -> Vec<String> {
@@ -175,7 +178,10 @@ impl Backend for SherpaDiarizer {
         });
 
         let mut segments = Vec::new();
-        for line in BufReader::new(stdout).lines().map_while(std::result::Result::ok) {
+        for line in BufReader::new(stdout)
+            .lines()
+            .map_while(std::result::Result::ok)
+        {
             let line = line.trim_end_matches('\r').to_string();
             if let Some(caps) = SEG_RE.captures(&line) {
                 let start: f64 = caps[1].parse().unwrap_or(0.0);

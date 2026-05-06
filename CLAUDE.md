@@ -66,14 +66,14 @@ just icons      regenerate icon set from src-tauri/icons/icon.png
 
 The Rust skeleton mirrors the Go module layout to make porting mechanical:
 
-| Go (`internal/`) | Rust (`src-tauri/src/`) |
-|---|---|
-| `config.go` | `config.rs` |
-| `models/` | `models.rs` |
-| `transcriber/` | `transcriber/` |
-| `diarizer/` | `transcriber/diarizer.rs` (planned) |
-| `gui/` | `src/` (Vue) |
-| `appinfo/` | `lib.rs` (`app_version` cmd) |
+| Go (`internal/`) | Rust (`src-tauri/src/`)             |
+| ---------------- | ----------------------------------- |
+| `config.go`      | `config.rs`                         |
+| `models/`        | `models.rs`                         |
+| `transcriber/`   | `transcriber/`                      |
+| `diarizer/`      | `transcriber/diarizer.rs` (planned) |
+| `gui/`           | `src/` (Vue)                        |
+| `appinfo/`       | `lib.rs` (`app_version` cmd)        |
 
 Engine binaries (`sherpa-onnx-offline`, `llama-cli`, NeMo Sortformer) are
 invoked as sidecars via `tauri-plugin-shell`. They are not bundled in this

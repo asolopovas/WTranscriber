@@ -92,7 +92,12 @@ mod tests {
     use super::*;
 
     fn tok(text: &str) -> Token {
-        Token { text: text.into(), start_ms: 0, end_ms: 0, confidence: 0.0 }
+        Token {
+            text: text.into(),
+            start_ms: 0,
+            end_ms: 0,
+            confidence: 0.0,
+        }
     }
 
     #[test]
@@ -107,7 +112,9 @@ mod tests {
     #[test]
     fn collapses_repeated_bigram() {
         let tokens: Vec<Token> = ["ab", "cd", "ab", "cd", "ab", "cd", "end"]
-            .into_iter().map(tok).collect();
+            .into_iter()
+            .map(tok)
+            .collect();
         let out = collapse_repeats(&tokens);
         assert_eq!(
             out.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
