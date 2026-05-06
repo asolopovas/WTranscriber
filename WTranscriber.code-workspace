@@ -44,12 +44,12 @@
   "extensions": {
     "recommendations": [
       "rust-lang.rust-analyzer",
-      "tauri-apps.tauri-vscode",
       "vue.volar",
       "esbenp.prettier-vscode",
       "dbaeumer.vscode-eslint",
       "skellock.just",
-      "tamasfe.even-better-toml"
+      "tamasfe.even-better-toml",
+      "vadimcn.vscode-lldb"
     ]
   },
   "tasks": {
@@ -85,7 +85,7 @@
         "type": "shell",
         "command": "just build-cli",
         "group": "build",
-        "problemMatcher": ["$rustc"]
+        "problemMatcher": []
       },
       {
         "label": "preview",
@@ -118,14 +118,14 @@
         "type": "shell",
         "command": "just lint",
         "group": "test",
-        "problemMatcher": ["$rustc"]
+        "problemMatcher": []
       },
       {
         "label": "test",
         "type": "shell",
         "command": "just test",
         "group": { "kind": "test", "isDefault": true },
-        "problemMatcher": ["$rustc"]
+        "problemMatcher": []
       },
       {
         "label": "clean",
