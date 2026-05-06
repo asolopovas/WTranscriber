@@ -335,7 +335,16 @@ fn log_preflight(input: &Path, config: &Config) {
     };
     let _ = writeln!(buf, "  Device    : {device_label}");
     let _ = writeln!(buf, "  Language  : {}", config.language);
-    let _ = writeln!(buf, "  Threads   : {}", config.threads);
+    let effective_threads = crate::engine::threads(config);
+    if effective_threads == config.threads {
+        let _ = writeln!(buf, "  Threads   : {}", config.threads);
+    } else {
+        let _ = writeln!(
+            buf,
+            "  Threads   : {effective_threads} (capped from {} for {device_label})",
+            config.threads,
+        );
+    }
     if config.diarize {
         let _ = writeln!(
             buf,
