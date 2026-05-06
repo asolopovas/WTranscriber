@@ -10,6 +10,7 @@ mod logfile;
 mod models;
 pub mod namer;
 mod paths;
+mod progress;
 mod runtimes;
 mod transcriber;
 

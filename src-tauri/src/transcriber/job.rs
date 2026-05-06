@@ -9,12 +9,15 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use std::sync::Arc;
+
 use crate::{
     audio,
     config::Config,
     diarizer::{self, Segment as DiarSegment},
     engine,
     error::Result,
+    progress::{self, NoopSink, Phase, Sink},
     transcriber::{
         cache::{self, Entry as CacheEntry, build_key_params, compute_key},
         dedup,
@@ -29,15 +32,20 @@ pub struct Job {
 }
 
 pub async fn run(job: &Job) -> Result<Transcript> {
+    run_with_sink(job, Arc::new(NoopSink)).await
+}
+
+pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript> {
     let input = job.input.clone();
     let config = job.config.clone();
 
-    tokio::task::spawn_blocking(move || run_blocking(&input, &config))
+    tokio::task::spawn_blocking(move || run_blocking(&input, &config, sink.as_ref()))
         .await
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }
 
-fn run_blocking(input: &Path, config: &Config) -> Result<Transcript> {
+fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
+    sink.phase(Phase::CacheCheck);
     let speakers = config.speakers.unwrap_or(0);
     let key_params = build_key_params(
         input,
@@ -49,24 +57,35 @@ fn run_blocking(input: &Path, config: &Config) -> Result<Transcript> {
     let key = compute_key(&key_params);
 
     if let Some(cached) = cache::load(&key)? {
+        sink.phase(Phase::Done);
         return Ok(cached);
     }
 
+    sink.phase(Phase::LoadingAudio);
     let samples = audio::load_samples(input)?;
     let audio_dur_sec = samples.len() as f64 / f64::from(audio::WHISPER_SAMPLE_RATE);
     let duration_ms = (audio_dur_sec * 1000.0) as u64;
 
-    let mut on_progress = |_pct: f64| {};
-    let (mut segments, detected_language, _rtf) =
+    sink.phase(Phase::Transcribing);
+    let mut on_progress = |pct: f64| {
+        sink.report_pct(Phase::Transcribing, pct);
+    };
+    let (mut segments, detected_language, observed_rtf) =
         engine::run(&samples, audio_dur_sec, config, &mut on_progress)?;
     apply_dedup(&mut segments);
 
+    let device_label = format!("{:?}", config.device).to_lowercase();
+    progress::save_rtf(&config.model, &device_label, observed_rtf);
+
     let (diar_segs, diar_name) = if config.diarize {
-        run_diarize(input, &samples, audio_dur_sec, speakers)
+        sink.phase(Phase::Diarizing);
+        run_diarize(input, &samples, audio_dur_sec, speakers, sink)
             .map_or((Vec::new(), None), |(s, n)| (s, Some(n)))
     } else {
         (Vec::new(), None)
     };
+
+    sink.phase(Phase::Writing);
 
     let language = if detected_language.is_empty() {
         config.language.clone()
@@ -82,7 +101,7 @@ fn run_blocking(input: &Path, config: &Config) -> Result<Transcript> {
             language: language.clone(),
             duration_ms,
             diarizer: diar_name,
-            device: Some(format!("{:?}", config.device).to_lowercase()),
+            device: Some(device_label),
         },
     );
 
@@ -104,6 +123,7 @@ fn run_blocking(input: &Path, config: &Config) -> Result<Transcript> {
         size_bytes: 0,
     };
     cache::store(entry, &transcript)?;
+    sink.phase(Phase::Done);
     Ok(transcript)
 }
 
@@ -142,10 +162,11 @@ fn run_diarize(
     samples: &[f32],
     audio_dur_sec: f64,
     speakers: u32,
+    sink: &dyn Sink,
 ) -> Result<(Vec<DiarSegment>, String)> {
     let backend = diarizer::new(speakers)?;
     let wav = ensure_wav_for_diarize(input, samples)?;
-    let mut on_progress = |_pct: f64| {};
+    let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
     let segs = backend.diarize(&wav, speakers, audio_dur_sec, &mut on_progress)?;
     Ok((segs, backend.name()))
 }
