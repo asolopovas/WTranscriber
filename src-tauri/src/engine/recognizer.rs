@@ -142,11 +142,9 @@ fn locate_three(
     model_id: &str,
     suffixes: &[&str; 3],
 ) -> Result<[PathBuf; 3]> {
-    let stems: &[&str] = &[
-        model_id,
-        model_id.strip_prefix("sherpa-").unwrap_or(model_id),
-        "",
-    ];
+    let no_sherpa = model_id.strip_prefix("sherpa-").unwrap_or(model_id);
+    let last_segment = model_id.rsplit('-').next().unwrap_or(model_id);
+    let stems: &[&str] = &[model_id, no_sherpa, last_segment, ""];
     for stem in stems {
         let prefix = if stem.is_empty() {
             String::new()

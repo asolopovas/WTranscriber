@@ -68,6 +68,8 @@ fn use_in_process(config: &Config) -> bool {
     )
 }
 
+const WHISPER_MAX_CHUNK_SEC: f64 = 26.0;
+
 #[allow(clippy::significant_drop_tightening)]
 fn run_in_process(
     samples: &[f32],
@@ -83,44 +85,70 @@ fn run_in_process(
     let loaded = guard
         .as_mut()
         .ok_or_else(|| Error::Transcribe("recognizer cache empty after ensure".into()))?;
-    let t0 = std::time::Instant::now();
-    let stream = loaded.recognizer.create_stream();
     let sample_rate = i32::try_from(crate::audio::WHISPER_SAMPLE_RATE).unwrap_or(16_000);
+    let chunk_sec = match config.engine {
+        Engine::WhisperOnnx => WHISPER_MAX_CHUNK_SEC,
+        _ => audio_dur_sec.max(1.0),
+    };
+    let chunks = chunk::split_chunks(samples, chunk_sec);
     crate::logfile::info(&format!(
-        "in-proc decode: feeding {} samples ({:.1}s) at {sample_rate} Hz",
+        "in-proc decode: {} samples ({:.1}s) -> {} chunk(s) of <={chunk_sec:.0}s",
         samples.len(),
         audio_dur_sec,
+        chunks.len(),
     ));
-    stream.accept_waveform(sample_rate, samples);
-    if cancelled() {
-        return Err(Error::Cancelled);
+
+    let t0 = std::time::Instant::now();
+    let mut all_segments: Vec<Segment> = Vec::new();
+    for (i, ch) in chunks.iter().enumerate() {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let stream = loaded.recognizer.create_stream();
+        stream.accept_waveform(sample_rate, ch.samples);
+        let decode_t0 = std::time::Instant::now();
+        crate::logfile::info(&format!(
+            "in-proc decode: chunk {}/{} {:.1}-{:.1}s ({} samples) decoding…",
+            i + 1,
+            chunks.len(),
+            ch.start_sec,
+            ch.end_sec,
+            ch.samples.len(),
+        ));
+        loaded.recognizer.decode(&stream);
+        crate::logfile::info(&format!(
+            "in-proc decode: chunk {}/{} done in {:.2}s",
+            i + 1,
+            chunks.len(),
+            decode_t0.elapsed().as_secs_f64(),
+        ));
+        let chunk_dur = ch.end_sec - ch.start_sec;
+        let result = stream
+            .get_result()
+            .ok_or_else(|| Error::Transcribe("empty result from recognizer".into()))?;
+        for mut seg in build_segments(&result, chunk_dur) {
+            let offset_ms = f64_ms(ch.start_sec);
+            seg.start_ms = seg.start_ms.saturating_add(offset_ms);
+            seg.end_ms = seg.end_ms.saturating_add(offset_ms);
+            for tok in &mut seg.tokens {
+                tok.start_ms = tok.start_ms.saturating_add(offset_ms);
+                tok.end_ms = tok.end_ms.saturating_add(offset_ms);
+            }
+            all_segments.push(seg);
+        }
     }
-    let decode_t0 = std::time::Instant::now();
-    crate::logfile::info("in-proc decode: starting recognizer.decode()");
-    loaded.recognizer.decode(&stream);
-    crate::logfile::info(&format!(
-        "in-proc decode: recognizer.decode() returned in {:.2}s",
-        decode_t0.elapsed().as_secs_f64(),
-    ));
-    if cancelled() {
-        return Err(Error::Cancelled);
-    }
-    let result = stream
-        .get_result()
-        .ok_or_else(|| Error::Transcribe("empty result from recognizer".into()))?;
     let elapsed = t0.elapsed().as_secs_f64();
     let rtf = if elapsed > 0.0 {
         audio_dur_sec / elapsed
     } else {
         0.0
     };
-    let segments = build_segments(&result, audio_dur_sec);
     let detected = if config.language == "auto" || config.language.is_empty() {
         String::new()
     } else {
         config.language.clone()
     };
-    Ok((segments, detected, rtf))
+    Ok((all_segments, detected, rtf))
 }
 
 fn build_segments(
