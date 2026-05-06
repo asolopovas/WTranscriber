@@ -93,5 +93,8 @@ cudnn version="9.21.1.3":
 sherpa-cuda version="v1.13.0":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1 -Version {{version}}
 
+nemo-deps:
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
+
 bump version:
     bun pm version {{version}} --no-git-tag-version

@@ -367,12 +367,36 @@ fn run_diarize_streaming(
     sink: &dyn Sink,
     config: &Config,
 ) -> Result<(Vec<DiarSegment>, String)> {
-    let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
     let wav = audio::ensure_cached_wav(input)?;
+    let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
+    let backend_name = backend.name();
     let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
     let cancelled = || sink.is_cancelled();
-    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress)?;
-    Ok((segs, backend.name()))
+    match backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress) {
+        Ok(segs) => Ok((segs, backend_name)),
+        Err(e)
+            if config.diarizer == crate::config::DiarizerChoice::Auto
+                && backend_name == "nemo-sortformer" =>
+        {
+            logfile::warn(&format!(
+                "diarizer auto: nemo failed at runtime ({e}); falling back to sherpa"
+            ));
+            let fallback =
+                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Sherpa)?;
+            let fallback_name = fallback.name();
+            let mut fb_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
+            let fb_cancelled = || sink.is_cancelled();
+            let segs = fallback.diarize(
+                &wav,
+                speakers,
+                audio_dur_sec,
+                &fb_cancelled,
+                &mut fb_progress,
+            )?;
+            Ok((segs, fallback_name))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn apply_dedup(segments: &mut Vec<Segment>) {

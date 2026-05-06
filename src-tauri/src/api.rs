@@ -6,7 +6,7 @@ pub use crate::{
     transcriber::{
         Transcript, Utterance, Word,
         cache::{self as transcript_cache},
-        run as transcribe,
+        partial as transcript_partial, run as transcribe,
     },
 };
 
