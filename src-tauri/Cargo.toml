@@ -10,6 +10,11 @@ repository = "https://github.com/asolopovas/WTranscriber"
 publish = false
 default-run = "wtranscriber"
 
+[features]
+default = ["sherpa-static"]
+sherpa-static = ["sherpa-onnx/static"]
+cuda = ["sherpa-onnx/shared"]
+
 [lib]
 name = "wtranscriber_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -52,7 +57,7 @@ hound = "3.5"
 rubato = "0.16"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 byteorder = "1.5"
-sherpa-onnx = { version = "1.13", default-features = false, features = ["static"] }
+sherpa-onnx = { version = "1.13", default-features = false }
 
 [profile.release]
 codegen-units = 1

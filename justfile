@@ -16,6 +16,9 @@ dev:
 build:
     bun run tauri build
 
+build-cuda:
+    bun run tauri build -- --no-default-features --features cuda
+
 build-cli:
     cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
 
@@ -36,11 +39,11 @@ fmt-check:
     cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
 lint:
-    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     bun run typecheck
 
 test:
-    cargo test --manifest-path src-tauri/Cargo.toml --all-features
+    cargo test --manifest-path src-tauri/Cargo.toml
 
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml
@@ -52,8 +55,8 @@ icons source="src-tauri/icons/icon.png":
 cudnn version="9.21.1.3":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
 
-sherpa-cuda-build version="v1.13.0":
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-sherpa-cuda.ps1 -Version {{version}}
+sherpa-cuda version="v1.13.0":
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1 -Version {{version}}
 
 bump version:
     bun pm version {{version}} --no-git-tag-version
