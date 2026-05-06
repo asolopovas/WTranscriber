@@ -2,7 +2,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{config::Config, error::Result};
+use crate::{
+    audio,
+    config::Config,
+    error::Result,
+    transcriber::transcript::{self, Meta, Segment, Transcript},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
@@ -10,27 +15,32 @@ pub struct Job {
     pub config: Config,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Utterance {
-    pub start_ms: u64,
-    pub end_ms: u64,
-    pub speaker: Option<String>,
-    pub text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transcript {
-    pub model: String,
-    pub language: String,
-    pub duration_ms: u64,
-    pub utterances: Vec<Utterance>,
-}
-
 pub async fn run(job: &Job) -> Result<Transcript> {
-    Ok(Transcript {
-        model: job.config.model.clone(),
-        language: job.config.language.clone(),
-        duration_ms: 0,
-        utterances: Vec::new(),
+    let input = job.input.clone();
+    let config = job.config.clone();
+
+    let (samples, duration_ms) = tokio::task::spawn_blocking(move || -> Result<(Vec<f32>, u64)> {
+        let s = audio::load_samples(&input)?;
+        let dur = (s.len() as u64 * 1000) / u64::from(audio::WHISPER_SAMPLE_RATE);
+        Ok((s, dur))
     })
+    .await
+    .map_err(|e| crate::error::Error::Transcribe(format!("audio task: {e}")))??;
+
+    let _ = samples;
+
+    let segments: Vec<Segment> = Vec::new();
+    let diar = Vec::new();
+
+    Ok(transcript::build(
+        &segments,
+        &diar,
+        Meta {
+            model: config.model,
+            language: config.language,
+            duration_ms,
+            diarizer: None,
+            device: Some(format!("{:?}", config.device).to_lowercase()),
+        },
+    ))
 }

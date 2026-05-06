@@ -30,6 +30,12 @@ pub fn models_dir() -> Result<PathBuf> {
     Ok(d)
 }
 
+pub fn cache_dir() -> Result<PathBuf> {
+    let d = dirs()?.cache_dir().to_path_buf();
+    std::fs::create_dir_all(&d)?;
+    Ok(d)
+}
+
 pub fn config_file() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.yml"))
 }

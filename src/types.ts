@@ -25,3 +25,22 @@ export interface Utterance {
   speaker: string | null;
   text: string;
 }
+
+export interface Word {
+  text: string;
+  start_ms: number;
+  end_ms: number;
+  speaker: string | null;
+  confidence: number;
+}
+
+export interface Transcript {
+  model: string;
+  language: string;
+  duration_ms: number;
+  diarizer?: string;
+  device?: string;
+  speakers_detected: number;
+  utterances: Utterance[];
+  words: Word[];
+}

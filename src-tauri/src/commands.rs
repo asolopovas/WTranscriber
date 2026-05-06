@@ -3,10 +3,11 @@
 use std::path::PathBuf;
 
 use crate::{
+    audio,
     config::Config,
     error::Result,
     models::{self, ModelInfo},
-    transcriber::{self, Job, Utterance},
+    transcriber::{self, Job, Transcript},
 };
 
 #[tauri::command]
@@ -30,8 +31,12 @@ pub fn list_models() -> Result<Vec<ModelInfo>> {
 }
 
 #[tauri::command]
-pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Vec<Utterance>> {
+pub fn probe_audio(path: PathBuf) -> Option<u64> {
+    audio::probe_duration_ms(&path)
+}
+
+#[tauri::command]
+pub async fn transcribe_file(input: PathBuf, config: Config) -> Result<Transcript> {
     let job = Job { input, config };
-    let transcript = transcriber::run(&job).await?;
-    Ok(transcript.utterances)
+    transcriber::run(&job).await
 }

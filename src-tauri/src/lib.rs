@@ -1,3 +1,4 @@
+mod audio;
 mod commands;
 mod config;
 mod error;
@@ -23,6 +24,7 @@ pub fn run() {
             commands::load_config,
             commands::save_config,
             commands::list_models,
+            commands::probe_audio,
             commands::transcribe_file,
         ])
         .run(tauri::generate_context!())

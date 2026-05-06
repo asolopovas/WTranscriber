@@ -2,11 +2,11 @@
 import { onMounted, ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
-import type { Config, Utterance } from "./types";
+import type { Config, Transcript } from "./types";
 
 const version = ref("");
 const config = ref<Config | null>(null);
-const utterances = ref<Utterance[]>([]);
+const transcript = ref<Transcript | null>(null);
 const status = ref<"idle" | "running" | "error">("idle");
 const error = ref<string | null>(null);
 
@@ -25,7 +25,7 @@ async function pickAndTranscribe() {
   status.value = "running";
   error.value = null;
   try {
-    utterances.value = await api.transcribeFile(selected, config.value);
+    transcript.value = await api.transcribeFile(selected, config.value);
     status.value = "idle";
   } catch (e) {
     error.value = String(e);
@@ -57,9 +57,15 @@ function fmt(ms: number): string {
 
     <section v-if="error" class="error">{{ error }}</section>
 
+    <section v-if="transcript" class="summary">
+      {{ transcript.utterances.length }} utterances ·
+      {{ transcript.speakers_detected }} speakers ·
+      {{ fmt(transcript.duration_ms) }}
+    </section>
+
     <section class="transcript">
-      <p v-if="!utterances.length" class="empty">No transcript yet.</p>
-      <article v-for="(u, i) in utterances" :key="i" class="utterance">
+      <p v-if="!transcript?.utterances.length" class="empty">No transcript yet.</p>
+      <article v-for="(u, i) in transcript?.utterances ?? []" :key="i" class="utterance">
         <span class="ts">{{ fmt(u.start_ms) }} → {{ fmt(u.end_ms) }}</span>
         <span v-if="u.speaker" class="speaker">{{ u.speaker }}</span>
         <p>{{ u.text }}</p>
@@ -125,6 +131,10 @@ button:disabled {
 }
 .empty {
   color: #666;
+}
+.summary {
+  color: #999;
+  font-size: 0.85rem;
 }
 .utterance {
   padding: 12px;
