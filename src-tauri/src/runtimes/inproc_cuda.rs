@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use crate::{logfile, runtimes::sherpa};
+use crate::{
+    logfile,
+    runtimes::{cudnn, sherpa},
+};
 
 const CUDA_DLL_NAMES: &[&str] = &[
     "onnxruntime.dll",
@@ -86,6 +89,54 @@ pub fn setup() {
              verify the cuda runtime archive includes the CUDA EP DLL.",
         );
     }
+
+    prepend_cudnn_to_process_path();
+}
+
+fn prepend_cudnn_to_process_path() {
+    let Some(bin) = cudnn::bin_dir() else {
+        logfile::warn("inproc-cuda: cudnn bin_dir unresolved");
+        return;
+    };
+    let dll = bin.join(cudnn::target_dll());
+    if !dll.exists() {
+        logfile::warn(&format!(
+            "inproc-cuda: cuDNN missing at {}; CUDA EP will fail to load. \
+             Run the app once with internet to auto-install, or run `just cudnn`.",
+            dll.display()
+        ));
+        return;
+    }
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    let already = current.to_string_lossy().split(sep).any(|p| {
+        let p = Path::new(p);
+        p == bin
+            || p.canonicalize()
+                .ok()
+                .zip(bin.canonicalize().ok())
+                .is_some_and(|(a, b)| a == b)
+    });
+    if already {
+        logfile::info(&format!(
+            "inproc-cuda: cuDNN bin already on process PATH ({})",
+            bin.display()
+        ));
+        return;
+    }
+    let mut new_path = std::ffi::OsString::from(bin.as_os_str());
+    new_path.push(sep);
+    new_path.push(&current);
+    #[allow(unsafe_code)]
+    // SAFETY: setup() runs once at startup before any other thread is spawned
+    // that might read PATH; required because std::env::set_var is unsafe in 2024.
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+    logfile::info(&format!(
+        "inproc-cuda: prepended cuDNN bin to process PATH: {}",
+        bin.display()
+    ));
 }
 
 fn log_present_dlls(dir: &Path) {

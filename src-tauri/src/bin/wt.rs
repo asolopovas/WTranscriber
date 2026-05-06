@@ -114,6 +114,10 @@ async fn main() -> ExitCode {
         )
         .init();
 
+    if cfg!(feature = "cuda") {
+        wtranscriber_lib::cuda_setup::setup();
+    }
+
     let cli = Cli::parse();
     let result = if let Some(cmd) = cli.command {
         run_command(cmd).await

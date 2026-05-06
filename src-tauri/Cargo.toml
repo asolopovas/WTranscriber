@@ -74,7 +74,7 @@ split-debuginfo = "unpacked"
 opt-level = 3
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

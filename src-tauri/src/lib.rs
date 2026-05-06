@@ -13,6 +13,10 @@ pub mod namer;
 mod paths;
 mod progress;
 mod runtimes;
+
+pub mod cuda_setup {
+    pub use super::runtimes::inproc_cuda::setup;
+}
 mod transcriber;
 
 pub mod api;
