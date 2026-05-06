@@ -59,7 +59,8 @@ function levelClass(line: string): string {
 
 <template>
   <main class="flex-1 flex flex-col overflow-hidden bg-surface-container-lowest">
-    <div class="px-xl pt-xl pb-md border-b border-outline-variant/40 flex flex-col gap-md">
+   <div class="flex-1 flex flex-col overflow-hidden max-w-[768px] w-full mx-auto px-xl pt-xl pb-xl gap-md">
+    <div class="flex flex-col gap-md pb-md border-b border-outline-variant/50">
       <div class="flex items-end justify-between gap-margin">
         <div>
           <h1 class="text-[24px] leading-[32px] font-bold text-on-surface">Application Log</h1>
@@ -96,15 +97,18 @@ function levelClass(line: string): string {
       </div>
     </div>
 
-    <div v-if="error" class="mx-xl mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono">
+    <div v-if="error" class="p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono">
       {{ error }}
     </div>
 
-    <div ref="scroller" class="flex-1 overflow-y-auto scroll-thin px-xl py-md font-mono text-labelMedium leading-relaxed whitespace-pre-wrap break-all">
-      <p v-if="!tail" class="text-outline italic">(log is empty)</p>
-      <template v-else>
-        <div v-for="(line, i) in tail.split('\n')" :key="i" :class="levelClass(line)">{{ line || '\u00A0' }}</div>
-      </template>
-    </div>
+    <section class="flex-1 flex flex-col overflow-hidden bg-surface-container rounded-xl border border-outline-variant/50">
+      <div ref="scroller" class="flex-1 overflow-y-auto scroll-thin px-md py-md font-mono text-labelMedium leading-relaxed whitespace-pre-wrap break-all">
+        <p v-if="!tail" class="text-outline italic">(log is empty)</p>
+        <template v-else>
+          <div v-for="(line, i) in tail.split('\n')" :key="i" :class="levelClass(line)">{{ line || '\u00A0' }}</div>
+        </template>
+      </div>
+    </section>
+   </div>
   </main>
 </template>
