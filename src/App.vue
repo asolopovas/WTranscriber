@@ -64,7 +64,7 @@ onMounted(async () => {
     } else if (event.payload.type === "drop") {
       dragOver.value = false;
       const path = event.payload.paths?.[0];
-      if (path && hasAudioExt(path)) void runTranscribe(path);
+      if (path && hasAudioExt(path)) stageFile(path);
       else if (path) error.value = `Unsupported file type: ${path}`;
     }
   });
@@ -110,12 +110,20 @@ async function pickFile() {
     multiple: false,
     filters: [{ name: "Audio", extensions: audioExtensions }],
   });
-  if (typeof selected === "string") void runTranscribe(selected);
+  if (typeof selected === "string") stageFile(selected);
 }
 
-async function runTranscribe(path: string) {
-  if (!config.value) return;
+function stageFile(path: string) {
   sourcePath.value = path;
+  transcript.value = null;
+  suggestion.value = null;
+  error.value = null;
+  status.value = "idle";
+}
+
+async function runTranscribe() {
+  const path = sourcePath.value;
+  if (!path || !config.value) return;
   status.value = "running";
   error.value = null;
   suggestion.value = null;
@@ -207,10 +215,18 @@ const fieldClass =
               <button
                 :disabled="status === 'running' || status === 'renaming'"
                 @click="pickFile"
-                class="bg-primary text-on-primary px-margin py-xs rounded-full font-medium text-titleSmall flex items-center gap-unit hover:bg-primary-fixed-dim transition-colors disabled:opacity-60 disabled:cursor-progress"
+                class="bg-surface-container-high text-on-surface px-margin py-xs rounded-full font-medium text-titleSmall flex items-center gap-unit hover:bg-surface-container-highest border border-outline-variant transition-colors disabled:opacity-60 disabled:cursor-progress"
               >
-                <span class="material-symbols-outlined text-[18px]">{{ status === 'running' ? 'hourglass_top' : status === 'renaming' ? 'auto_awesome' : 'upload_file' }}</span>
-                <span>{{ status === "running" ? "Transcribing…" : status === "renaming" ? "Naming…" : "Pick audio" }}</span>
+                <span class="material-symbols-outlined text-[18px]">upload_file</span>
+                <span>{{ sourcePath ? "Change file" : "Pick audio" }}</span>
+              </button>
+              <button
+                :disabled="!sourcePath || status === 'running' || status === 'renaming'"
+                @click="runTranscribe"
+                class="bg-primary text-on-primary px-margin py-xs rounded-full font-medium text-titleSmall flex items-center gap-unit hover:bg-primary-fixed-dim transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span class="material-symbols-outlined text-[18px]">{{ status === 'running' ? 'hourglass_top' : status === 'renaming' ? 'auto_awesome' : 'graphic_eq' }}</span>
+                <span>{{ status === "running" ? "Transcribing…" : status === "renaming" ? "Naming…" : "Transcribe" }}</span>
               </button>
             </div>
           </div>
@@ -243,7 +259,7 @@ const fieldClass =
                   {{ dragOver ? 'download' : 'graphic_eq' }}
                 </span>
                 <p class="text-bodyMedium">
-                  {{ dragOver ? "Drop to transcribe" : "Drag an audio file here" }}
+                  {{ dragOver ? "Drop to load" : sourcePath ? "Press Transcribe to start" : "Drag an audio file here" }}
                 </p>
                 <p v-if="!dragOver" class="font-mono text-labelSmall text-outline">
                   {{ audioExtensions.map((e) => '.' + e).join(' · ') }}
