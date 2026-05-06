@@ -216,13 +216,27 @@ impl Drop for TranscribeSink {
 
 impl Sink for TranscribeSink {
     fn phase(&self, phase: Phase) {
-        if let Ok(mut cur) = self.current_phase.lock() {
-            *cur = phase;
-        }
+        let prev = self
+            .current_phase
+            .lock()
+            .ok()
+            .map(|mut g| std::mem::replace(&mut *g, phase));
         match phase {
             Phase::Transcribing => self.start_ticker(),
             _ => self.stop_ticker(),
         }
+        if prev.is_some_and(|p| p == phase) {
+            self.emit(phase, 0.0, 0.0);
+            return;
+        }
+        let elapsed = self
+            .smoother
+            .lock()
+            .map_or(0.0, |s| s.elapsed().as_secs_f64());
+        logfile::info(&format!(
+            "phase: {:?} (t+{:.1}s)",
+            phase, elapsed,
+        ));
         self.emit(phase, 0.0, 0.0);
     }
 
@@ -544,9 +558,23 @@ pub fn export_transcript(
 
 #[tauri::command]
 pub async fn suggest_filename(transcript: Transcript) -> Result<Suggestion> {
-    tokio::task::spawn_blocking(move || namer::suggest(&transcript, chrono::Local::now()))
-        .await
-        .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
+    let utterances = transcript.utterances.len();
+    let t0 = std::time::Instant::now();
+    logfile::info(&format!("auto-rename: suggesting from {utterances} utterances"));
+    let result =
+        tokio::task::spawn_blocking(move || namer::suggest(&transcript, chrono::Local::now()))
+            .await
+            .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?;
+    match &result {
+        Ok(s) => logfile::info(&format!(
+            "auto-rename: suggested '{}_{}' in {:.2}s",
+            s.topic,
+            s.stamp,
+            t0.elapsed().as_secs_f64(),
+        )),
+        Err(e) => logfile::warn(&format!("auto-rename failed: {e}")),
+    }
+    result
 }
 
 #[cfg(test)]
