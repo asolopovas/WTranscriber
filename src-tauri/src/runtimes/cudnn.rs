@@ -104,6 +104,9 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
         crate::runtimes::copy_dir_all(&src_root, &target_root)?;
     }
 
+    flatten_x64(&target_root.join("bin"));
+    flatten_x64(&target_root.join("lib"));
+
     let _ = std::fs::remove_dir_all(&staging);
 
     if !target_dll_path.exists() {
@@ -262,7 +265,8 @@ fn walk(dir: &std::path::Path, depth: usize) -> Option<PathBuf> {
         let path = e.path();
         let Ok(ty) = e.file_type() else { continue };
         if ty.is_dir() {
-            if path.join("bin").join(target_dll()).exists() {
+            let bin = path.join("bin");
+            if bin.join(target_dll()).exists() || bin.join("x64").join(target_dll()).exists() {
                 return Some(path);
             }
             subdirs.push(path);
@@ -274,4 +278,28 @@ fn walk(dir: &std::path::Path, depth: usize) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn flatten_x64(dir: &std::path::Path) {
+    let nested = dir.join("x64");
+    if !nested.is_dir() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&nested) else { return };
+    for e in entries.flatten() {
+        let from = e.path();
+        let Some(name) = from.file_name() else { continue };
+        let to = dir.join(name);
+        if to.exists() {
+            continue;
+        }
+        if std::fs::rename(&from, &to).is_err() {
+            if from.is_dir() {
+                let _ = crate::runtimes::copy_dir_all(&from, &to);
+            } else {
+                let _ = std::fs::copy(&from, &to);
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&nested);
 }
