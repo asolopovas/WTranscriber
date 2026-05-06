@@ -45,10 +45,31 @@ fn install_cuda_dlls() {
             println!("cargo:warning=cuda-dll-install: {name} missing in source");
             continue;
         }
+        if same_file(&src, &dst) {
+            continue;
+        }
         match std::fs::copy(&src, &dst) {
             Ok(_) => println!("cargo:warning=cuda-dll-install: copied {name}"),
-            Err(e) => println!("cargo:warning=cuda-dll-install: copy {name} failed: {e}"),
+            Err(e) => {
+                if same_file(&src, &dst) {
+                    continue;
+                }
+                println!("cargo:warning=cuda-dll-install: copy {name} failed: {e}");
+            }
         }
+    }
+}
+
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) else {
+        return false;
+    };
+    if ma.len() != mb.len() {
+        return false;
+    }
+    match (ma.modified(), mb.modified()) {
+        (Ok(ta), Ok(tb)) => ta == tb,
+        _ => false,
     }
 }
 
