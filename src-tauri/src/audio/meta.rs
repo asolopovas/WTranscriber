@@ -14,7 +14,7 @@ pub struct AudioMeta {
 
 impl AudioMeta {
     #[must_use]
-    pub fn is_default(&self) -> bool {
+    pub const fn is_default(&self) -> bool {
         self.trim_start_ms == 0 && self.trim_end_ms.is_none()
     }
 }

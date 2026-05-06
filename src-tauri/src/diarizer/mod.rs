@@ -29,10 +29,6 @@ pub trait Backend {
     ) -> Result<Vec<Segment>>;
 }
 
-pub fn new(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    new_with_choice(num_speakers, DiarizerChoice::Auto)
-}
-
 pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {

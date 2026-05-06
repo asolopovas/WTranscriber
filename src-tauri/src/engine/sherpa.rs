@@ -81,7 +81,7 @@ pub fn run_cmd(
     };
     let provider = if uses_cuda(&effective) { "cuda" } else { "cpu" };
     let wav_arg = effective.last().cloned().unwrap_or_default();
-    crate::logfile::info(&format!("sherpa spawn: provider={provider} wav={wav_arg}",));
+    crate::logfile::info(&format!("sherpa spawn: provider={provider} wav={wav_arg}"));
     let out = exec(bin, &effective, cancelled)?;
     crate::logfile::info(&format!(
         "sherpa exit: provider={provider} elapsed={:.2}s status={}",

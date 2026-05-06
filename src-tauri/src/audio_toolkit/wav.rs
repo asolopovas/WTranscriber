@@ -16,15 +16,15 @@ pub fn write_pcm16_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut w = WavWriter::create(path, spec).map_err(map_hound)?;
+    let mut w = WavWriter::create(path, spec).map_err(|e| map_hound(&e))?;
     for s in samples {
         let v = (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
-        w.write_sample(v).map_err(map_hound)?;
+        w.write_sample(v).map_err(|e| map_hound(&e))?;
     }
-    w.finalize().map_err(map_hound)?;
+    w.finalize().map_err(|e| map_hound(&e))?;
     Ok(())
 }
 
-fn map_hound(e: hound::Error) -> Error {
+fn map_hound(e: &hound::Error) -> Error {
     Error::Transcribe(format!("wav: {e}"))
 }

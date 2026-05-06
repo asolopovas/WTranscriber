@@ -52,6 +52,7 @@ pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript>
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }
 
+#[allow(clippy::too_many_lines)]
 fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
     sink.phase(Phase::CacheCheck);
     let speakers = config.speakers.unwrap_or(0);
@@ -106,29 +107,30 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         logfile::info(&format!(
             "trim active: {}-{} (slice {})",
             format_hms(std::time::Duration::from_millis(start_ms)),
-            end_ms_opt.map_or("end".into(), |e| format_hms(
-                std::time::Duration::from_millis(e)
-            )),
+            end_ms_opt.map_or_else(
+                || "end".into(),
+                |e| format_hms(std::time::Duration::from_millis(e)),
+            ),
             format_hms(std::time::Duration::from_secs_f64(trimmed_dur_sec)),
         ));
     }
 
-    let mut state = partial::load(&key).unwrap_or(partial::Partial {
+    let mut state = partial::load(&key).unwrap_or_else(|| partial::Partial {
         key: key.clone(),
         last_done_sec: 0.0,
         segments: Vec::new(),
     });
-    if !state.segments.is_empty() {
-        logfile::info(&format!(
-            "resuming from {} ({} cached segs)",
-            format_hms(std::time::Duration::from_secs_f64(state.last_done_sec)),
-            state.segments.len(),
-        ));
-    } else {
+    if state.segments.is_empty() {
         logfile::info(&format!(
             "streaming start: slab={SLAB_SEC:.0}s engine={} model={}",
             config.engine.as_str(),
             config.model,
+        ));
+    } else {
+        logfile::info(&format!(
+            "resuming from {} ({} cached segs)",
+            format_hms(std::time::Duration::from_secs_f64(state.last_done_sec)),
+            state.segments.len(),
         ));
     }
 
@@ -169,7 +171,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
                 &cancelled,
             )?;
             if detected_language.is_empty() && !slab_detected.is_empty() {
-                detected_language = slab_detected.clone();
+                detected_language.clone_from(&slab_detected);
                 logfile::info(&format!("detected language: {slab_detected}"));
             }
             let elapsed = t0.elapsed().as_secs_f64();
@@ -235,7 +237,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     apply_dedup(&mut segments);
 
     if detected_language.is_empty() {
-        detected_language = config.language.clone();
+        detected_language.clone_from(&config.language);
     }
     let duration_ms = if total_dur_ms > 0 {
         total_dur_ms

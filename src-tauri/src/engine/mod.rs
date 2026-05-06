@@ -68,6 +68,7 @@ fn use_in_process(config: &Config) -> bool {
     )
 }
 
+#[allow(clippy::significant_drop_tightening)]
 fn run_in_process(
     samples: &[f32],
     audio_dur_sec: f64,

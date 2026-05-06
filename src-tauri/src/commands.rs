@@ -233,7 +233,7 @@ impl Sink for TranscribeSink {
             .smoother
             .lock()
             .map_or(0.0, |s| s.elapsed().as_secs_f64());
-        logfile::info(&format!("phase: {:?} (t+{:.1}s)", phase, elapsed,));
+        logfile::info(&format!("phase: {phase:?} (t+{elapsed:.1}s)"));
         self.emit(phase, 0.0, 0.0);
     }
 
@@ -336,15 +336,15 @@ fn log_preflight(input: &Path, config: &Config) {
     let _ = writeln!(buf, "  Device    : {device_label}");
     let _ = writeln!(buf, "  Language  : {}", config.language);
     let _ = writeln!(buf, "  Threads   : {}", config.threads);
-    if !config.diarize {
-        let _ = writeln!(buf, "  Diarizer  : off");
-    } else {
+    if config.diarize {
         let _ = writeln!(
             buf,
             "  Diarizer  : {} (speakers={})",
             config.diarizer.as_str(),
             config.speakers.unwrap_or(0),
         );
+    } else {
+        let _ = writeln!(buf, "  Diarizer  : off");
     }
     let _ = writeln!(buf, "  Auto-rename: {}", config.auto_rename);
     if let Some(meta) = audio::meta::load(input) {
@@ -355,7 +355,7 @@ fn log_preflight(input: &Path, config: &Config) {
                 buf,
                 "  Trim      : {}ms–{}",
                 start,
-                end.map_or("end".into(), |e| format!("{e}ms")),
+                end.map_or_else(|| "end".into(), |e| format!("{e}ms")),
             );
         }
     }
@@ -366,7 +366,7 @@ fn log_preflight(input: &Path, config: &Config) {
         std::env::consts::ARCH,
         std::process::id(),
     );
-    if let Some(meta) = std::fs::metadata(input).ok() {
+    if let Ok(meta) = std::fs::metadata(input) {
         let _ = writeln!(buf, "Input     : {} bytes", meta.len());
     }
     for line in buf.lines() {

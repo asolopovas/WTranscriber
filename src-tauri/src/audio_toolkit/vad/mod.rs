@@ -2,7 +2,7 @@ mod regions;
 mod silero;
 mod smoothed;
 
-pub use regions::{Region, RegionStream, RegionStreamConfig};
+pub use regions::Region;
 pub use silero::SileroVad;
 pub use smoothed::SmoothedVad;
 

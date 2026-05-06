@@ -1,4 +1,8 @@
-#![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 
 use std::{
     io::BufReader,
@@ -24,7 +28,7 @@ pub struct StreamSource {
 }
 
 impl StreamSource {
-    pub fn new(
+    pub const fn new(
         reader: BufReader<std::process::ChildStdout>,
         child: Child,
         cancel: Arc<AtomicBool>,
@@ -129,7 +133,7 @@ pub struct SamplesIter<'a> {
     capacity: usize,
 }
 
-impl<'a> SamplesIter<'a> {
+impl SamplesIter<'_> {
     pub fn next_chunk(&mut self) -> Result<Option<&[f32]>> {
         self.buf.resize(self.capacity, 0.0);
         let n = self.src.read_into(&mut self.buf)?;

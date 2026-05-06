@@ -42,6 +42,7 @@ pub fn lock() -> MutexGuard<'static, Option<Loaded>> {
     cache().lock().expect("recognizer cache poisoned")
 }
 
+#[allow(dead_code)]
 pub fn invalidate() {
     *lock() = None;
 }
@@ -174,24 +175,25 @@ fn whisper_config(config: &Config, provider: &str) -> Result<OfflineRecognizerCo
     )?;
     let language =
         (config.language != "auto" && !config.language.is_empty()).then(|| config.language.clone());
-    let mut rc = OfflineRecognizerConfig::default();
-    rc.model_config = OfflineModelConfig {
-        whisper: OfflineWhisperModelConfig {
-            encoder: Some(encoder.to_string_lossy().into_owned()),
-            decoder: Some(decoder.to_string_lossy().into_owned()),
-            language,
-            task: Some("transcribe".into()),
-            tail_paddings: -1,
-            enable_token_timestamps: true,
-            enable_segment_timestamps: false,
+    Ok(OfflineRecognizerConfig {
+        model_config: OfflineModelConfig {
+            whisper: OfflineWhisperModelConfig {
+                encoder: Some(encoder.to_string_lossy().into_owned()),
+                decoder: Some(decoder.to_string_lossy().into_owned()),
+                language,
+                task: Some("transcribe".into()),
+                tail_paddings: -1,
+                enable_token_timestamps: true,
+                enable_segment_timestamps: false,
+            },
+            tokens: Some(tokens.to_string_lossy().into_owned()),
+            provider: Some(provider.into()),
+            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            debug: false,
+            ..OfflineModelConfig::default()
         },
-        tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider.into()),
-        num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
-        debug: false,
-        ..OfflineModelConfig::default()
-    };
-    Ok(rc)
+        ..OfflineRecognizerConfig::default()
+    })
 }
 
 fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
@@ -208,20 +210,21 @@ fn transducer_config(config: &Config, provider: &str) -> Result<OfflineRecognize
             dir.display()
         )));
     }
-    let mut rc = OfflineRecognizerConfig::default();
-    rc.model_config = OfflineModelConfig {
-        transducer: OfflineTransducerModelConfig {
-            encoder: Some(encoder.to_string_lossy().into_owned()),
-            decoder: Some(decoder.to_string_lossy().into_owned()),
-            joiner: Some(joiner.to_string_lossy().into_owned()),
+    Ok(OfflineRecognizerConfig {
+        model_config: OfflineModelConfig {
+            transducer: OfflineTransducerModelConfig {
+                encoder: Some(encoder.to_string_lossy().into_owned()),
+                decoder: Some(decoder.to_string_lossy().into_owned()),
+                joiner: Some(joiner.to_string_lossy().into_owned()),
+            },
+            tokens: Some(tokens.to_string_lossy().into_owned()),
+            provider: Some(provider.into()),
+            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            debug: false,
+            ..OfflineModelConfig::default()
         },
-        tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider.into()),
-        num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
-        debug: false,
-        ..OfflineModelConfig::default()
-    };
-    Ok(rc)
+        ..OfflineRecognizerConfig::default()
+    })
 }
 
 fn nemo_ctc_config(config: &Config, provider: &str) -> Result<OfflineRecognizerConfig> {
@@ -234,16 +237,17 @@ fn nemo_ctc_config(config: &Config, provider: &str) -> Result<OfflineRecognizerC
             dir.display()
         )));
     }
-    let mut rc = OfflineRecognizerConfig::default();
-    rc.model_config = OfflineModelConfig {
-        nemo_ctc: OfflineNemoEncDecCtcModelConfig {
-            model: Some(model.to_string_lossy().into_owned()),
+    Ok(OfflineRecognizerConfig {
+        model_config: OfflineModelConfig {
+            nemo_ctc: OfflineNemoEncDecCtcModelConfig {
+                model: Some(model.to_string_lossy().into_owned()),
+            },
+            tokens: Some(tokens.to_string_lossy().into_owned()),
+            provider: Some(provider.into()),
+            num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
+            debug: false,
+            ..OfflineModelConfig::default()
         },
-        tokens: Some(tokens.to_string_lossy().into_owned()),
-        provider: Some(provider.into()),
-        num_threads: i32::try_from(config.threads.max(1)).unwrap_or(1),
-        debug: false,
-        ..OfflineModelConfig::default()
-    };
-    Ok(rc)
+        ..OfflineRecognizerConfig::default()
+    })
 }
