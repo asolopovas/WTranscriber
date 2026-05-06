@@ -110,9 +110,9 @@ pub fn list(path: &Path) -> Result<DirListing> {
 pub fn home_dir() -> PathBuf {
     let base = directories::UserDirs::new().map_or_else(
         || PathBuf::from("."),
-        |u| u.audio_dir().map_or_else(|| u.home_dir().to_path_buf(), Path::to_path_buf),
+        |u| u.document_dir().map_or_else(|| u.home_dir().to_path_buf(), Path::to_path_buf),
     );
-    let dir = base.join("WTranscriber");
+    let dir = base.join("WTranscribe");
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
