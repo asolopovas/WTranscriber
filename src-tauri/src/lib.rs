@@ -10,15 +10,89 @@ mod logfile;
 mod models;
 pub mod namer;
 mod paths;
+mod runtimes;
 mod transcriber;
 
 pub mod api;
 
+use serde::Serialize;
 use tauri::Emitter;
 use tracing_subscriber::EnvFilter;
 
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeProgress {
+    id: String,
+    downloaded: u64,
+    total: u64,
+}
+
+async fn ensure_runtimes(app: &tauri::AppHandle) {
+    let cfg = config::Config::load().unwrap_or_default();
+    let variant = runtimes::SherpaVariant::from_device(cfg.device);
+    install_sherpa(app, variant).await;
+    install_llama(app).await;
+}
+
+async fn install_sherpa(app: &tauri::AppHandle, variant: runtimes::SherpaVariant) {
+    let id = format!("sherpa-onnx-{}", variant.slug());
+    if runtimes::sherpa_installed(variant) {
+        logfile::info(&format!("runtime {id} already installed"));
+        return;
+    }
+    logfile::info(&format!("runtime install {id} starting"));
+    let mut on_progress = progress_emitter(app, id.clone());
+    match runtimes::ensure_sherpa(variant, &mut on_progress).await {
+        Ok(dir) => {
+            logfile::info(&format!("runtime install {id} ok ({})", dir.display()));
+            let _ = app.emit("runtime:done", &id);
+        }
+        Err(e) => {
+            logfile::error(&format!("runtime install {id}: {e}"));
+            let _ = app.emit("runtime:error", &id);
+        }
+    }
+}
+
+async fn install_llama(app: &tauri::AppHandle) {
+    let id = "llama.cpp".to_string();
+    if runtimes::llama_installed() {
+        logfile::info(&format!("runtime {id} already installed"));
+        return;
+    }
+    logfile::info(&format!("runtime install {id} starting"));
+    let mut on_progress = progress_emitter(app, id.clone());
+    match runtimes::ensure_llama(&mut on_progress).await {
+        Ok(dir) => {
+            logfile::info(&format!("runtime install {id} ok ({})", dir.display()));
+            let _ = app.emit("runtime:done", &id);
+        }
+        Err(e) => {
+            logfile::error(&format!("runtime install {id}: {e}"));
+            let _ = app.emit("runtime:error", &id);
+        }
+    }
+}
+
+fn progress_emitter(
+    app: &tauri::AppHandle,
+    id: String,
+) -> impl FnMut(models::download::Progress) + Send + use<> {
+    let app = app.clone();
+    move |p: models::download::Progress| {
+        let _ = app.emit(
+            "runtime:progress",
+            &RuntimeProgress {
+                id: id.clone(),
+                downloaded: p.downloaded,
+                total: p.total,
+            },
+        );
+    }
+}
+
 fn auto_install_essentials(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        ensure_runtimes(&app).await;
         let manager = models::manager();
         let entries: Vec<_> = match manager.list() {
             Ok(list) => list

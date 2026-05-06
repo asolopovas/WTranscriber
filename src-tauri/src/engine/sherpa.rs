@@ -43,6 +43,10 @@ pub fn find_binary() -> Result<PathBuf> {
         }
     }
 
+    if let Some(p) = crate::runtimes::sherpa::find_any(name) {
+        return Ok(p);
+    }
+
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {

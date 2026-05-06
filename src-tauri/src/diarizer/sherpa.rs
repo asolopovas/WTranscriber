@@ -53,6 +53,9 @@ fn find_bin() -> Result<PathBuf> {
             return Ok(p);
         }
     }
+    if let Some(p) = crate::runtimes::sherpa::find_any(name) {
+        return Ok(p);
+    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {

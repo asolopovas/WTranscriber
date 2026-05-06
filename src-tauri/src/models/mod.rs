@@ -1,5 +1,5 @@
 mod catalog;
-mod download;
+pub mod download;
 mod manager;
 
 #[allow(unused_imports)]

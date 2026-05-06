@@ -21,21 +21,24 @@ struct WhisperPaths {
 
 fn resolve_paths(model_id: &str) -> Result<WhisperPaths> {
     let dir = paths::models_dir()?.join(model_id);
-    let candidates = [
-        WhisperPaths {
-            encoder: dir.join(format!("{model_id}-encoder.int8.onnx")),
-            decoder: dir.join(format!("{model_id}-decoder.int8.onnx")),
-            tokens: dir.join(format!("{model_id}-tokens.txt")),
-        },
-        WhisperPaths {
-            encoder: dir.join("encoder.int8.onnx"),
-            decoder: dir.join("decoder.int8.onnx"),
-            tokens: dir.join("tokens.txt"),
-        },
+    let stems: &[&str] = &[
+        model_id,
+        model_id.strip_prefix("sherpa-whisper-").unwrap_or(model_id),
+        "",
     ];
-    for c in &candidates {
+    for stem in stems {
+        let prefix = if stem.is_empty() {
+            String::new()
+        } else {
+            format!("{stem}-")
+        };
+        let c = WhisperPaths {
+            encoder: dir.join(format!("{prefix}encoder.int8.onnx")),
+            decoder: dir.join(format!("{prefix}decoder.int8.onnx")),
+            tokens: dir.join(format!("{prefix}tokens.txt")),
+        };
         if c.encoder.exists() && c.decoder.exists() && c.tokens.exists() {
-            return Ok(c.clone());
+            return Ok(c);
         }
     }
     Err(Error::Transcribe(format!(

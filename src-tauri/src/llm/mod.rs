@@ -41,6 +41,9 @@ fn find_binary() -> Result<PathBuf> {
             return Ok(p);
         }
     }
+    if let Some(p) = crate::runtimes::llama::find() {
+        return Ok(p);
+    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
