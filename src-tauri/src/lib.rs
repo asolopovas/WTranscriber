@@ -86,6 +86,7 @@ pub fn run() {
             commands::export_transcript,
             commands::list_directory,
             commands::default_dir,
+            commands::add_to_workdir,
             commands::history_list,
             commands::history_load,
             commands::history_delete,

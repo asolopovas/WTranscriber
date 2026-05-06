@@ -37,6 +37,8 @@ export const api = {
   deleteFile: (path: string) => invoke<void>("delete_file", { path }),
   exportTranscript: (transcript: Transcript, dest: string, format: ExportFormat) =>
     invoke<string>("export_transcript", { transcript, dest, format }),
+  addToWorkdir: (source: string, workdir: string) =>
+    invoke<string>("add_to_workdir", { source, workdir }),
 };
 
 export const events = {

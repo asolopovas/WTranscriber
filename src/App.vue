@@ -66,18 +66,9 @@ const selectedEntry = computed<DirEntry | null>(() => {
   return listing.value.entries.find((e) => e.path === selectedPath.value) ?? null;
 });
 
-const breadcrumbs = computed(() => {
-  if (!listing.value) return [];
-  const parts = listing.value.path.split(/[\\/]/).filter(Boolean);
-  const sep = listing.value.path.includes("\\") ? "\\" : "/";
-  const out: { label: string; path: string }[] = [];
-  let acc = listing.value.path.startsWith("/") ? "" : "";
-  for (let i = 0; i < parts.length; i++) {
-    acc = i === 0 ? parts[0] + (sep === "\\" ? sep : "") : acc + sep + parts[i];
-    out.push({ label: parts[i], path: acc });
-  }
-  return out;
-});
+const audioEntries = computed<DirEntry[]>(() =>
+  listing.value ? listing.value.entries.filter((e) => e.is_audio) : [],
+);
 
 async function reload() {
   config.value = await api.loadConfig();
@@ -116,11 +107,40 @@ async function pickFolder() {
   if (typeof selected === "string") void openDir(selected);
 }
 
-function chooseEntry(entry: DirEntry) {
-  if (entry.is_dir) {
-    void openDir(entry.path);
-    return;
+const audioExtensions = ["wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma"];
+
+async function pickAudio() {
+  const selected = await open({
+    multiple: true,
+    filters: [{ name: "Audio", extensions: audioExtensions }],
+  });
+  if (!selected) return;
+  const paths = Array.isArray(selected) ? selected : [selected];
+  await addPathsToWorkdir(paths);
+}
+
+async function addPathsToWorkdir(paths: string[]) {
+  if (!listing.value) return;
+  const dir = listing.value.path;
+  let lastAdded = "";
+  for (const p of paths) {
+    if (!hasAudioExt(p)) continue;
+    try {
+      lastAdded = await api.addToWorkdir(p, dir);
+    } catch (e) {
+      error.value = String(e);
+    }
   }
+  await refreshListing();
+  if (lastAdded) selectedPath.value = lastAdded;
+}
+
+function hasAudioExt(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return audioExtensions.includes(ext);
+}
+
+function chooseEntry(entry: DirEntry) {
   if (entry.path === selectedPath.value) return;
   selectedPath.value = entry.path;
   transcript.value = null;
@@ -148,21 +168,14 @@ onMounted(async () => {
     else if (event.payload.type === "leave") dragOver.value = false;
     else if (event.payload.type === "drop") {
       dragOver.value = false;
-      const path = event.payload.paths?.[0];
-      if (!path) return;
-      void openDroppedPath(path);
+      const paths = event.payload.paths ?? [];
+      if (paths.length) void addPathsToWorkdir(paths);
     }
   });
 });
 
 let unlistenDrop: (() => void) | null = null;
 onUnmounted(() => unlistenDrop?.());
-
-async function openDroppedPath(path: string) {
-  const dir = path.replace(/[\\/][^\\/]+$/, "");
-  await openDir(dir);
-  selectedPath.value = path;
-}
 
 watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
@@ -398,40 +411,33 @@ const fieldClass =
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
           <div class="flex items-center gap-xs px-margin h-12 border-b border-outline-variant/40 shrink-0">
-            <button
-              :disabled="!listing?.parent"
-              class="text-on-surface-variant hover:text-on-surface disabled:opacity-40 transition-colors"
-              @click="listing?.parent && openDir(listing.parent)"
-              title="Parent folder"
-            >
-              <span class="material-symbols-outlined text-[20px]">arrow_upward</span>
-            </button>
+            <span class="material-symbols-outlined text-on-surface-variant text-[18px]">folder</span>
+            <span class="font-mono text-labelMedium text-on-surface truncate" :title="listing?.path">
+              {{ listing?.path ?? "—" }}
+            </span>
             <button
               class="text-on-surface-variant hover:text-on-surface transition-colors"
               @click="refreshListing"
               title="Refresh"
             >
-              <span class="material-symbols-outlined text-[20px]">refresh</span>
+              <span class="material-symbols-outlined text-[18px]">refresh</span>
             </button>
-            <div class="flex items-center gap-unit min-w-0 font-mono text-labelMedium text-on-surface-variant overflow-x-auto scroll-thin">
-              <template v-for="(b, i) in breadcrumbs" :key="b.path">
-                <span v-if="i > 0" class="opacity-50">/</span>
-                <button
-                  class="hover:text-on-surface whitespace-nowrap"
-                  :class="i === breadcrumbs.length - 1 ? 'text-on-surface' : ''"
-                  @click="openDir(b.path)"
-                >
-                  {{ b.label }}
-                </button>
-              </template>
-            </div>
             <div class="flex-1"></div>
             <button
               class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit"
               @click="pickFolder"
+              title="Change working folder"
             >
               <span class="material-symbols-outlined text-[16px]">folder_open</span>
-              Choose folder
+              Change
+            </button>
+            <button
+              class="px-md py-unit rounded-full bg-primary text-on-primary text-labelMedium hover:bg-primary-fixed-dim transition-colors flex items-center gap-unit"
+              @click="pickAudio"
+              title="Add audio file(s) to working folder"
+            >
+              <span class="material-symbols-outlined text-[16px]">add</span>
+              Add audio
             </button>
           </div>
 
@@ -443,10 +449,12 @@ const fieldClass =
           </div>
 
           <div class="flex-1 overflow-y-auto scroll-thin">
-            <div v-if="!listing || listing.entries.length === 0" class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant">
-              <span class="material-symbols-outlined text-[48px] text-outline-variant">folder_off</span>
-              <p class="text-bodyMedium">{{ dragOver ? "Drop a file or folder" : "Empty folder" }}</p>
-              <p class="font-mono text-labelSmall text-outline">Drag audio here or use Choose folder above</p>
+            <div v-if="!listing || audioEntries.length === 0" class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant">
+              <span class="material-symbols-outlined text-[48px]" :class="dragOver ? 'text-primary' : 'text-outline-variant'">
+                {{ dragOver ? "download" : "library_music" }}
+              </span>
+              <p class="text-bodyMedium">{{ dragOver ? "Drop to add" : "No audio in this folder" }}</p>
+              <p class="font-mono text-labelSmall text-outline">Drag files here or click Add audio</p>
             </div>
 
             <table v-else class="w-full text-bodyMedium">
@@ -462,17 +470,15 @@ const fieldClass =
               </thead>
               <tbody>
                 <tr
-                  v-for="entry in listing.entries"
+                  v-for="entry in audioEntries"
                   :key="entry.path"
                   class="border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
                   :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
                   @click="chooseEntry(entry)"
-                  @dblclick="entry.is_dir ? openDir(entry.path) : runTranscribe(entry)"
+                  @dblclick="runTranscribe(entry)"
                 >
                   <td class="px-margin py-xs">
-                    <span class="material-symbols-outlined text-[20px]" :class="entry.is_dir ? 'text-primary' : 'text-on-surface-variant'">
-                      {{ entry.is_dir ? 'folder' : 'graphic_eq' }}
-                    </span>
+                    <span class="material-symbols-outlined text-[20px] text-on-surface-variant">graphic_eq</span>
                   </td>
                   <td class="px-xs py-xs truncate max-w-0">
                     <span class="text-on-surface">{{ entry.name }}</span>
@@ -481,7 +487,7 @@ const fieldClass =
                     {{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}
                   </td>
                   <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
-                    {{ entry.is_dir ? "—" : fmtBytes(entry.size_bytes) }}
+                    {{ fmtBytes(entry.size_bytes) }}
                   </td>
                   <td class="px-xs py-xs">
                     <span
@@ -498,10 +504,10 @@ const fieldClass =
                       <span class="material-symbols-outlined text-[14px]">check_circle</span>
                       transcribed
                     </span>
-                    <span v-else-if="entry.is_audio" class="font-mono text-labelSmall text-outline">—</span>
+                    <span v-else class="font-mono text-labelSmall text-outline">—</span>
                   </td>
                   <td class="px-margin py-xs text-right">
-                    <div v-if="entry.is_audio" class="inline-flex gap-unit" @click.stop>
+                    <div class="inline-flex gap-unit" @click.stop>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
                         :disabled="busy[entry.path]"

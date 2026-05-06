@@ -143,6 +143,55 @@ pub fn default_dir() -> PathBuf {
 }
 
 #[tauri::command]
+pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
+    if !source.is_file() {
+        return Err(Error::Config(format!(
+            "not a file: {}",
+            source.display()
+        )));
+    }
+    std::fs::create_dir_all(&workdir)?;
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| Error::Config("source has no file name".into()))?;
+    let mut dst = workdir.join(file_name);
+    if let Ok(src_canon) = std::fs::canonicalize(&source)
+        && let Ok(dst_canon) = std::fs::canonicalize(&dst)
+        && src_canon == dst_canon
+    {
+        return Ok(dst);
+    }
+    if dst.exists() {
+        let stem = std::path::Path::new(file_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = std::path::Path::new(file_name)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        for n in 1..=999 {
+            let candidate = if ext.is_empty() {
+                workdir.join(format!("{stem} ({n})"))
+            } else {
+                workdir.join(format!("{stem} ({n}).{ext}"))
+            };
+            if !candidate.exists() {
+                dst = candidate;
+                break;
+            }
+        }
+    }
+    std::fs::copy(&source, &dst)?;
+    logfile::info(&format!(
+        "add_to_workdir {} -> {}",
+        source.display(),
+        dst.display()
+    ));
+    Ok(dst)
+}
+
+#[tauri::command]
 pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
     let trimmed = new_name.trim();
     if trimmed.is_empty() {
