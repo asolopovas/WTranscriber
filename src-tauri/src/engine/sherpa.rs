@@ -1,8 +1,11 @@
 use std::{
     path::{Path, PathBuf},
     process::Command,
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
+
+static CUDA_DISABLED: AtomicBool = AtomicBool::new(false);
 
 use serde::Deserialize;
 
@@ -67,19 +70,26 @@ pub fn find_binary() -> Result<PathBuf> {
 
 pub fn run_cmd(bin: &Path, args: &[String]) -> Result<(String, String, f64)> {
     let start = Instant::now();
-    let out = exec(bin, args)?;
+    let effective: Vec<String> = if CUDA_DISABLED.load(Ordering::Relaxed) && uses_cuda(args) {
+        swap_provider_to_cpu(args)
+    } else {
+        args.to_vec()
+    };
+    let out = exec(bin, &effective)?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     if out.status.success() {
         return Ok((stdout, stderr, start.elapsed().as_secs_f64()));
     }
-    if uses_cuda(args) && is_cuda_load_failure(&stderr) {
-        crate::logfile::warn(&format!(
-            "sherpa CUDA provider unavailable ({}); falling back to CPU. \
-             To enable GPU acceleration run `just cudnn` (Windows) or install cuDNN 9.x for CUDA 12.x.",
-            cuda_failure_reason(&stderr)
-        ));
-        let cpu_args = swap_provider_to_cpu(args);
+    if uses_cuda(&effective) && is_cuda_load_failure(&stderr) {
+        if !CUDA_DISABLED.swap(true, Ordering::Relaxed) {
+            crate::logfile::warn(&format!(
+                "sherpa CUDA provider unavailable ({}); falling back to CPU. \
+                 To enable GPU acceleration run `just cudnn` (Windows) or install cuDNN 9.x for CUDA 12.x.",
+                cuda_failure_reason(&stderr)
+            ));
+        }
+        let cpu_args = swap_provider_to_cpu(&effective);
         let out2 = exec(bin, &cpu_args)?;
         let stdout2 = String::from_utf8_lossy(&out2.stdout).into_owned();
         let stderr2 = String::from_utf8_lossy(&out2.stderr).into_owned();
