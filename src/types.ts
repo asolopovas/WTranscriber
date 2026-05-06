@@ -10,13 +10,27 @@ export interface Config {
   auto_rename: boolean;
 }
 
-export type ModelFamily = "whisper" | "parakeet" | "canary" | "nemo";
+export type Family = "asr" | "diarizer" | "llm";
+
+export type ModelStatus = "not_installed" | "downloading" | "installed";
 
 export interface ModelInfo {
   id: string;
-  family: ModelFamily;
-  installed: boolean;
-  size_mb: number | null;
+  family: Family;
+  display_name: string;
+  description: string;
+  size_bytes: number;
+  default_active: boolean;
+  status: ModelStatus;
+}
+
+export interface FileProgress {
+  id: string;
+  file_index: number;
+  file_count: number;
+  rel_path: string;
+  downloaded: number;
+  total: number;
 }
 
 export interface Utterance {

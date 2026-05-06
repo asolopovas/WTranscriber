@@ -3,6 +3,9 @@ import { onMounted, ref } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { api } from "./api";
 import type { Config, Transcript } from "./types";
+import ModelManager from "./components/ModelManager.vue";
+
+const tab = ref<"transcribe" | "models">("transcribe");
 
 const version = ref("");
 const config = ref<Config | null>(null);
@@ -43,8 +46,15 @@ function fmt(ms: number): string {
   <main class="app">
     <header>
       <h1>WTranscriber</h1>
+      <nav>
+        <button :class="{ active: tab === 'transcribe' }" @click="tab = 'transcribe'">Transcribe</button>
+        <button :class="{ active: tab === 'models' }" @click="tab = 'models'">Models</button>
+      </nav>
       <span class="version">v{{ version }}</span>
     </header>
+
+    <ModelManager v-if="tab === 'models'" />
+    <template v-else>
 
     <section class="controls">
       <button :disabled="status === 'running'" @click="pickAndTranscribe">
@@ -71,6 +81,7 @@ function fmt(ms: number): string {
         <p>{{ u.text }}</p>
       </article>
     </section>
+    </template>
   </main>
 </template>
 
@@ -88,6 +99,22 @@ header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 12px;
+}
+nav {
+  display: flex;
+  gap: 4px;
+}
+nav button {
+  padding: 4px 12px;
+  font-size: 0.85rem;
+  background: transparent;
+  border: 1px solid #333;
+}
+nav button.active {
+  background: #1f1f1f;
+  border-color: #6cf;
+  color: #6cf;
 }
 h1 {
   margin: 0;

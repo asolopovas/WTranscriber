@@ -26,6 +26,8 @@ pub fn run() {
             commands::load_config,
             commands::save_config,
             commands::list_models,
+            commands::model_status,
+            commands::install_model,
             commands::probe_audio,
             commands::transcribe_file,
         ])
