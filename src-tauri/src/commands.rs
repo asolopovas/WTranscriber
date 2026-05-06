@@ -233,10 +233,7 @@ impl Sink for TranscribeSink {
             .smoother
             .lock()
             .map_or(0.0, |s| s.elapsed().as_secs_f64());
-        logfile::info(&format!(
-            "phase: {:?} (t+{:.1}s)",
-            phase, elapsed,
-        ));
+        logfile::info(&format!("phase: {:?} (t+{:.1}s)", phase, elapsed,));
         self.emit(phase, 0.0, 0.0);
     }
 
@@ -560,7 +557,9 @@ pub fn export_transcript(
 pub async fn suggest_filename(transcript: Transcript) -> Result<Suggestion> {
     let utterances = transcript.utterances.len();
     let t0 = std::time::Instant::now();
-    logfile::info(&format!("auto-rename: suggesting from {utterances} utterances"));
+    logfile::info(&format!(
+        "auto-rename: suggesting from {utterances} utterances"
+    ));
     let result =
         tokio::task::spawn_blocking(move || namer::suggest(&transcript, chrono::Local::now()))
             .await

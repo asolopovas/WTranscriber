@@ -106,7 +106,9 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         logfile::info(&format!(
             "trim active: {}-{} (slice {})",
             format_hms(std::time::Duration::from_millis(start_ms)),
-            end_ms_opt.map_or("end".into(), |e| format_hms(std::time::Duration::from_millis(e))),
+            end_ms_opt.map_or("end".into(), |e| format_hms(
+                std::time::Duration::from_millis(e)
+            )),
             format_hms(std::time::Duration::from_secs_f64(trimmed_dur_sec)),
         ));
     }
@@ -229,12 +231,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         pipeline_t0.elapsed().as_secs_f64(),
     ));
 
-    let mut segments: Vec<Segment> = state
-        .segments
-        .iter()
-        .cloned()
-        .map(Segment::from)
-        .collect();
+    let mut segments: Vec<Segment> = state.segments.iter().cloned().map(Segment::from).collect();
     apply_dedup(&mut segments);
 
     if detected_language.is_empty() {
@@ -405,5 +402,3 @@ fn rebuild_from_tokens(seg: &mut Segment) {
     seg.start_ms = seg.tokens.first().unwrap().start_ms;
     seg.end_ms = seg.tokens.last().unwrap().end_ms;
 }
-
-

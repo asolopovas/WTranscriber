@@ -160,8 +160,7 @@ impl Smoother {
         if self.eta_shown <= 0.0 {
             self.eta_shown = raw_eta;
         } else {
-            self.eta_shown =
-                (1.0 - ETA_SMOOTH_ALPHA) * self.eta_shown + ETA_SMOOTH_ALPHA * raw_eta;
+            self.eta_shown = (1.0 - ETA_SMOOTH_ALPHA) * self.eta_shown + ETA_SMOOTH_ALPHA * raw_eta;
         }
         if self.eta_shown < 0.0 {
             self.eta_shown = 0.0;

@@ -1,10 +1,6 @@
 #![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 
-use std::{
-    path::Path,
-    sync::Arc,
-    sync::atomic::AtomicBool,
-};
+use std::{path::Path, sync::Arc, sync::atomic::AtomicBool};
 
 use crate::{
     audio_toolkit::{

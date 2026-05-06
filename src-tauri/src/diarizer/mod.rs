@@ -43,10 +43,12 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         match choice {
-            DiarizerChoice::Nemo => nemo::NemoDiarizer::new()
-                .map(|d| Box::new(d) as Box<dyn Backend>),
-            DiarizerChoice::Sherpa => SherpaDiarizer::new(num_speakers)
-                .map(|d| Box::new(d) as Box<dyn Backend>),
+            DiarizerChoice::Nemo => {
+                nemo::NemoDiarizer::new().map(|d| Box::new(d) as Box<dyn Backend>)
+            }
+            DiarizerChoice::Sherpa => {
+                SherpaDiarizer::new(num_speakers).map(|d| Box::new(d) as Box<dyn Backend>)
+            }
             DiarizerChoice::Auto => {
                 if num_speakers > 0 {
                     new_sherpa_or_nemo(num_speakers)

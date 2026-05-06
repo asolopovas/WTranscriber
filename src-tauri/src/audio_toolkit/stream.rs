@@ -24,7 +24,11 @@ pub struct StreamSource {
 }
 
 impl StreamSource {
-    pub fn new(reader: BufReader<std::process::ChildStdout>, child: Child, cancel: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        reader: BufReader<std::process::ChildStdout>,
+        child: Child,
+        cancel: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             child: Some(child),
             reader,
@@ -109,7 +113,9 @@ pub fn ffmpeg_stream(
         "-",
     ]);
     cmd.stdout(Stdio::piped()).stderr(Stdio::null());
-    let mut child = cmd.spawn().map_err(|e| Error::Transcribe(format!("ffmpeg spawn: {e}")))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| Error::Transcribe(format!("ffmpeg spawn: {e}")))?;
     let stdout = child
         .stdout
         .take()

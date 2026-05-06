@@ -4,10 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::Result,
-    transcriber::{
-        cache::transcript_path,
-        transcript::Segment,
-    },
+    transcriber::{cache::transcript_path, transcript::Segment},
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
