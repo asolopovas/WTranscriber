@@ -46,16 +46,59 @@ justfile            task recipes
 ## Tasks
 
 ```
-just            list recipes
-just setup      install JS deps
-just dev        run app
-just build      production bundle
-just fmt        format Rust + TS/Vue
-just lint       clippy (warnings as errors) + vue-tsc
-just test       cargo test
-just clean      remove target + dist + node_modules
-just icons      regenerate icon set from src-tauri/icons/icon.png
+just              list recipes
+just setup        install JS deps + git pre-commit hook
+just dev          run app
+just build        production bundle (CPU / static sherpa-onnx)
+just build-cuda   production bundle with --features cuda
+just fmt          format Rust + TS/Vue
+just fmt-check    cargo fmt --check + prettier --check
+just lint         clippy (warnings as errors) + vue-tsc
+just test         cargo test (offline)
+just dep-check    cargo-machete (unused deps; manual)
+just audit        cargo-audit + bun audit (vulns; manual)
+just check        fast gate: fmt-check + lint + test (see below)
+just check-all    full gate: check + dep-check + audit (pre-release)
+just clean        remove target + dist + node_modules
+just icons        regenerate icon set from src-tauri/icons/icon.png
 ```
+
+## Quality gate — tiered
+
+### `just check` (fast, pre-commit, no network)
+
+1. `cargo fmt --check` + `prettier --check`.
+2. `cargo clippy --all-targets --offline -- -D warnings` (pedantic + nursery,
+   `dead_code` / `unused_imports` enforced).
+3. `bun run typecheck` (`vue-tsc`).
+4. `cargo test --offline`.
+
+Leans on cargo's incremental cache; warm runs are seconds.
+
+### `just check-all` (slower, manual / pre-release)
+
+Adds: 5. `cargo machete` — unused crate deps in `Cargo.toml`. 6. `cargo audit` (RustSec DB) + `bun audit` — vulnerability scan.
+
+Missing tools (`cargo-machete`, `cargo-audit`) auto-install on first run.
+
+### Git hooks (`.githooks/`)
+
+Incremental — only run what's relevant.
+
+**`pre-commit`** inspects `git diff --cached --name-only`:
+
+- Rust file or `Cargo.toml` / `Cargo.lock` staged → `cargo fmt --check` +
+  `cargo clippy --offline -D warnings`. Warm cache: ~1–2s.
+- TS/Vue staged → `prettier --check` (changed files only) + `vue-tsc`.
+- Markdown / JSON / HTML staged → `prettier --check` (changed files).
+- Nothing relevant → skip.
+
+**`pre-push`** runs `cargo test --offline` once before publishing.
+Faster feedback loop than blocking every commit on test compilation.
+
+`just setup` (and `just install-hooks`) point `core.hooksPath` at
+`.githooks`. Bypass with `git commit --no-verify` /
+`git push --no-verify` only for emergencies.
 
 ## Adding a Tauri command
 

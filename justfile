@@ -9,6 +9,11 @@ default:
 
 setup:
     bun install
+    @just install-hooks
+
+install-hooks:
+    git config core.hooksPath .githooks
+    @echo "git hooks path -> .githooks"
 
 dev:
     bun run tauri dev
@@ -37,13 +42,43 @@ fmt:
 
 fmt-check:
     cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+    bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"
 
 lint:
-    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
     bun run typecheck
 
 test:
-    cargo test --manifest-path src-tauri/Cargo.toml
+    cargo test --manifest-path src-tauri/Cargo.toml --offline
+
+[windows]
+_ensure-machete:
+    @pwsh -NoLogo -NoProfile -Command "if (-not (Get-Command cargo-machete -EA SilentlyContinue)) { Write-Host 'installing cargo-machete' -ForegroundColor Cyan; cargo install --locked cargo-machete }"
+
+[unix]
+_ensure-machete:
+    @command -v cargo-machete >/dev/null 2>&1 || cargo install --locked cargo-machete
+
+[windows]
+_ensure-audit:
+    @pwsh -NoLogo -NoProfile -Command "if (-not (Get-Command cargo-audit -EA SilentlyContinue)) { Write-Host 'installing cargo-audit' -ForegroundColor Cyan; cargo install --locked cargo-audit }"
+
+[unix]
+_ensure-audit:
+    @command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
+
+dep-check: _ensure-machete
+    cargo machete src-tauri
+
+audit: _ensure-audit
+    cargo audit --file src-tauri/Cargo.lock
+    bun audit
+
+check: fmt-check lint test
+    @echo "✓ check passed (run 'just check-all' before release for audit + dep-check)"
+
+check-all: check dep-check audit
+    @echo "✓ check-all passed"
 
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml
