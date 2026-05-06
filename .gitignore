@@ -31,3 +31,4 @@ bun.lock
 # Tauri build outputs
 src-tauri/target/
 src-tauri/gen/
+.playwright-cli/

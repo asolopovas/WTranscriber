@@ -47,141 +47,145 @@ watch(
   },
   { deep: true },
 );
+
+const fieldClass =
+  "w-full bg-surface-container-high border border-outline-variant/60 text-on-surface text-bodyMedium px-md py-xs rounded-lg appearance-none focus:outline-none focus:border-primary transition-colors";
 </script>
 
 <template>
-  <section v-if="config" class="settings">
-    <header>
-      <h2>Settings</h2>
-      <span class="status" :data-state="status">{{
-        status === "saving"
-          ? "saving…"
-          : status === "saved"
-            ? "saved"
-            : status === "error"
-              ? "error"
-              : ""
-      }}</span>
-    </header>
+  <main class="flex-1 overflow-y-auto p-xl bg-surface-container-lowest scroll-thin">
+    <div class="max-w-5xl mx-auto flex flex-col gap-xl pb-xl">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-margin pb-md border-b border-outline-variant/50">
+        <div>
+          <h1 class="text-[24px] leading-[32px] font-bold text-on-surface">Configuration</h1>
+          <p class="text-bodyMedium text-on-surface-variant mt-unit">Manage transcription parameters, models, and runtime preferences.</p>
+        </div>
+        <div class="flex items-center gap-xs shrink-0 font-mono text-labelMedium">
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="status === 'saving' ? 'bg-secondary animate-pulse' : status === 'error' ? 'bg-error' : status === 'saved' ? 'bg-tertiary' : 'bg-outline-variant'"
+          ></span>
+          <span class="text-on-surface-variant uppercase tracking-wide">
+            {{ status === "saving" ? "saving…" : status === "saved" ? "saved" : status === "error" ? "error" : "synced" }}
+          </span>
+        </div>
+      </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
 
-    <div class="row">
-      <label>ASR engine</label>
-      <select v-model="config.engine">
-        <option v-for="o in engineOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
+      <div v-if="config" class="grid grid-cols-1 lg:grid-cols-2 gap-margin">
+        <section class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden flex flex-col">
+          <div class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs">
+            <span class="material-symbols-outlined text-primary">tune</span>
+            <h2 class="text-titleMedium text-on-surface">Transcription</h2>
+          </div>
+          <div class="p-margin flex flex-col gap-margin">
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">ASR engine</span>
+              <select v-model="config.engine" :class="fieldClass">
+                <option v-for="o in engineOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Model</span>
+              <select v-model="config.model" :class="fieldClass">
+                <option v-for="m in asrModels" :key="m.id" :value="m.id">{{ m.display_name }}</option>
+                <option v-if="!asrModels.length" :value="config.model" disabled>
+                  No installed ASR models — install one in the Models tab
+                </option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Language</span>
+              <select v-model="config.language" :class="fieldClass">
+                <option v-for="l in languageOptions" :key="l" :value="l">{{ l }}</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden flex flex-col">
+          <div class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs">
+            <span class="material-symbols-outlined text-secondary">memory</span>
+            <h2 class="text-titleMedium text-on-surface">Compute</h2>
+          </div>
+          <div class="p-margin flex flex-col gap-margin">
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Device</span>
+              <select v-model="config.device" :class="fieldClass">
+                <option value="cpu">CPU</option>
+                <option value="cuda">CUDA</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Threads</span>
+              <input v-model.number="config.threads" type="number" min="1" max="32" :class="fieldClass" />
+              <span class="text-bodyMedium text-on-surface-variant">CPU worker threads (1–32).</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden flex flex-col lg:col-span-2">
+          <div class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs">
+            <span class="material-symbols-outlined text-tertiary">groups</span>
+            <h2 class="text-titleMedium text-on-surface">Diarization &amp; Automation</h2>
+          </div>
+          <div class="p-margin grid grid-cols-1 md:grid-cols-3 gap-margin">
+            <div class="flex justify-between items-start gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">Diarize speakers</h3>
+                <p class="text-bodyMedium text-on-surface-variant">Identify who spoke when.</p>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                :class="config.diarize ? 'bg-primary' : 'bg-surface-container-highest border border-outline-variant'"
+                @click="config.diarize = !config.diarize"
+              >
+                <span
+                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                  :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                ></span>
+              </button>
+            </div>
+
+            <label class="flex flex-col gap-unit">
+              <span class="text-titleSmall text-on-surface">Speaker count</span>
+              <input
+                :value="config.speakers ?? 0"
+                type="number"
+                min="0"
+                max="20"
+                :disabled="!config.diarize"
+                :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
+                @input="(e) => {
+                  const n = Number((e.target as HTMLInputElement).value);
+                  if (config) config.speakers = n > 0 ? n : null;
+                }"
+              />
+              <span class="text-bodyMedium text-on-surface-variant">0 = auto-detect.</span>
+            </label>
+
+            <div class="flex justify-between items-start gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">Auto-rename via LLM</h3>
+                <p class="text-bodyMedium text-on-surface-variant">Suggest filenames after transcription.</p>
+              </div>
+              <button
+                type="button"
+                class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                :class="config.auto_rename ? 'bg-primary' : 'bg-surface-container-highest border border-outline-variant'"
+                @click="config.auto_rename = !config.auto_rename"
+              >
+                <span
+                  class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                  :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                ></span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
-
-    <div class="row">
-      <label>Model</label>
-      <select v-model="config.model">
-        <option v-for="m in asrModels" :key="m.id" :value="m.id">{{ m.display_name }}</option>
-        <option v-if="!asrModels.length" :value="config.model" disabled>
-          No installed ASR models — install one in the Models tab
-        </option>
-      </select>
-    </div>
-
-    <div class="row">
-      <label>Language</label>
-      <select v-model="config.language">
-        <option v-for="l in languageOptions" :key="l" :value="l">{{ l }}</option>
-      </select>
-    </div>
-
-    <div class="row">
-      <label>Device</label>
-      <select v-model="config.device">
-        <option value="cpu">CPU</option>
-        <option value="cuda">CUDA</option>
-      </select>
-    </div>
-
-    <div class="row">
-      <label>Threads</label>
-      <input v-model.number="config.threads" type="number" min="1" max="32" />
-    </div>
-
-    <div class="row">
-      <label>Diarize speakers</label>
-      <input v-model="config.diarize" type="checkbox" />
-    </div>
-
-    <div class="row">
-      <label>Speaker count (0 = auto)</label>
-      <input
-        :value="config.speakers ?? 0"
-        type="number"
-        min="0"
-        max="20"
-        @input="
-          (e) => {
-            const n = Number((e.target as HTMLInputElement).value);
-            if (config) config.speakers = n > 0 ? n : null;
-          }
-        "
-      />
-    </div>
-
-    <div class="row">
-      <label>Auto-rename via LLM</label>
-      <input v-model="config.auto_rename" type="checkbox" />
-    </div>
-  </section>
+  </main>
 </template>
-
-<style scoped>
-.settings {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 520px;
-}
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-h2 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-.status {
-  font-size: 0.8rem;
-  color: #888;
-  min-height: 1em;
-}
-.status[data-state="saved"] {
-  color: #6cf;
-}
-.status[data-state="error"] {
-  color: #ffb4b4;
-}
-.error {
-  color: #ffb4b4;
-  font-size: 0.85rem;
-}
-.row {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  align-items: center;
-  gap: 12px;
-}
-label {
-  color: #aaa;
-  font-size: 0.9rem;
-}
-select,
-input[type="number"] {
-  padding: 6px 10px;
-  border-radius: 4px;
-  border: 1px solid #333;
-  background: #1a1a1a;
-  color: #f0f0f0;
-  font-size: 0.9rem;
-}
-input[type="checkbox"] {
-  justify-self: start;
-}
-</style>
