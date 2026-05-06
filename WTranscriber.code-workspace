@@ -30,8 +30,6 @@
     },
     "files.exclude": {
       "**/node_modules": true,
-      "**/dist": true,
-      "**/target": true
     },
     "search.exclude": {
       "**/node_modules": true,
