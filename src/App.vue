@@ -365,6 +365,11 @@ onMounted(async () => {
   unlistenProgress = await events.onTranscribeProgress((p) => {
     progressByPath.value = { ...progressByPath.value, [p.path]: p };
   });
+  const refreshModels = async () => {
+    models.value = await api.listModels();
+  };
+  unlistenModelDone = await events.onModelDone(refreshModels);
+  unlistenModelError = await events.onModelError(refreshModels);
   unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
     if (tab.value !== "transcribe") return;
     if (event.payload.type === "over") dragOver.value = true;
@@ -379,9 +384,13 @@ onMounted(async () => {
 
 let unlistenDrop: (() => void) | null = null;
 let unlistenProgress: (() => void) | null = null;
+let unlistenModelDone: (() => void) | null = null;
+let unlistenModelError: (() => void) | null = null;
 onUnmounted(() => {
   unlistenDrop?.();
   unlistenProgress?.();
+  unlistenModelDone?.();
+  unlistenModelError?.();
 });
 
 watch(tab, (t) => {
