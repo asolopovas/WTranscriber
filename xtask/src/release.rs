@@ -8,7 +8,7 @@ use std::thread;
 
 use crate::util::{
     SharedOut, exe, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed,
-    shared_out,
+    run_streamed_stdin, shared_out,
 };
 
 #[derive(ClapArgs)]
@@ -264,10 +264,23 @@ fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[host] --skip-rebuild, reusing existing bundle");
         return Ok(0);
     }
+    unsafe {
+        std::env::remove_var("SHERPA_ONNX_LIB_DIR");
+        std::env::remove_var("SHERPA_ONNX_LIB");
+        std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
+    }
     run_streamed(
         "host",
         "bun",
-        &["run", "tauri", "build"],
+        &[
+            "run",
+            "tauri",
+            "build",
+            "--",
+            "--no-default-features",
+            "--features",
+            "sherpa-static",
+        ],
         &[("CARGO_INCREMENTAL", "1")],
         lock,
     )
@@ -313,15 +326,17 @@ fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
         return Ok(-1);
     }
     let wsl_root = win_path_to_wsl(&root());
-    let cmd = format!(
-        "cd \"{wsl_root}\" && \
-         export CARGO_TARGET_DIR=\"$HOME/.cache/wtranscriber-wsl-target\" && \
-         export CARGO_INCREMENTAL=1 && \
-         mkdir -p \"$CARGO_TARGET_DIR\" && \
-         bun install --frozen-lockfile --no-progress 2>&1 | tail -5 && \
-         bun run tauri build --bundles deb"
+    let script = format!(
+        "set -e\n\
+         cd \"{wsl_root}\"\n\
+         export CARGO_TARGET_DIR=\"$HOME/.cache/wtranscriber-wsl-target\"\n\
+         export CARGO_INCREMENTAL=1\n\
+         unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR\n\
+         mkdir -p \"$CARGO_TARGET_DIR\"\n\
+         bun install --frozen-lockfile --no-progress 2>&1 | tail -5\n\
+         bun run tauri build --bundles deb -- --no-default-features --features sherpa-static\n"
     );
-    run_streamed("wsl", "wsl", &["--", "bash", "-lc", &cmd], &[], lock)
+    run_streamed_stdin("wsl", "wsl", &["--", "bash", "-l"], &script, &[], lock)
 }
 
 fn find_host_bundle(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
