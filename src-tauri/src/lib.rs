@@ -206,11 +206,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
+            commands::system_info,
             commands::load_config,
             commands::save_config,
             commands::list_models,
             commands::model_status,
             commands::install_model,
+            commands::delete_model,
             commands::probe_audio,
             commands::audio_waveform,
             commands::load_audio_meta,

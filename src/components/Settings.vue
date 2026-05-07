@@ -2,9 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { api, events } from "../api";
-import type { Config, FileProgress, ModelInfo } from "../types";
+import type { Config, FileProgress, ModelInfo, SystemInfo } from "../types";
 
 const config = ref<Config | null>(null);
+const sys = ref<SystemInfo | null>(null);
 const models = ref<ModelInfo[]>([]);
 const status = ref<"idle" | "saving" | "saved" | "error">("idle");
 const error = ref<string | null>(null);
@@ -68,8 +69,16 @@ const groupedModels = computed(() => {
   ].filter((g) => g.items.length);
 });
 
+function fmtBytes(n: number): string {
+  if (!n) return "unknown";
+  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(2)} GB`;
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(0)} MB`;
+  return `${n} B`;
+}
+
 onMounted(async () => {
   config.value = await api.loadConfig();
+  sys.value = await api.systemInfo();
   await refreshModels();
   unlisten.push(
     await events.onModelProgress((p) => {
@@ -165,6 +174,73 @@ const fieldClass =
       <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
 
       <div v-if="config" class="flex flex-col gap-margin">
+        <section
+          v-if="sys"
+          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
+        >
+          <div
+            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
+          >
+            <span class="material-symbols-outlined text-primary">phone_android</span>
+            <h2 class="text-titleMedium text-on-surface">Device</h2>
+          </div>
+          <dl class="p-margin grid grid-cols-1 md:grid-cols-2 gap-x-margin gap-y-md text-bodyMedium">
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">OS</dt>
+              <dd class="text-on-surface font-mono">{{ sys.os }}</dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">Architecture</dt>
+              <dd class="text-on-surface font-mono">{{ sys.arch }}</dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">CPU threads</dt>
+              <dd class="text-on-surface font-mono">{{ sys.cpu_threads }}</dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">Memory</dt>
+              <dd class="text-on-surface font-mono">{{ fmtBytes(sys.total_memory_bytes) }}</dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">Form factor</dt>
+              <dd class="text-on-surface font-mono">{{ sys.is_mobile ? "mobile" : "desktop" }}</dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">Acceleration</dt>
+              <dd class="text-on-surface font-mono">
+                <span v-if="sys.cuda_available">CUDA</span>
+                <span v-else-if="sys.nnapi_available">NNAPI (experimental)</span>
+                <span v-else>CPU only</span>
+              </dd>
+            </div>
+            <div class="flex justify-between gap-md">
+              <dt class="text-on-surface-variant">App version</dt>
+              <dd class="text-on-surface font-mono">{{ sys.app_version }}</dd>
+            </div>
+            <div
+              v-if="sys.workdir"
+              class="col-span-1 md:col-span-2 flex flex-col gap-xs border-t border-outline-variant/30 pt-md"
+            >
+              <div class="flex justify-between gap-md">
+                <dt class="text-on-surface-variant">Workdir</dt>
+                <dd class="text-on-surface font-mono text-right break-all">{{ sys.workdir }}</dd>
+              </div>
+              <div v-if="sys.models_dir" class="flex justify-between gap-md">
+                <dt class="text-on-surface-variant">Models</dt>
+                <dd class="text-on-surface font-mono text-right break-all">{{ sys.models_dir }}</dd>
+              </div>
+              <div v-if="sys.cache_dir" class="flex justify-between gap-md">
+                <dt class="text-on-surface-variant">Cache</dt>
+                <dd class="text-on-surface font-mono text-right break-all">{{ sys.cache_dir }}</dd>
+              </div>
+              <div v-if="sys.config_dir" class="flex justify-between gap-md">
+                <dt class="text-on-surface-variant">Config</dt>
+                <dd class="text-on-surface font-mono text-right break-all">{{ sys.config_dir }}</dd>
+              </div>
+            </div>
+          </dl>
+        </section>
+
         <section
           class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
         >

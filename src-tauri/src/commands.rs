@@ -40,6 +40,68 @@ pub const fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[derive(Serialize)]
+pub struct SystemInfo {
+    pub os: &'static str,
+    pub arch: &'static str,
+    pub cpu_threads: u32,
+    pub is_mobile: bool,
+    pub cuda_available: bool,
+    pub nnapi_available: bool,
+    pub app_version: &'static str,
+    pub workdir: Option<String>,
+    pub models_dir: Option<String>,
+    pub cache_dir: Option<String>,
+    pub config_dir: Option<String>,
+    pub total_memory_bytes: u64,
+}
+
+#[tauri::command]
+pub fn system_info() -> SystemInfo {
+    let os = std::env::consts::OS;
+    let is_mobile = matches!(os, "android" | "ios");
+    let cpu_threads = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(1) as u32;
+    let cuda_available = !is_mobile && cfg!(feature = "cuda");
+    let nnapi_available = os == "android";
+    SystemInfo {
+        os,
+        arch: std::env::consts::ARCH,
+        cpu_threads,
+        is_mobile,
+        cuda_available,
+        nnapi_available,
+        app_version: env!("CARGO_PKG_VERSION"),
+        workdir: paths::default_workdir_override().map(|p| p.display().to_string()),
+        models_dir: paths::models_dir().ok().map(|p| p.display().to_string()),
+        cache_dir: paths::cache_dir().ok().map(|p| p.display().to_string()),
+        config_dir: paths::config_file()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.display().to_string())),
+        total_memory_bytes: read_total_memory(),
+    }
+}
+
+fn read_total_memory() -> u64 {
+    if let Ok(s) = std::fs::read_to_string("/proc/meminfo") {
+        for line in s.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                let kb: u64 = rest
+                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .unwrap_or(0);
+                return kb * 1024;
+            }
+        }
+    }
+    0
+}
+
+
+
 #[tauri::command]
 pub fn load_config() -> Result<Config> {
     Config::load()
@@ -89,6 +151,24 @@ pub async fn install_model(app: AppHandle, id: String) -> Result<()> {
         &id,
     );
     result
+}
+
+#[tauri::command]
+pub fn delete_model(id: String) -> Result<()> {
+    let Some(entry) = models::by_id(&id) else {
+        return Err(Error::Config(format!("unknown model id {id}")));
+    };
+    for p in models::paths_for(entry)? {
+        if p.exists() {
+            std::fs::remove_file(&p).ok();
+        }
+    }
+    let dir = models::model_dir(&id)?;
+    if dir.exists() && std::fs::read_dir(&dir).map(|r| r.count() == 0).unwrap_or(false) {
+        std::fs::remove_dir(&dir).ok();
+    }
+    logfile::info(&format!("delete_model {id} ok"));
+    Ok(())
 }
 
 #[tauri::command]

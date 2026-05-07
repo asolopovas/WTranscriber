@@ -9,17 +9,20 @@ import type {
   ModelInfo,
   ModelStatus,
   Suggestion,
+  SystemInfo,
   TranscribeProgress,
   Transcript,
 } from "./types";
 
 export const api = {
   appVersion: () => invoke<string>("app_version"),
+  systemInfo: () => invoke<SystemInfo>("system_info"),
   loadConfig: () => invoke<Config>("load_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
   listModels: () => invoke<ModelInfo[]>("list_models"),
   modelStatus: (id: string) => invoke<ModelStatus>("model_status", { id }),
   installModel: (id: string) => invoke<void>("install_model", { id }),
+  deleteModel: (id: string) => invoke<void>("delete_model", { id }),
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
   loadAudioMeta: (path: string) => invoke<AudioMeta>("load_audio_meta", { path }),

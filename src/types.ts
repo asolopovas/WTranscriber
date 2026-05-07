@@ -1,5 +1,20 @@
 export type Device = "cpu" | "cuda";
 
+export interface SystemInfo {
+  os: string;
+  arch: string;
+  cpu_threads: number;
+  is_mobile: boolean;
+  cuda_available: boolean;
+  nnapi_available: boolean;
+  app_version: string;
+  workdir: string | null;
+  models_dir: string | null;
+  cache_dir: string | null;
+  config_dir: string | null;
+  total_memory_bytes: number;
+}
+
 export type Engine = "whisper-onnx" | "zipformer" | "parakeet" | "canary" | "nemo-ctc";
 
 export type DiarizerChoice = "auto" | "nemo" | "sherpa";
