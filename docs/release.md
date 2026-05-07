@@ -146,3 +146,55 @@ just release-build              # build artifacts only (stable naming)
 just release-publish dev        # upload existing releases/dev/* to 'dev' tag
 just release-publish stable     # push HEAD+tag, create release, upload
 ```
+
+## Build speed — lazy rebuilds
+
+Measured warm-rebuild times after touching one Rust source file:
+
+| Recipe          | Time | Output                        | Use case                          |
+| --------------- | ---- | ----------------------------- | --------------------------------- |
+| `just dev`      | live | hot-reload UI                 | Iterate on Vue / Tauri commands   |
+| `just build-bin`| **6s** | `target/release/wtranscriber.exe` (raw cargo, no Tauri post-process) | Rust changes, run binary directly |
+| `just build-app`| **9s** | Tauri-patched exe (icon, metadata, no installer) | Test packaged exe behavior        |
+| `just build`    | **28s**| NSIS installer                | Pre-release verification          |
+| `just build-all`| ~45s | NSIS + MSI                    | Legacy / enterprise GPO deploy    |
+| `just watch`    | live | auto rebuild on save          | Continuous iteration              |
+
+### What changed (vs default Tauri template)
+
+1. **`[profile.release]` tuned for build speed, not micro-perf**: `codegen-units = 16`,
+   `lto = false`, `incremental = true`, `strip = "debuginfo"`. The heavy lifting in this
+   app is C++ (sherpa-onnx, webkit), so Rust-level LTO + single-codegen-unit cost minutes
+   to save microseconds at runtime.
+2. **Default `bundle.targets` = `["nsis", "deb", "app"]`** instead of `"all"`. MSI takes
+   ~15s of WiX work for a target almost nobody uses (enterprise GPO). `just build-all`
+   restores it.
+3. **`src-tauri/.cargo/config.toml`**: sparse registry + `git-fetch-with-cli` + global
+   `incremental = true`.
+4. **Lazy escape hatches**: `build-bin` skips Tauri entirely; `build-app` skips installer
+   bundling. Use these for inner-loop iteration.
+
+### What does NOT speed up
+
+- The cold first build is ~3.5 min, dominated by **single-threaded link of statically-bundled
+  sherpa-onnx**. AGENTS.md flags this as expected. Switching to a dynamically-linked sherpa
+  build would help but requires shipping `sherpa-onnx-c-api.dll` separately.
+- Don't add `CARGO_BUILD_JOBS=1` — AGENTS.md mandates not capping cargo parallelism.
+- Don't enable `[profile.release] lto = true` again unless you're profiling and proving it
+  matters; it adds 2-3 minutes per build for sub-1% runtime gain in this app.
+
+### Squeezing more on Linux / WSL
+
+Install `mold` linker — drops link time from ~30s to ~5s for the wtranscriber binary:
+
+```bash
+sudo apt install mold clang
+mkdir -p ~/.cargo && cat >> ~/.cargo/config.toml <<'EOF'
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+EOF
+```
+
+Windows: rust-lld is bundled with the toolchain but linking statically with sherpa-onnx
+is risky (long stalls per AGENTS.md). Default `link.exe` is what we ship with.

@@ -35,11 +35,23 @@ dev-cpu:
 build:
     bun run tauri build
 
+build-bin:
+    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wtranscriber
+
+build-app:
+    bun run tauri build --no-bundle
+
+build-all:
+    bun run tauri build --bundles nsis --bundles msi
+
 build-cpu:
     bun run tauri build -- --no-default-features --features sherpa-static
 
 build-cli:
     cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+
+watch:
+    cargo watch -w src-tauri/src --manifest-path src-tauri/Cargo.toml -x "build --release"
 
 android-targets:
     rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
