@@ -135,17 +135,11 @@ fn auto_install_essentials(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         ensure_runtimes(&app).await;
         let manager = models::manager();
-        let entries: Vec<_> = match manager.list() {
-            Ok(list) => list
-                .into_iter()
-                .filter(|m| m.default_active && m.status == models::ModelStatus::NotInstalled)
-                .map(|m| m.id)
-                .collect(),
-            Err(e) => {
-                logfile::error(&format!("auto_install: list failed: {e}"));
-                return;
-            }
-        };
+        let entries: Vec<String> = [models::Family::Asr, models::Family::Diarizer, models::Family::Llm]
+            .iter()
+            .filter_map(|f| models::default_id(*f).map(String::from))
+            .filter(|id| matches!(manager.status(id), Ok(models::ModelStatus::NotInstalled)))
+            .collect();
         for id in entries {
             logfile::info(&format!("auto_install {id} starting"));
             let app_for_cb = app.clone();

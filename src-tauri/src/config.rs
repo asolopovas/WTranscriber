@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, paths};
+use crate::{
+    error::Result,
+    models::{Family, by_id, default_id},
+    paths,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -97,9 +101,10 @@ impl DiarizerChoice {
 
 impl Default for Config {
     fn default() -> Self {
+        let (model, engine) = default_asr();
         Self {
-            model: "sherpa-whisper-turbo".into(),
-            engine: Engine::WhisperOnnx,
+            model,
+            engine,
             language: "en".into(),
             device: default_device(),
             threads: num_threads(),
@@ -110,6 +115,16 @@ impl Default for Config {
             last_dir: None,
         }
     }
+}
+
+fn default_asr() -> (String, Engine) {
+    if let Some(id) = default_id(Family::Asr)
+        && let Some(entry) = by_id(id)
+    {
+        let engine = entry.engine.parse::<Engine>().unwrap_or(Engine::WhisperOnnx);
+        return (id.to_string(), engine);
+    }
+    ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
 }
 
 impl Config {
@@ -157,10 +172,19 @@ mod tests {
     }
 
     #[test]
-    fn default_asr_is_best_quality_whisper_turbo() {
+    #[cfg(not(target_os = "android"))]
+    fn default_asr_desktop_is_whisper_turbo() {
         let cfg = Config::default();
         assert_eq!(cfg.model, "sherpa-whisper-turbo");
         assert!(matches!(cfg.engine, Engine::WhisperOnnx));
+    }
+
+    #[test]
+    #[cfg(target_os = "android")]
+    fn default_asr_android_is_parakeet_v3() {
+        let cfg = Config::default();
+        assert_eq!(cfg.model, "parakeet-tdt-0.6b-v3-int8");
+        assert!(matches!(cfg.engine, Engine::Parakeet));
     }
 
     #[test]

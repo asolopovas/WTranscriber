@@ -68,7 +68,6 @@ pub fn by_family(family: Family) -> Vec<&'static Entry> {
         .collect()
 }
 
-#[allow(dead_code)]
 pub fn default_id(family: Family) -> Option<&'static str> {
     let list = by_family(family);
     if IS_ANDROID && let Some(e) = list.iter().find(|e| e.android_default) {
@@ -152,7 +151,7 @@ fn default_catalog() -> Vec<Entry> {
                 .into_iter().map(String::from).collect(),
             size_bytes: 670_478_772,
             default_active: false,
-            android_default: false,
+            android_default: true,
             desktop_only: false,
             files: vec![
                 FileSpec {
@@ -216,7 +215,7 @@ fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 396_705_472,
             default_active: true,
-            android_default: false,
+            android_default: true,
             desktop_only: false,
             files: vec![FileSpec {
                 url: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf".into(),
