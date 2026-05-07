@@ -356,6 +356,12 @@ async function onRecordingSaved(path: string) {
   error.value = null;
 }
 
+function closeTranscript() {
+  transcript.value = null;
+  selectedPath.value = "";
+  error.value = null;
+}
+
 function chooseEntry(entry: DirEntry) {
   if (entry.path === selectedPath.value) return;
   selectedPath.value = entry.path;
