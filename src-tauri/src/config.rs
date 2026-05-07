@@ -131,33 +131,32 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
     if !cfg!(target_os = "android") {
         return false;
     }
-    let saved = match by_id(&cfg.model) {
-        Some(e) => e,
-        None => return false,
-    };
-    if saved.android_default {
-        return false;
+    let mut dirty = false;
+    if let Some(p) = cfg.last_dir.as_ref() {
+        let s = p.to_string_lossy();
+        if s.starts_with("/sdcard/Documents/WTranscriber") || s.starts_with("/storage/emulated/0/Documents/WTranscriber") {
+            cfg.last_dir = None;
+            dirty = true;
+        }
     }
-    let Some(target_id) = default_id(Family::Asr) else {
-        return false;
-    };
-    if target_id == cfg.model {
-        return false;
+    if let Some(saved) = by_id(&cfg.model)
+        && !saved.android_default
+        && let Some(target_id) = default_id(Family::Asr)
+        && target_id != cfg.model
+        && let Some(target) = by_id(target_id)
+    {
+        let installed = crate::models::paths_for(target)
+            .map(|paths| paths.iter().all(|p| p.exists()))
+            .unwrap_or(false);
+        if installed {
+            cfg.model = target_id.to_string();
+            if let Ok(eng) = target.engine.parse::<Engine>() {
+                cfg.engine = eng;
+            }
+            dirty = true;
+        }
     }
-    let Some(target) = by_id(target_id) else {
-        return false;
-    };
-    let installed = crate::models::paths_for(target)
-        .map(|paths| paths.iter().all(|p| p.exists()))
-        .unwrap_or(false);
-    if !installed {
-        return false;
-    }
-    cfg.model = target_id.to_string();
-    if let Ok(eng) = target.engine.parse::<Engine>() {
-        cfg.engine = eng;
-    }
-    true
+    dirty
 }
 
 impl Config {
