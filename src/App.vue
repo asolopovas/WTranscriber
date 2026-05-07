@@ -1643,47 +1643,18 @@ const fieldClass =
                     }}</template>
                   </span>
                 </div>
-                <div
-                  v-if="
-                    selectedEntry &&
-                    progressByPath[selectedEntry.path] &&
-                    status === 'running' &&
-                    progressByPath[selectedEntry.path].phase === 'transcribing'
-                  "
-                  class="flex justify-between items-center"
-                >
-                  <span class="text-on-surface-variant">Elapsed</span>
-                  <span class="text-on-surface">{{
-                    fmtClock(progressByPath[selectedEntry.path].elapsedSec)
-                  }}</span>
-                </div>
-                <div
-                  v-if="
-                    selectedEntry &&
-                    progressByPath[selectedEntry.path] &&
-                    status === 'running' &&
-                    progressByPath[selectedEntry.path].phase === 'transcribing'
-                  "
-                  class="flex justify-between items-center"
-                >
-                  <span class="text-on-surface-variant">ETA</span>
-                  <span class="text-secondary">{{
-                    fmtClock(progressByPath[selectedEntry.path].etaSec)
-                  }}</span>
-                </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant">Duration</span>
                   <span class="text-on-surface">{{
                     transcript ? fmtLong(transcript.duration_ms) : "—"
                   }}</span>
                 </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">Utterances</span>
-                  <span class="text-on-surface">{{ transcript?.utterances.length ?? 0 }}</span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">Speakers</span>
-                  <span class="text-primary">{{ transcript?.speakers_detected ?? 0 }}</span>
+                <div v-if="transcript" class="flex justify-between items-center">
+                  <span class="text-on-surface-variant">Utterances · Speakers</span>
+                  <span class="text-on-surface">
+                    {{ transcript.utterances.length }} ·
+                    <span class="text-primary">{{ transcript.speakers_detected }}</span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -1709,9 +1680,14 @@ const fieldClass =
         <span class="text-on-surface truncate min-w-0 flex-1" :title="selectedEntry.name">{{ selectedEntry.name }}</span>
         <span class="text-secondary shrink-0">
           <template v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
-            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% · ETA {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
+            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% ·
+            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }} /
+            ETA {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
           </template>
-          <template v-else>{{ phaseLabel(progressByPath[selectedEntry.path].phase) }}</template>
+          <template v-else>
+            {{ phaseLabel(progressByPath[selectedEntry.path].phase) }} ·
+            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}
+          </template>
         </span>
       </template>
       <template v-else-if="transcript">

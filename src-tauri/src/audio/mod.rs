@@ -1,5 +1,5 @@
 mod cache;
-mod decode;
+pub mod decode;
 mod ffmpeg;
 pub mod meta;
 mod wav;

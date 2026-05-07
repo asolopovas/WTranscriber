@@ -66,6 +66,16 @@ pub fn decode_to_wav(input: &Path, output: &Path) -> Result<()> {
     write_pcm16_wav(output, &resampled, WHISPER_SAMPLE_RATE)
 }
 
+pub fn decode_to_pcm_f32(input: &Path, target_sr: i32) -> Result<Vec<f32>> {
+    let (samples, sr) = decode_to_mono_f32(input)?;
+    let target = u32::try_from(target_sr).unwrap_or(WHISPER_SAMPLE_RATE);
+    if sr == target {
+        Ok(samples)
+    } else {
+        resample(&samples, sr, target)
+    }
+}
+
 fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
     let file = File::open(input)
         .map_err(|e| Error::Transcribe(format!("open {}: {e}", input.display())))?;

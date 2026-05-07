@@ -1,13 +1,33 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
 
 const tail = ref<string>("");
 const path = ref<string>("");
 const auto = ref(true);
+const retain = ref<number>(
+  Number(localStorage.getItem("wt.logRetain") ?? "1") || 1,
+);
 const error = ref<string | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
+
+const displayed = computed(() => {
+  if (!tail.value) return "";
+  if (retain.value <= 0) return tail.value;
+  const lines = tail.value.split("\n");
+  const starts: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^-----.*started/.test(lines[i])) starts.push(i);
+  }
+  if (starts.length <= retain.value) return tail.value;
+  return lines.slice(starts[starts.length - retain.value]).join("\n");
+});
+
+function onRetainChange(v: number) {
+  retain.value = v;
+  localStorage.setItem("wt.logRetain", String(v));
+}
 
 async function refresh() {
   try {
@@ -79,6 +99,17 @@ function levelClass(line: string): string {
               <input v-model="auto" type="checkbox" class="accent-primary w-4 h-4" />
               auto-scroll
             </label>
+            <select
+              :value="retain"
+              @change="onRetainChange(Number(($event.target as HTMLSelectElement).value))"
+              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall bg-transparent"
+              title="How many recent runs to display"
+            >
+              <option :value="1">Latest run</option>
+              <option :value="5">Last 5 runs</option>
+              <option :value="20">Last 20 runs</option>
+              <option :value="0">All</option>
+            </select>
             <button
               @click="refresh"
               class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
@@ -123,9 +154,9 @@ function levelClass(line: string): string {
           ref="scroller"
           class="flex-1 overflow-y-auto scroll-thin px-md py-md font-mono text-labelMedium leading-relaxed whitespace-pre-wrap break-all"
         >
-          <p v-if="!tail" class="text-outline italic">(log is empty)</p>
+          <p v-if="!displayed" class="text-outline italic">(log is empty)</p>
           <template v-else>
-            <div v-for="(line, i) in tail.split('\n')" :key="i" :class="levelClass(line)">
+            <div v-for="(line, i) in displayed.split('\n')" :key="i" :class="levelClass(line)">
               {{ line || "\u00A0" }}
             </div>
           </template>
