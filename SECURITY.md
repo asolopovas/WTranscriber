@@ -6,7 +6,7 @@ Only the latest minor is patched.
 
 ## Reporting
 
-Email **andrius@asolopovas.com**. Do not open public issues.
+Email **andrius.solopovas@gmail.com**. Do not open public issues.
 
 Include: affected version, repro steps, impact, PoC (redact secrets).
 
