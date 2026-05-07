@@ -67,6 +67,18 @@ android-cli-push: android-cli
 android-cli-run *args:
     bash scripts/android-wt.sh run {{args}}
 
+android-debug-attach:
+    @bash -c 'set -e; export MSYS_NO_PATHCONV=1; \
+      pid=$(adb shell cat /proc/net/unix | grep -oE "webview_devtools_remote_[0-9]+" | head -1 | sed "s/.*_//"); \
+      [ -z "$pid" ] && { echo "no WebView devtools socket; is the app running?"; exit 1; }; \
+      adb forward --remove tcp:9222 2>/dev/null || true; \
+      adb forward tcp:9222 localabstract:webview_devtools_remote_$pid >/dev/null; \
+      echo "forwarded tcp:9222 -> webview_devtools_remote_$pid"; \
+      curl -s http://localhost:9222/json/list | node -e "let d=\"\"; process.stdin.on(\"data\",x=>d+=x).on(\"end\",()=>JSON.parse(d).forEach(p=>console.log(p.title,\"->\",p.url)))"'
+
+android-debug-eval expr:
+    @node scripts/cdp.mjs {{quote(expr)}}
+
 cli *args:
     cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
 

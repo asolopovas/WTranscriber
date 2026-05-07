@@ -7,6 +7,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 tmp
+*.png
+!src-tauri/icons/*.png
+!src/assets/**/*.png
 
 node_modules
 dist

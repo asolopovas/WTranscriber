@@ -62,6 +62,8 @@ just check-all    full gate: check + dep-check + audit (pre-release)
 just clean        remove target + dist + node_modules
 just icons        regenerate icon set from src-tauri/icons/icon.png
 just android-*    Android scaffold / build (see docs/android.md)
+just android-debug-attach   forward Chrome DevTools to live WebView (port 9222)
+just android-debug-eval EXPR   eval JS in running WebView via CDP
 ```
 
 ## Quality gate — tiered
@@ -100,6 +102,20 @@ Faster feedback loop than blocking every commit on test compilation.
 `just setup` (and `just install-hooks`) point `core.hooksPath` at
 `.githooks`. Bypass with `git commit --no-verify` /
 `git push --no-verify` only for emergencies.
+
+## Debugging on Android
+
+Full guide: `docs/tauri-debug.md`. Cheat sheet:
+
+- `just android-debug-attach` — finds `webview_devtools_remote_<pid>`, runs
+  `adb forward tcp:9222 …`, prints page list. Open `chrome://inspect` to inspect.
+- `node scripts/cdp.mjs "<expr>"` — connects via
+  `chromium.connectOverCDP("http://localhost:9222")` and evaluates JS in the
+  live page (probe DOM, dispatch clicks, read Vue state).
+- Logcat tags: `chromium`/`Console` (JS), `RustStdoutStderr` (Rust println +
+  `tauri-plugin-log` Stdout target).
+- Screenshots: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`.
+  Repo root `*.png` is gitignored — keep captures under `tmp/`.
 
 ## Adding a Tauri command
 
