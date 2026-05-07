@@ -1505,7 +1505,7 @@ const fieldClass =
               </h3>
               <button
                 class="text-on-surface-variant hover:text-on-surface text-titleSmall"
-                @click="transcript = null"
+                @click="closeTranscript"
               >
                 <span class="material-symbols-outlined text-[18px]">close</span>
               </button>
