@@ -805,8 +805,32 @@ watch([trimStart, trimEnd, trimPeaks], () => {
 });
 
 const waveformBox = ref<HTMLElement | null>(null);
-const MIN_TRIM_GAP_MS = 10_000;
+const MIN_TRIM_GAP_MS = 3_000;
 const trimPlaying = ref(false);
+const trimPlayheadMs = ref(0);
+const trimPlayheadFrac = computed(() =>
+  trimDuration.value > 0
+    ? Math.max(0, Math.min(1, trimPlayheadMs.value / trimDuration.value))
+    : 0,
+);
+let trimPlayheadRaf: number | null = null;
+function stopPlayheadLoop() {
+  if (trimPlayheadRaf !== null) cancelAnimationFrame(trimPlayheadRaf);
+  trimPlayheadRaf = null;
+}
+function startPlayheadLoop() {
+  stopPlayheadLoop();
+  const tick = () => {
+    if (!trimPlaying.value || !trimAudioCtx) {
+      trimPlayheadRaf = null;
+      return;
+    }
+    const ms = trimPlayOffsetMs + (trimAudioCtx.currentTime - trimPlayStartCtx) * 1000;
+    trimPlayheadMs.value = Math.min(trimEnd.value, Math.max(trimStart.value, ms));
+    trimPlayheadRaf = requestAnimationFrame(tick);
+  };
+  trimPlayheadRaf = requestAnimationFrame(tick);
+}
 const trimAudioLoading = ref(false);
 let trimAudioCtx: AudioContext | null = null;
 let trimAudioBuffer: AudioBuffer | null = null;
@@ -851,16 +875,20 @@ function clearTrimSource() {
 function stopTrimPlay() {
   clearTrimSource();
   trimPlayOffsetMs = trimStart.value;
+  trimPlayheadMs.value = trimStart.value;
   trimPlaying.value = false;
+  stopPlayheadLoop();
 }
 
 function pauseTrimPlay() {
   if (trimPlaying.value && trimAudioCtx) {
     const elapsed = (trimAudioCtx.currentTime - trimPlayStartCtx) * 1000;
     trimPlayOffsetMs = Math.min(trimEnd.value, trimPlayOffsetMs + elapsed);
+    trimPlayheadMs.value = trimPlayOffsetMs;
   }
   clearTrimSource();
   trimPlaying.value = false;
+  stopPlayheadLoop();
 }
 
 async function toggleTrimPlay() {
@@ -884,18 +912,24 @@ async function toggleTrimPlay() {
     if (trimAudioSource === src) {
       trimAudioSource = null;
       trimPlayOffsetMs = trimStart.value;
+      trimPlayheadMs.value = trimStart.value;
       trimPlaying.value = false;
+      stopPlayheadLoop();
     }
   };
   trimAudioSource = src;
   trimPlayStartCtx = trimAudioCtx.currentTime;
   trimPlayOffsetMs = offsetMs;
   src.start(0, offsetMs / 1000, durMs / 1000);
+  trimPlayheadMs.value = offsetMs;
   trimPlaying.value = true;
+  startPlayheadLoop();
   trimStopTimer = setTimeout(() => {
     if (trimAudioSource === src) clearTrimSource();
     trimPlayOffsetMs = trimStart.value;
+    trimPlayheadMs.value = trimStart.value;
     trimPlaying.value = false;
+    stopPlayheadLoop();
   }, durMs + 200);
 }
 
@@ -2198,6 +2232,15 @@ const fieldClass =
                 @pointerdown="(e) => beginHandleDrag('end', e)"
               >
                 <div class="w-2 h-full bg-primary rounded-full shadow-lg"></div>
+              </div>
+              <div
+                v-if="trimDuration > 0"
+                class="absolute top-0 bottom-0 w-px bg-tertiary pointer-events-none shadow-[0_0_4px_rgba(255,255,255,0.6)]"
+                :style="{ left: trimPlayheadFrac * 100 + '%' }"
+              >
+                <div
+                  class="absolute -top-1 -translate-x-1/2 left-0 w-2 h-2 rounded-full bg-tertiary"
+                ></div>
               </div>
             </div>
           </div>
