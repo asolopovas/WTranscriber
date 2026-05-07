@@ -73,7 +73,7 @@ fn use_in_process(config: &Config) -> bool {
     )
 }
 
-const WHISPER_MAX_CHUNK_SEC: f64 = 26.0;
+const WHISPER_MAX_CHUNK_SEC: f64 = 15.0;
 
 #[allow(clippy::significant_drop_tightening)]
 fn run_in_process(

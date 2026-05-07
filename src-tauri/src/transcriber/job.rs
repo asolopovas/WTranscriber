@@ -15,8 +15,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
     audio,
-    audio_toolkit::stream::stream_slabs,
-    config::Config,
+    audio_toolkit::{
+        stream::stream_slabs,
+        vad::{self, RegionStream, RegionStreamConfig},
+    },
+    config::{Config, Engine},
     diarizer::{self, Segment as DiarSegment},
     engine,
     error::Result,
@@ -54,6 +57,15 @@ pub async fn run(job: &Job) -> Result<Transcript> {
 pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript> {
     let input = job.input.clone();
     let config = job.config.clone();
+
+    if matches!(config.engine, Engine::WhisperOnnx) && !vad::model::is_installed() {
+        match vad::model::ensure().await {
+            Ok(p) => logfile::info(&format!("silero vad ready: {}", p.display())),
+            Err(e) => logfile::warn(&format!(
+                "silero vad fetch failed ({e}); falling back to fixed slabs"
+            )),
+        }
+    }
 
     tokio::task::spawn_blocking(move || run_blocking(&input, &config, sink.as_ref()))
         .await
@@ -138,12 +150,22 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         segments: Vec::new(),
     });
     let slab = slab_sec();
+    let use_vad = matches!(config.engine, Engine::WhisperOnnx) && vad::model::is_installed();
+    let vad_max_region_sec: f64 = 15.0;
     if state.segments.is_empty() {
-        logfile::info(&format!(
-            "streaming start: slab={slab:.0}s engine={} model={}",
-            config.engine.as_str(),
-            config.model,
-        ));
+        if use_vad {
+            logfile::info(&format!(
+                "streaming start: vad-regions max={vad_max_region_sec:.0}s engine={} model={}",
+                config.engine.as_str(),
+                config.model,
+            ));
+        } else {
+            logfile::info(&format!(
+                "streaming start: slab={slab:.0}s engine={} model={}",
+                config.engine.as_str(),
+                config.model,
+            ));
+        }
     } else {
         logfile::info(&format!(
             "resuming from {} ({} cached segs)",
@@ -161,94 +183,113 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let mut slab_index: usize = 0;
     let pipeline_t0 = std::time::Instant::now();
 
-    let stream_result = stream_slabs(
-        input,
-        start_ms,
-        end_ms_opt,
-        slab,
-        cancel_for_stream,
-        |region| -> Result<bool> {
-            if sink.is_cancelled() {
-                cancel_flag.store(true, Ordering::SeqCst);
-                return Err(crate::error::Error::Cancelled);
+    let mut process_region = |region: crate::audio_toolkit::vad::Region| -> Result<()> {
+        if sink.is_cancelled() {
+            cancel_flag.store(true, Ordering::SeqCst);
+            return Err(crate::error::Error::Cancelled);
+        }
+        if region.end_sec <= state.last_done_sec + 0.001 {
+            emit_pct(sink, region.end_sec, trimmed_dur_sec);
+            return Ok(());
+        }
+        slab_index += 1;
+        let mut sub_progress = |_pct: f64| {};
+        let cancelled = || sink.is_cancelled();
+        let region_dur_sec = region.end_sec - region.start_sec;
+        let region_start_sec = region.start_sec;
+        let region_end_sec = region.end_sec;
+        let resume_floor = state.last_done_sec;
+        let t0 = std::time::Instant::now();
+        let mut slab_segs_emitted: usize = 0;
+        let mut slab_dropped: usize = 0;
+        let mut save_err: Option<crate::error::Error> = None;
+        let mut on_chunk = |mut segs: Vec<Segment>, chunk_end_sec: f64| {
+            let abs_end = (region_start_sec + chunk_end_sec).min(region_end_sec);
+            if abs_end <= resume_floor + 0.001 {
+                return;
             }
-            if region.end_sec <= state.last_done_sec + 0.001 {
-                emit_pct(sink, region.end_sec, trimmed_dur_sec);
-                return Ok(true);
+            let before = segs.len();
+            apply_dedup(&mut segs);
+            slab_dropped += before.saturating_sub(segs.len());
+            shift_segments(&mut segs, (region_start_sec * 1000.0) as u64);
+            for s in &segs {
+                state.segments.push(partial::SerSegment::from(s));
             }
-            slab_index += 1;
-            let mut sub_progress = |_pct: f64| {};
-            let cancelled = || sink.is_cancelled();
-            let region_dur_sec = region.end_sec - region.start_sec;
-            let region_start_sec = region.start_sec;
-            let region_end_sec = region.end_sec;
-            let resume_floor = state.last_done_sec;
-            let t0 = std::time::Instant::now();
-            let mut slab_segs_emitted: usize = 0;
-            let mut slab_dropped: usize = 0;
-            let mut save_err: Option<crate::error::Error> = None;
-            let mut on_chunk = |mut segs: Vec<Segment>, chunk_end_sec: f64| {
-                let abs_end = (region_start_sec + chunk_end_sec).min(region_end_sec);
-                if abs_end <= resume_floor + 0.001 {
-                    return;
+            slab_segs_emitted += segs.len();
+            state.last_done_sec = abs_end;
+            if save_err.is_none() {
+                if let Err(e) = partial::save(&state) {
+                    save_err = Some(e);
                 }
-                let before = segs.len();
-                apply_dedup(&mut segs);
-                slab_dropped += before.saturating_sub(segs.len());
-                shift_segments(&mut segs, (region_start_sec * 1000.0) as u64);
-                for s in &segs {
-                    state.segments.push(partial::SerSegment::from(s));
-                }
-                slab_segs_emitted += segs.len();
-                state.last_done_sec = abs_end;
-                if save_err.is_none() {
-                    if let Err(e) = partial::save(&state) {
-                        save_err = Some(e);
-                    }
-                }
-                emit_pct(sink, abs_end, trimmed_dur_sec);
-            };
-            let engine_result = engine::run(
-                &region.samples,
-                region_dur_sec,
-                config,
-                &mut sub_progress,
-                &cancelled,
-                &mut on_chunk,
-            );
-            let (slab_detected, _rtf) = engine_result?;
-            if let Some(e) = save_err {
-                return Err(e);
             }
-            if detected_language.is_empty() && !slab_detected.is_empty() {
-                detected_language.clone_from(&slab_detected);
-                logfile::info(&format!("detected language: {slab_detected}"));
-            }
-            let elapsed = t0.elapsed().as_secs_f64();
-            total_audio += region_dur_sec;
-            total_elapsed += elapsed;
-            let slab_rtf = if elapsed > 0.0 {
-                region_dur_sec / elapsed
+            emit_pct(sink, abs_end, trimmed_dur_sec);
+        };
+        let engine_result = engine::run(
+            &region.samples,
+            region_dur_sec,
+            config,
+            &mut sub_progress,
+            &cancelled,
+            &mut on_chunk,
+        );
+        let (slab_detected, _rtf) = engine_result?;
+        if let Some(e) = save_err {
+            return Err(e);
+        }
+        if detected_language.is_empty() && !slab_detected.is_empty() {
+            detected_language.clone_from(&slab_detected);
+            logfile::info(&format!("detected language: {slab_detected}"));
+        }
+        let elapsed = t0.elapsed().as_secs_f64();
+        total_audio += region_dur_sec;
+        total_elapsed += elapsed;
+        let slab_rtf = if elapsed > 0.0 {
+            region_dur_sec / elapsed
+        } else {
+            0.0
+        };
+        logfile::info(&format!(
+            "slab #{slab_index} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
+            format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
+            format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
+            region_dur_sec,
+            elapsed,
+            slab_rtf,
+            slab_segs_emitted,
+            if slab_dropped > 0 {
+                format!(", dropped {slab_dropped} dedup")
             } else {
-                0.0
-            };
-            logfile::info(&format!(
-                "slab #{slab_index} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
-                format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
-                format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
-                region_dur_sec,
-                elapsed,
-                slab_rtf,
-                slab_segs_emitted,
-                if slab_dropped > 0 {
-                    format!(", dropped {slab_dropped} dedup")
-                } else {
-                    String::new()
-                },
-            ));
-            Ok(true)
-        },
-    );
+                String::new()
+            },
+        ));
+        Ok(())
+    };
+
+    let stream_result = if use_vad {
+        let model = vad::model::model_path()?;
+        let vad_cfg = RegionStreamConfig {
+            max_region_sec: vad_max_region_sec,
+            ..RegionStreamConfig::default()
+        };
+        RegionStream::run(
+            input,
+            start_ms,
+            end_ms_opt,
+            &model,
+            vad_cfg,
+            cancel_for_stream,
+            &mut process_region,
+        )
+    } else {
+        stream_slabs(
+            input,
+            start_ms,
+            end_ms_opt,
+            slab,
+            cancel_for_stream,
+            |region| process_region(region).map(|()| true),
+        )
+    };
 
     let scanned_end = stream_result?;
     if sink.is_cancelled() {

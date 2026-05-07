@@ -36,6 +36,13 @@ justfile            task recipes
 
 ## Conventions
 
+- **Rust builds run multicore** (cargo uses `-j$(nproc)` by default; this host has
+  16 logical cores). A clean release rebuild of `wtranscriber` lib + `wt` bin is
+  ~2–3 min on Windows MSVC; warm incremental rebuilds are sub-second. **Don't**
+  cap `-j`, don't add `CARGO_BUILD_JOBS=1`, and don't assume a long build means
+  a hang — verify by tailing `cargo build -v` (it prints `Compiling X v…` for
+  each crate). Long single-line stalls during link are normal (rust-lld /
+  sherpa-onnx static link).
 - **No comments in code.** Names carry intent.
 - **No `sleep` in scripts or shell pipelines.** Wait on real signals (process
   exit, file existence, log markers, polling with timeout). Sleeps mask races

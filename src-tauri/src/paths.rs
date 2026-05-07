@@ -48,6 +48,7 @@ pub fn init(config: PathBuf, data: PathBuf, cache: PathBuf) {
     }
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub fn set_default_workdir(path: PathBuf) {
     if let Ok(mut g) = WORKDIR_OVERRIDE.write() {
         *g = Some(path);
@@ -58,12 +59,14 @@ pub fn default_workdir_override() -> Option<PathBuf> {
     WORKDIR_OVERRIDE.read().ok().and_then(|g| g.clone())
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub fn set_models_dir(path: PathBuf) {
     if let Ok(mut g) = MODELS_OVERRIDE.write() {
         *g = Some(path);
     }
 }
 
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub fn set_config_file(path: PathBuf) {
     if let Ok(mut g) = CONFIG_FILE_OVERRIDE.write() {
         *g = Some(path);
