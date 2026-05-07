@@ -1349,10 +1349,6 @@ const fieldClass =
                       </template>
                       <span v-else>transcribing</span>
                     </span>
-                    <span class="text-outline">·</span>
-                    <span>{{ fmtClock(progressByPath[entry.path]?.elapsedSec ?? 0) }} elapsed</span>
-                    <span class="text-outline">·</span>
-                    <span>{{ fmtClock(progressByPath[entry.path]?.etaSec ?? 0) }} left</span>
                   </template>
                   <template v-else-if="entry.cache_key">
                     <span class="text-outline">·</span>
@@ -1427,16 +1423,6 @@ const fieldClass =
                             <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
                           </template>
                           <span v-else>transcribing</span>
-                        </span>
-                        <span
-                          v-if="
-                            progressByPath[entry.path] &&
-                            progressByPath[entry.path].phase === 'transcribing'
-                          "
-                          class="font-mono text-[10px] text-on-surface-variant"
-                        >
-                          {{ fmtClock(progressByPath[entry.path].elapsedSec) }} elapsed ·
-                          {{ fmtClock(progressByPath[entry.path].etaSec) }} left
                         </span>
                       </div>
                     </template>
