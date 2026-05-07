@@ -21,6 +21,8 @@ pub struct Config {
     pub auto_rename: bool,
     #[serde(default)]
     pub last_dir: Option<std::path::PathBuf>,
+    #[serde(default)]
+    pub use_persistent_models: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,6 +115,7 @@ impl Default for Config {
             diarizer: DiarizerChoice::default(),
             auto_rename: false,
             last_dir: None,
+            use_persistent_models: false,
         }
     }
 }

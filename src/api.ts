@@ -51,6 +51,10 @@ export const api = {
   saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
     invoke<string>("save_recording", { workdir, filename, bytes: Array.from(bytes) }),
   readAudioBytes: (path: string) => invoke<number[]>("read_audio_bytes", { path }),
+  hasPersistentStorage: () => invoke<boolean>("has_persistent_storage"),
+  requestPersistentStorage: () => invoke<void>("request_persistent_storage"),
+  enablePersistentStorage: () => invoke<boolean>("enable_persistent_storage"),
+  disablePersistentStorage: () => invoke<void>("disable_persistent_storage"),
 };
 
 export const events = {

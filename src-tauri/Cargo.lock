@@ -6360,6 +6360,7 @@ dependencies = [
  "futures-util",
  "hex",
  "hound",
+ "jni",
  "regex",
  "reqwest 0.12.28",
  "rubato",

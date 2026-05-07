@@ -59,6 +59,9 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 byteorder = "1.5"
 sherpa-onnx = { version = "1.13", default-features = false }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [profile.release]
 codegen-units = 16
 lto = false

@@ -13,6 +13,65 @@ const maintenanceStatus = ref<string | null>(null);
 const modelProgress = ref<Record<string, FileProgress>>({});
 const unlisten: (() => void)[] = [];
 
+const isAndroid =
+  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const persistentEnabled = ref(false);
+const persistentGranted = ref(false);
+const persistentBusy = ref<"idle" | "requesting" | "enabling" | "saved">("idle");
+const persistentMessage = ref<string | null>(null);
+let persistentVisibilityHandler: (() => void) | null = null;
+
+async function refreshPersistentState() {
+  if (!isAndroid) return;
+  try {
+    persistentGranted.value = await api.hasPersistentStorage();
+    if (config.value) persistentEnabled.value = config.value.use_persistent_models;
+  } catch (e) {
+    persistentMessage.value = String(e);
+  }
+}
+
+async function togglePersistent(next: boolean) {
+  if (!isAndroid) return;
+  if (next) {
+    persistentBusy.value = "requesting";
+    persistentMessage.value =
+      "Opening system settings\u2026 toggle \u201cAllow access to manage all files\u201d, then return to WTranscriber.";
+    await api.requestPersistentStorage();
+  } else {
+    await api.disablePersistentStorage();
+    persistentEnabled.value = false;
+    persistentMessage.value =
+      "Persistent storage disabled. Existing files in /storage/emulated/0/WTranscriber/ are kept; the app will not restore from them on next launch.";
+    if (config.value) config.value.use_persistent_models = false;
+  }
+}
+
+async function applyPersistentGrantIfReady() {
+  if (!isAndroid) return;
+  await refreshPersistentState();
+  if (persistentBusy.value !== "requesting") return;
+  if (!persistentGranted.value) return;
+  persistentBusy.value = "enabling";
+  persistentMessage.value = "Permission granted. Backing up models to shared storage\u2026";
+  try {
+    const ok = await api.enablePersistentStorage();
+    if (ok) {
+      persistentEnabled.value = true;
+      persistentBusy.value = "saved";
+      persistentMessage.value =
+        "Done. Models are now mirrored to /storage/emulated/0/WTranscriber/models and will survive uninstall.";
+      if (config.value) config.value.use_persistent_models = true;
+    } else {
+      persistentBusy.value = "idle";
+      persistentMessage.value = "Permission not yet granted. Try again from system settings.";
+    }
+  } catch (e) {
+    persistentBusy.value = "idle";
+    persistentMessage.value = String(e);
+  }
+}
+
 async function refreshModels() {
   models.value = await api.listModels();
 }
@@ -90,9 +149,21 @@ onMounted(async () => {
     await events.onModelDone(refreshModels),
     await events.onModelError(refreshModels),
   );
+  await refreshPersistentState();
+  if (isAndroid && typeof document !== "undefined") {
+    persistentVisibilityHandler = () => {
+      if (document.visibilityState === "visible") void applyPersistentGrantIfReady();
+    };
+    document.addEventListener("visibilitychange", persistentVisibilityHandler);
+  }
 });
 
-onUnmounted(() => unlisten.forEach((u) => u()));
+onUnmounted(() => {
+  unlisten.forEach((u) => u());
+  if (persistentVisibilityHandler && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", persistentVisibilityHandler);
+  }
+});
 
 async function resetTranscriptCache() {
   const ok = await confirm("Clear saved transcript previews and cached transcription results?");
@@ -474,6 +545,49 @@ const fieldClass =
               </tr>
             </tbody>
           </table>
+        </section>
+
+        <section
+          v-if="isAndroid"
+          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
+        >
+          <div
+            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
+          >
+            <span class="material-symbols-outlined text-tertiary">save</span>
+            <h2 class="text-titleMedium text-on-surface">Storage</h2>
+          </div>
+          <div class="p-margin flex flex-col gap-md">
+            <div class="flex flex-col gap-md">
+              <div>
+                <h3 class="text-titleSmall text-on-surface">
+                  Keep AI models when uninstalling
+                </h3>
+                <p class="text-bodyMedium text-on-surface-variant mt-unit">
+                  Mirrors downloaded models to <span class="font-mono">/storage/emulated/0/WTranscriber/models</span> so a future reinstall doesn’t need to re-download ~1&nbsp;GB. Requires <span class="font-medium">All Files Access</span> in Android Settings.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="px-md py-xs rounded-full text-titleSmall transition-colors inline-flex items-center gap-xs w-fit"
+                :class="persistentEnabled ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface border border-outline-variant'"
+                @click="togglePersistent(!persistentEnabled)"
+              >
+                <span class="material-symbols-outlined text-[18px]">{{ persistentEnabled ? 'check_circle' : 'shield' }}</span>
+                {{ persistentEnabled ? 'Enabled' : 'Grant access & enable' }}
+              </button>
+            </div>
+            <p
+              v-if="persistentMessage"
+              class="text-bodyMedium"
+              :class="persistentBusy === 'saved' ? 'text-tertiary' : 'text-on-surface-variant'"
+            >
+              {{ persistentMessage }}
+            </p>
+            <p class="text-labelSmall text-on-surface-variant font-mono">
+              Status: {{ persistentEnabled && persistentGranted ? 'enabled' : persistentGranted ? 'permission granted, not enabled' : 'permission not granted' }}
+            </p>
+          </div>
         </section>
 
         <section

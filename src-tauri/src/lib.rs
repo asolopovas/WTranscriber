@@ -134,6 +134,189 @@ fn progress_emitter(
 
 
 #[cfg(target_os = "android")]
+const PERSISTENT_MODELS_DIR: &str = "/storage/emulated/0/WTranscriber/models";
+
+#[cfg(target_os = "android")]
+#[allow(unsafe_code)]
+mod android_jni {
+    use std::sync::OnceLock;
+
+    use jni::{JNIEnv, JavaVM, objects::{GlobalRef, JClass, JObject}, sys::{JNI_VERSION_1_6, jint}};
+
+    static JVM: OnceLock<JavaVM> = OnceLock::new();
+    static ACTIVITY: OnceLock<GlobalRef> = OnceLock::new();
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut std::ffi::c_void) -> jint {
+        if let Ok(vm) = unsafe { JavaVM::from_raw(vm) } {
+            let _ = JVM.set(vm);
+        }
+        JNI_VERSION_1_6
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_asolopovas_wtranscriber_MainActivity_wtSetActivity(
+        mut env: JNIEnv,
+        _class: JClass,
+        activity: JObject,
+    ) {
+        if let Ok(g) = env.new_global_ref(&activity) {
+            let _ = ACTIVITY.set(g);
+        }
+    }
+
+    pub fn with_activity<F, R>(default: R, f: F) -> R
+    where
+        F: FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>,
+    {
+        let Some(vm) = JVM.get() else { return default };
+        let Some(activity) = ACTIVITY.get() else { return default };
+        let Ok(mut env) = vm.attach_current_thread() else { return default };
+        match f(&mut env, activity.as_obj()) {
+            Ok(v) => v,
+            Err(e) => {
+                crate::logfile::error(&format!("jni call: {e}"));
+                default
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_has_all_files_access() -> bool {
+    android_jni::with_activity(false, |env, activity| {
+        env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?.z()
+    })
+}
+
+#[cfg(target_os = "android")]
+fn android_request_all_files_access() {
+    android_jni::with_activity((), |env, activity| {
+        env.call_method(activity, "requestAllFilesAccess", "()V", &[])?;
+        Ok(())
+    });
+}
+
+#[cfg(target_os = "android")]
+fn restore_models_from_persistent(internal: &std::path::Path) {
+    let public = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    if !public.exists() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(public) else {
+        return;
+    };
+    let mut restored: u64 = 0;
+    for e in entries.flatten() {
+        let src = e.path();
+        let Some(name) = src.file_name() else { continue };
+        let dst = internal.join(name);
+        if dst.exists() {
+            continue;
+        }
+        match copy_recursive(&src, &dst) {
+            Ok(b) if b > 0 => restored = restored.saturating_add(b),
+            Ok(_) => {
+                let _ = remove_recursive(&dst);
+            }
+            Err(e) => logfile::error(&format!(
+                "android: persistent restore {} failed: {e}",
+                src.display()
+            )),
+        }
+    }
+    if restored > 0 {
+        logfile::info(&format!(
+            "android: restored {restored} bytes from persistent storage"
+        ));
+    }
+}
+
+#[cfg(target_os = "android")]
+fn backup_models_to_persistent(internal: &std::path::Path) {
+    let public = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    if std::fs::create_dir_all(public).is_err() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(internal) else {
+        return;
+    };
+    let mut backed: u64 = 0;
+    for e in entries.flatten() {
+        let src = e.path();
+        let Some(name) = src.file_name() else { continue };
+        let dst = public.join(name);
+        if dst.exists() {
+            continue;
+        }
+        match copy_recursive(&src, &dst) {
+            Ok(b) if b > 0 => backed = backed.saturating_add(b),
+            Ok(_) => {
+                let _ = remove_recursive(&dst);
+            }
+            Err(e) => logfile::error(&format!(
+                "android: persistent backup {} failed: {e}",
+                src.display()
+            )),
+        }
+    }
+    if backed > 0 {
+        logfile::info(&format!(
+            "android: backed up {backed} bytes to persistent storage"
+        ));
+    }
+}
+
+#[tauri::command]
+fn has_persistent_storage() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        return android_has_all_files_access();
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+fn request_persistent_storage() {
+    #[cfg(target_os = "android")]
+    {
+        android_request_all_files_access();
+    }
+}
+
+#[tauri::command]
+fn enable_persistent_storage() -> std::result::Result<bool, String> {
+    #[cfg(target_os = "android")]
+    {
+        if !android_has_all_files_access() {
+            return Ok(false);
+        }
+        let mut cfg = config::Config::load().map_err(|e| e.to_string())?;
+        cfg.use_persistent_models = true;
+        cfg.save().map_err(|e| e.to_string())?;
+        if let Ok(internal) = paths::models_dir() {
+            backup_models_to_persistent(&internal);
+        }
+        return Ok(true);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(true)
+    }
+}
+
+#[tauri::command]
+fn disable_persistent_storage() -> std::result::Result<(), String> {
+    let mut cfg = config::Config::load().map_err(|e| e.to_string())?;
+    cfg.use_persistent_models = false;
+    cfg.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
 fn migrate_legacy_android_data(new_data_dir: &std::path::Path, _workdir: &std::path::Path) {
     let legacy = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
     if !legacy.exists() {
@@ -223,6 +406,20 @@ pub fn essential_model_ids() -> Vec<String> {
     .collect()
 }
 
+#[cfg(target_os = "android")]
+fn maybe_backup_after_install() {
+    let cfg = config::Config::load().unwrap_or_default();
+    if !cfg.use_persistent_models {
+        return;
+    }
+    if !android_has_all_files_access() {
+        return;
+    }
+    if let Ok(internal) = paths::models_dir() {
+        backup_models_to_persistent(&internal);
+    }
+}
+
 fn auto_install_essentials(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         ensure_runtimes(&app).await;
@@ -266,6 +463,8 @@ fn auto_install_essentials(app: tauri::AppHandle) {
                 _ => all_ok = false,
             }
         }
+        #[cfg(target_os = "android")]
+        maybe_backup_after_install();
         let _ = app.emit("model:essentials_done", all_ok);
     });
 }
@@ -307,8 +506,15 @@ pub fn run() {
                     fallback
                 };
                 paths::set_config_file(data_dir.join("config.yml"));
+                let cache_dir = data_dir.join("cache");
+                let _ = std::fs::create_dir_all(&cache_dir);
+                paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
                 let models_dir = data_dir.join("models");
                 let _ = std::fs::create_dir_all(&models_dir);
+                let cfg = config::Config::load().unwrap_or_default();
+                if cfg.use_persistent_models && android_has_all_files_access() {
+                    restore_models_from_persistent(&models_dir);
+                }
                 paths::set_models_dir(models_dir);
 
                 let ext_workdir = std::path::PathBuf::from(
@@ -367,6 +573,10 @@ pub fn run() {
             commands::log_clear,
             commands::reset_transcript_cache,
             commands::reset_audio_cache,
+            has_persistent_storage,
+            request_persistent_storage,
+            enable_persistent_storage,
+            disable_persistent_storage,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

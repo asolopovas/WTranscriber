@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
+import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, events } from "./api";
@@ -316,6 +317,13 @@ async function pickAudio() {
   await addPathsToWorkdir(paths);
 }
 
+function basenameOf(p: string): string {
+  const cleaned = p.replace(/\\/g, "/");
+  const idx = cleaned.lastIndexOf("/");
+  const tail = idx === -1 ? cleaned : cleaned.slice(idx + 1);
+  return tail.split("?")[0] || "audio";
+}
+
 async function addPathsToWorkdir(paths: string[]) {
   if (!listing.value) return;
   const dir = listing.value.path;
@@ -324,8 +332,13 @@ async function addPathsToWorkdir(paths: string[]) {
     if (!hasAudioExt(p)) continue;
     try {
       lastAdded = await api.addToWorkdir(p, dir);
-    } catch (e) {
-      error.value = String(e);
+    } catch (eRaw) {
+      try {
+        const bytes = await readFile(p);
+        lastAdded = await api.saveRecording(dir, basenameOf(p), bytes);
+      } catch (e2) {
+        error.value = `${eRaw} / ${e2}`;
+      }
     }
   }
   await refreshListing();

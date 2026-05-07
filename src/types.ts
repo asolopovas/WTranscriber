@@ -30,6 +30,7 @@ export interface Config {
   diarizer: DiarizerChoice;
   auto_rename: boolean;
   last_dir?: string | null;
+  use_persistent_models: boolean;
 }
 
 export type ExportFormat = "txt" | "csv" | "json" | "srt" | "vtt";
