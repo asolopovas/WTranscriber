@@ -33,6 +33,7 @@ bun.lock
 
 # Tauri build outputs
 src-tauri/target/
+xtask/target/
 src-tauri/gen/
 
 # Release artifacts

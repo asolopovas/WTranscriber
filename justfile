@@ -6,7 +6,6 @@ export PATH := env_var('USERPROFILE') / '.cargo' / 'bin' + _sep + env_var('PATH'
 
 _android_sdk := env_var_or_default('ANDROID_HOME', env_var('USERPROFILE') / 'AppData' / 'Local' / 'Android' / 'Sdk')
 _android_ndk := env_var_or_default('NDK_HOME', _android_sdk / 'ndk' / '27.2.12479018')
-_android_prebuilt := justfile_directory() / '.android-prebuilt'
 export ANDROID_HOME := _android_sdk
 export NDK_HOME := _android_ndk
 export ANDROID_NDK := _android_ndk
@@ -26,12 +25,17 @@ install-hooks:
     git config core.hooksPath .githooks
     @echo "git hooks path -> .githooks"
 
+# develop
 dev:
     bun run tauri dev
 
 dev-cpu:
     bun run tauri dev -- --no-default-features --features sherpa-static
 
+watch:
+    cargo watch -w src-tauri/src --manifest-path src-tauri/Cargo.toml -x "build --release"
+
+# build
 build:
     bun run tauri build
 
@@ -50,39 +54,34 @@ build-cpu:
 build-cli:
     cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
 
-watch:
-    cargo watch -w src-tauri/src --manifest-path src-tauri/Cargo.toml -x "build --release"
-
+# android
 android-targets:
     rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
 
 android-prebuilts:
-    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-android-prebuilts.ps1
+    cargo xtask android prebuilts
 
 android-init: android-targets android-prebuilts
     bun run tauri android init
 
 android-dev target="aarch64":
-    bun scripts/android.mjs dev --target={{target}}
+    cargo xtask android dev --target {{target}}
 
 android-build target="aarch64":
-    bun scripts/android.mjs build --target={{target}} --release
-
-android-build-debug target="aarch64":
-    bun scripts/android.mjs build --target={{target}} --debug
+    cargo xtask android build --target {{target}}
 
 android-doctor target="aarch64":
-    bun scripts/android.mjs doctor --target={{target}}
+    cargo xtask android doctor --target {{target}}
     @rustup target list --installed
 
 android-cli target="aarch64":
-    bun scripts/android.mjs cli --target={{target}} --debug
+    cargo xtask android cli --target {{target}} --debug
 
-android-cli-push: android-cli
-    bash scripts/android-wt.sh push
+android-cli-push:
+    cargo xtask android cli-push
 
 android-cli-run *args:
-    bash scripts/android-wt.sh run {{args}}
+    cargo xtask android cli-run -- {{args}}
 
 android-debug-attach:
     @bash -c 'set -e; export MSYS_NO_PATHCONV=1; \
@@ -96,15 +95,18 @@ android-debug-attach:
 android-debug-eval expr:
     @node scripts/cdp.mjs {{quote(expr)}}
 
+# headless cli
 cli *args:
     cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
 
+# frontend
 preview:
     bun run preview
 
 typecheck:
     bun run typecheck
 
+# quality
 fmt:
     cargo fmt --manifest-path src-tauri/Cargo.toml --all
     bun x prettier --write "src/**/*.{ts,vue}" "*.{json,html,md}"
@@ -151,11 +153,13 @@ check-all: check dep-check audit
 
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml
+    cargo clean --manifest-path xtask/Cargo.toml
     rm -rf dist node_modules
 
 icons source="src-tauri/icons/icon.png":
     bun run tauri icon {{source}}
 
+# windows-only runtime deps (CUDA, cuDNN, NeMo)
 cudnn version="9.21.1.3":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
 
@@ -165,24 +169,22 @@ sherpa-cuda version="v1.13.0":
 nemo-deps:
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
 
-bump version:
-    bun pm version {{version}} --no-git-tag-version
-
+# release
 release:
-    bun scripts/release-build.mjs --dev
-    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh dev
+    cargo xtask release --dev
+    cargo xtask publish dev
 
 release-stable level="patch":
     @just check
-    bun scripts/release-bump.mjs {{level}}
-    bun scripts/release-build.mjs
-    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh stable
+    cargo xtask bump {{level}}
+    cargo xtask release
+    cargo xtask publish stable
 
 release-bump level="patch":
-    bun scripts/release-bump.mjs {{level}}
+    cargo xtask bump {{level}}
 
 release-build *args:
-    bun scripts/release-build.mjs {{args}}
+    cargo xtask release {{args}}
 
 release-publish channel:
-    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh {{channel}}
+    cargo xtask publish {{channel}}

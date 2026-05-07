@@ -31,7 +31,20 @@ src-tauri/
   capabilities/     Tauri permissions
   tauri.conf.json
   rustfmt.toml
-justfile            task recipes
+xtask/              build / release orchestration (Rust binary)
+  src/
+    main.rs         clap dispatcher
+    util.rs         shared helpers (paths, git, streamed processes)
+    bump.rs         version sync across package.json / Cargo.toml / tauri.conf.json
+    release.rs      parallel host + Android + WSL builds, SHA256SUMS, manifest
+    publish.rs      gh CLI wrapper for dev / stable releases
+    android.rs      build / dev / cli / prebuilts / sign-patch
+.cargo/config.toml  cargo alias: `cargo xtask` -> xtask binary
+justfile            thin user-facing wrappers around `cargo xtask`
+scripts/
+  cdp.mjs           Chrome DevTools Protocol eval (debug only, needs Node)
+  diarize.py        speaker diarization sidecar (runtime resource)
+  install-*.ps1     Windows-only runtime deps (CUDA / cuDNN / NeMo)
 docs/release.md     release process + build-speed reference
 ```
 
@@ -84,12 +97,13 @@ just check-all      check + cargo-machete + cargo-audit + bun audit
 just dep-check      unused crate deps
 just audit          vulnerability scan
 
-# release
+# release (all delegate to `cargo xtask`)
 just release            dev build → rolling 'dev' prerelease
 just release-stable     check + bump + tag + build + publish stable
 just release-bump       bump + commit + tag only
 just release-build      build artifacts only (--dev flag for dev channel)
 just release-publish    upload existing artifacts to dev or vX.Y.Z
+                        direct: cargo xtask {release|bump|publish|android} --help
                         full reference: docs/release.md
 
 # misc

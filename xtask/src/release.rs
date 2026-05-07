@@ -1,0 +1,565 @@
+use anyhow::{Context, Result, bail};
+use chrono::Utc;
+use clap::Args as ClapArgs;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::thread;
+
+use crate::util::{
+    SharedOut, exe, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed,
+    shared_out,
+};
+
+#[derive(ClapArgs)]
+#[command(about = "Build release artifacts (host + Android + WSL deb on Windows)")]
+pub struct Args {
+    /// Build to releases/dev/ with branch-suffixed names (rolling channel)
+    #[arg(long)]
+    pub dev: bool,
+    /// Skip Windows / Linux / macOS host build
+    #[arg(long)]
+    pub no_host: bool,
+    /// Skip Android build
+    #[arg(long)]
+    pub no_android: bool,
+    /// Skip WSL .deb build (Windows host only)
+    #[arg(long)]
+    pub no_wsl: bool,
+    /// Reuse existing build artifacts; only repackage / re-hash
+    #[arg(long)]
+    pub skip_rebuild: bool,
+    /// Run platform builds sequentially instead of in parallel
+    #[arg(long)]
+    pub sequential: bool,
+}
+
+pub fn run(args: Args) -> Result<()> {
+    let ver = pkg_version()?;
+    let sha = git_short_sha()?;
+    let branch = git_branch()?;
+    let out_dir = root().join("releases");
+    let out_channel_dir = if args.dev {
+        out_dir.join("dev")
+    } else {
+        out_dir.clone()
+    };
+
+    println!(
+        "release-build: ver={ver} sha={sha} branch={branch} channel={} parallel={}",
+        if args.dev { "dev" } else { "stable" },
+        !args.sequential
+    );
+
+    if !args.skip_rebuild {
+        prewarm()?;
+    }
+
+    let lock = shared_out();
+    let mut tasks: Vec<(&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>)> = Vec::new();
+    if !args.no_host {
+        let l = lock.clone();
+        let skip = args.skip_rebuild;
+        tasks.push((
+            "host",
+            Box::new(move |_| build_host(skip, &l).unwrap_or(127)),
+        ));
+    }
+    if !args.no_android {
+        let l = lock.clone();
+        let skip = args.skip_rebuild;
+        tasks.push((
+            "and",
+            Box::new(move |_| build_android(skip, &l).unwrap_or(127)),
+        ));
+    }
+    if !args.no_wsl && is_windows() {
+        let l = lock.clone();
+        let skip = args.skip_rebuild;
+        tasks.push((
+            "wsl",
+            Box::new(move |_| build_wsl(skip, &l).unwrap_or(127)),
+        ));
+    }
+
+    println!(
+        "→ launching {} build(s) {}",
+        tasks.len(),
+        if args.sequential {
+            "sequentially"
+        } else {
+            "in parallel"
+        }
+    );
+
+    let mut results: std::collections::HashMap<&'static str, i32> = std::collections::HashMap::new();
+    if args.sequential {
+        for (name, f) in tasks {
+            let rc = f(lock.clone());
+            results.insert(name, rc);
+        }
+    } else {
+        let handles: Vec<_> = tasks
+            .into_iter()
+            .map(|(name, f)| {
+                let l = lock.clone();
+                thread::spawn(move || (name, f(l)))
+            })
+            .collect();
+        for h in handles {
+            let (name, rc) = h.join().expect("thread panicked");
+            results.insert(name, rc);
+        }
+    }
+
+    let mut artifacts: Vec<PathBuf> = Vec::new();
+
+    if !args.no_host {
+        let rc = *results.get("host").unwrap_or(&-1);
+        if rc != 0 {
+            bail!("host build failed (exit {rc})");
+        }
+        if let Some((src, name)) = find_host_bundle(&ver, &branch, args.dev) {
+            artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
+        }
+    }
+
+    if !args.no_wsl && is_windows() {
+        if let Some(&rc) = results.get("wsl") {
+            if rc == -1 {
+                eprintln!("⚠  WSL build skipped (no distro with bun + cargo)");
+            } else if rc != 0 {
+                eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb");
+            } else if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
+                artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
+            }
+        }
+    }
+
+    if !args.no_android {
+        let rc = *results.get("and").unwrap_or(&-1);
+        if rc != 0 {
+            bail!("android build failed (exit {rc})");
+        }
+        match find_apk()? {
+            Some(apk) => {
+                if !apk.signed && !args.dev {
+                    bail!(
+                        "refusing to publish unsigned APK on stable channel. Configure src-tauri/gen/android/keystore.properties."
+                    );
+                }
+                if !apk.signed {
+                    eprintln!(
+                        "⚠  APK is UNSIGNED — Android will refuse to install. Configure keystore.properties for distributable builds."
+                    );
+                }
+                let dst = if args.dev {
+                    format!("wtranscriber-{branch}.apk")
+                } else {
+                    format!("wtranscriber-{ver}.apk")
+                };
+                artifacts.push(copy_into_channel(&apk.path, &dst, &out_channel_dir)?);
+            }
+            None => eprintln!("⚠  no APK produced"),
+        }
+    }
+
+    if artifacts.is_empty() {
+        bail!("no artifacts produced");
+    }
+
+    fs::create_dir_all(&out_channel_dir)?;
+
+    let sums_path = if args.dev {
+        out_channel_dir.join("SHA256SUMS")
+    } else {
+        out_dir.join(format!("SHA256SUMS-{ver}"))
+    };
+    write_sha256sums(&artifacts, &sums_path)?;
+    artifacts.push(sums_path.clone());
+    println!("  + {}", sums_path.display());
+
+    if let Ok(_key) = std::env::var("TAURI_SIGNING_PRIVATE_KEY") {
+        println!("→ TAURI_SIGNING_PRIVATE_KEY set — generating updater signatures (.sig)");
+        let mut new_sigs = Vec::new();
+        for p in artifacts.iter() {
+            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !["exe", "AppImage", "deb", "apk"].contains(&ext) {
+                continue;
+            }
+            let lock_clone = shared_out();
+            let _ = run_streamed(
+                "sig",
+                "bun",
+                &[
+                    "run",
+                    "tauri",
+                    "signer",
+                    "sign",
+                    "--private-key",
+                    &std::env::var("TAURI_SIGNING_PRIVATE_KEY").unwrap_or_default(),
+                    p.to_string_lossy().as_ref(),
+                ],
+                &[],
+                &lock_clone,
+            );
+            let sig = p.with_extension(format!("{ext}.sig"));
+            if sig.exists() {
+                new_sigs.push(sig);
+            }
+        }
+        artifacts.extend(new_sigs);
+    }
+
+    let manifest_path = if args.dev {
+        out_channel_dir.join("release-manifest.json")
+    } else {
+        out_dir.join(format!("release-manifest-{ver}.json"))
+    };
+    let manifest = serde_json::json!({
+        "channel": if args.dev { "dev" } else { "stable" },
+        "version": ver,
+        "branch": branch,
+        "sha": sha,
+        "builtAt": Utc::now().to_rfc3339(),
+        "artifacts": artifacts.iter().map(|p| p.file_name().unwrap().to_string_lossy()).collect::<Vec<_>>(),
+    });
+    fs::write(&manifest_path, format!("{manifest:#}\n"))?;
+    artifacts.push(manifest_path.clone());
+    println!("  + {}", manifest_path.display());
+
+    let list_name = if args.dev {
+        ".release-dev-artifacts"
+    } else {
+        ".release-stable-artifacts"
+    };
+    fs::write(
+        out_dir.join(list_name),
+        artifacts
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
+    )?;
+    println!("✓ release-build done ({} files)", artifacts.len());
+    Ok(())
+}
+
+fn prewarm() -> Result<()> {
+    println!("→ pre-warm: cargo fetch");
+    let lock = shared_out();
+    let _ = run_streamed(
+        "fetch",
+        "cargo",
+        &["fetch", "--manifest-path", "src-tauri/Cargo.toml"],
+        &[],
+        &lock,
+    );
+    Ok(())
+}
+
+fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
+    if skip {
+        println!("[host] --skip-rebuild, reusing existing bundle");
+        return Ok(0);
+    }
+    run_streamed(
+        "host",
+        "bun",
+        &["run", "tauri", "build"],
+        &[("CARGO_INCREMENTAL", "1")],
+        lock,
+    )
+}
+
+fn build_android(skip: bool, lock: &SharedOut) -> Result<i32> {
+    if skip {
+        println!("[and] --skip-rebuild, reusing existing apk");
+        return Ok(0);
+    }
+    let rc = crate::android::sign_patch_inline()?;
+    if rc != 0 {
+        return Ok(rc);
+    }
+    run_streamed(
+        "and",
+        std::env::current_exe()?
+            .to_string_lossy()
+            .as_ref(),
+        &["android", "build", "--target", "aarch64"],
+        &[("CARGO_INCREMENTAL", "1")],
+        lock,
+    )
+}
+
+fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
+    if skip {
+        println!("[wsl] --skip-rebuild, looking for existing .deb");
+        return Ok(0);
+    }
+    let probe_ok = std::process::Command::new("wsl")
+        .args([
+            "--",
+            "bash",
+            "-lc",
+            "command -v bun && command -v cargo && echo READY",
+        ])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("READY"))
+        .unwrap_or(false);
+    if !probe_ok {
+        println!("[wsl] skipping (no distro with bun + cargo)");
+        return Ok(-1);
+    }
+    let wsl_root = win_path_to_wsl(&root());
+    let cmd = format!(
+        "cd \"{wsl_root}\" && \
+         export CARGO_TARGET_DIR=\"$HOME/.cache/wtranscriber-wsl-target\" && \
+         export CARGO_INCREMENTAL=1 && \
+         mkdir -p \"$CARGO_TARGET_DIR\" && \
+         bun install --frozen-lockfile --no-progress 2>&1 | tail -5 && \
+         bun run tauri build --bundles deb"
+    );
+    run_streamed("wsl", "wsl", &["--", "bash", "-lc", &cmd], &[], lock)
+}
+
+fn find_host_bundle(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
+    let target = root().join("src-tauri").join("target").join("release").join("bundle");
+    if is_windows() {
+        let dir = target.join("nsis");
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.extension().and_then(|x| x.to_str()) == Some("exe")
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.ends_with("-setup.exe"))
+                        .unwrap_or(false)
+                {
+                    let name = if dev {
+                        format!("wtranscriber-setup-{branch}.exe")
+                    } else {
+                        format!("wtranscriber-setup-{ver}.exe")
+                    };
+                    return Some((p, name));
+                }
+            }
+        }
+        return None;
+    }
+    let dir = target.join("deb");
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("deb") {
+                let name = if dev {
+                    format!("wtranscriber-{branch}_amd64.deb")
+                } else {
+                    format!("wtranscriber_{ver}_amd64.deb")
+                };
+                return Some((p, name));
+            }
+        }
+    }
+    None
+}
+
+fn win_path_to_wsl(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('\\', "/");
+    if s.len() >= 3 {
+        let bytes = s.as_bytes();
+        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
+            let drive = (bytes[0] as char).to_ascii_lowercase();
+            return format!("/mnt/{}{}", drive, &s[2..]);
+        }
+    }
+    s
+}
+
+fn find_wsl_deb(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
+    let probe = std::process::Command::new("wsl")
+        .args([
+            "--",
+            "bash",
+            "-lc",
+            "ls \"$HOME/.cache/wtranscriber-wsl-target/release/bundle/deb/\"*.deb 2>/dev/null | head -1",
+        ])
+        .output()
+        .ok()?;
+    let wsl_path = String::from_utf8_lossy(&probe.stdout).trim().to_string();
+    if wsl_path.is_empty() {
+        return None;
+    }
+    let to_win = std::process::Command::new("wsl")
+        .args(["--", "bash", "-c", &format!("wslpath -w '{wsl_path}'")])
+        .output()
+        .ok()?;
+    let win_path = String::from_utf8_lossy(&to_win.stdout).trim().to_string();
+    if win_path.is_empty() {
+        return None;
+    }
+    let name = if dev {
+        format!("wtranscriber-{branch}_amd64.deb")
+    } else {
+        format!("wtranscriber_{ver}_amd64.deb")
+    };
+    Some((PathBuf::from(win_path), name))
+}
+
+struct ApkResult {
+    path: PathBuf,
+    signed: bool,
+}
+
+fn find_apk() -> Result<Option<ApkResult>> {
+    let apk_dir = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("app")
+        .join("build")
+        .join("outputs")
+        .join("apk")
+        .join("universal")
+        .join("release");
+    let signed = apk_dir.join("app-universal-release.apk");
+    let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
+    if signed.exists() {
+        return Ok(Some(ApkResult {
+            path: signed,
+            signed: true,
+        }));
+    }
+    if !unsigned.exists() {
+        return Ok(None);
+    }
+
+    let ks_props = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("keystore.properties");
+    if !ks_props.exists() {
+        return Ok(Some(ApkResult {
+            path: unsigned,
+            signed: false,
+        }));
+    }
+    let props: std::collections::HashMap<String, String> = fs::read_to_string(&ks_props)?
+        .lines()
+        .filter_map(|l| l.split_once('='))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect();
+    let sdk = std::env::var("ANDROID_HOME").unwrap_or_else(|_| {
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        format!("{local}\\Android\\Sdk")
+    });
+    let build_tools_dir = Path::new(&sdk).join("build-tools");
+    let bt_ver = match fs::read_dir(&build_tools_dir) {
+        Ok(rd) => {
+            let mut versions: Vec<_> = rd
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            versions.sort();
+            match versions.pop() {
+                Some(v) => v,
+                None => {
+                    return Ok(Some(ApkResult {
+                        path: unsigned,
+                        signed: false,
+                    }));
+                }
+            }
+        }
+        Err(_) => {
+            return Ok(Some(ApkResult {
+                path: unsigned,
+                signed: false,
+            }));
+        }
+    };
+    let bt = build_tools_dir.join(bt_ver);
+    let zipalign = bt.join(exe("zipalign"));
+    let apksigner = if is_windows() {
+        bt.join("apksigner.bat")
+    } else {
+        bt.join("apksigner")
+    };
+    let aligned = apk_dir.join("app-universal-release-aligned.apk");
+    let out = apk_dir.join("app-universal-release.apk");
+    let za = std::process::Command::new(&zipalign)
+        .args([
+            "-f",
+            "-p",
+            "4",
+            unsigned.to_string_lossy().as_ref(),
+            aligned.to_string_lossy().as_ref(),
+        ])
+        .status()?;
+    if !za.success() {
+        return Ok(Some(ApkResult {
+            path: unsigned,
+            signed: false,
+        }));
+    }
+    let store_pass = format!("pass:{}", props.get("storePassword").cloned().unwrap_or_default());
+    let key_pass = format!("pass:{}", props.get("keyPassword").cloned().unwrap_or_default());
+    let aligned_str = aligned.to_string_lossy().to_string();
+    let store_file = props.get("storeFile").cloned().unwrap_or_default();
+    let alias = props.get("keyAlias").cloned().unwrap_or_default();
+    let out_str = out.to_string_lossy().to_string();
+    let sign_args: Vec<&str> = vec![
+        "sign",
+        "--ks",
+        &store_file,
+        "--ks-pass",
+        &store_pass,
+        "--ks-key-alias",
+        &alias,
+        "--key-pass",
+        &key_pass,
+        "--out",
+        &out_str,
+        &aligned_str,
+    ];
+    let s = std::process::Command::new(&apksigner)
+        .args(&sign_args)
+        .status()?;
+    if !s.success() {
+        return Ok(Some(ApkResult {
+            path: unsigned,
+            signed: false,
+        }));
+    }
+    Ok(Some(ApkResult {
+        path: out,
+        signed: true,
+    }))
+}
+
+fn copy_into_channel(src: &Path, name: &str, channel_dir: &Path) -> Result<PathBuf> {
+    fs::create_dir_all(channel_dir)?;
+    let dst = channel_dir.join(name);
+    fs::copy(src, &dst).with_context(|| format!("copy {} -> {}", src.display(), dst.display()))?;
+    let size = fs::metadata(&dst)?.len() as f64 / 1024.0 / 1024.0;
+    println!("  + {} ({:.1} MB)", dst.display(), size);
+    Ok(dst)
+}
+
+fn write_sha256sums(artifacts: &[PathBuf], sums_path: &Path) -> Result<()> {
+    let mut lines = Vec::new();
+    for p in artifacts {
+        let bytes = fs::read(p)?;
+        let mut h = Sha256::new();
+        h.update(&bytes);
+        let digest = h.finalize();
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        let name = p.file_name().context("no filename")?.to_string_lossy();
+        lines.push(format!("{hex}  {name}"));
+    }
+    fs::write(sums_path, format!("{}\n", lines.join("\n")))?;
+    Ok(())
+}
+
