@@ -93,7 +93,7 @@ function familyLabel(f: string): string {
       <div class="flex flex-col items-center gap-md">
         <DownloadCircle :percent="overall" :size="96" />
         <h1 class="text-headlineSmall text-on-surface text-center">
-          Setting up wtranscriber
+          Setting up WTranscriber
         </h1>
         <p class="text-bodyMedium text-on-surface-variant text-center font-mono">
           {{ fmtSize(downloadedBytes) }} / {{ fmtSize(totalBytes) }}
@@ -130,8 +130,7 @@ function familyLabel(f: string): string {
       </ul>
 
       <p class="text-bodySmall text-on-surface-variant text-center font-mono">
-        wtranscriber needs these models to transcribe.
-        <br />Stay on Wi-Fi until setup completes.
+        Stay on Wi-Fi until setup completes.
       </p>
     </div>
   </div>
