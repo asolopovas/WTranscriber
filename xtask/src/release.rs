@@ -141,7 +141,7 @@ pub fn run(args: Args) -> Result<()> {
         if rc != 0 {
             bail!("android build failed (exit {rc})");
         }
-        match find_apk()? {
+        match find_apk(args.dev)? {
             Some(apk) => {
                 if !apk.signed && !args.dev {
                     bail!(
@@ -427,7 +427,7 @@ struct ApkResult {
     signed: bool,
 }
 
-fn find_apk() -> Result<Option<ApkResult>> {
+fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
     let apk_dir = root()
         .join("src-tauri")
         .join("gen")
@@ -441,10 +441,20 @@ fn find_apk() -> Result<Option<ApkResult>> {
     let signed = apk_dir.join("app-universal-release.apk");
     let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
     if signed.exists() {
-        return Ok(Some(ApkResult {
-            path: signed,
-            signed: true,
-        }));
+        let unsigned_newer = unsigned
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .zip(signed.metadata().ok().and_then(|m| m.modified().ok()))
+            .map(|(u, s)| u > s)
+            .unwrap_or(false);
+        if !unsigned_newer {
+            return Ok(Some(ApkResult {
+                path: signed,
+                signed: true,
+            }));
+        }
+        let _ = fs::remove_file(&signed);
     }
     if !unsigned.exists() {
         return Ok(None);
@@ -455,17 +465,44 @@ fn find_apk() -> Result<Option<ApkResult>> {
         .join("gen")
         .join("android")
         .join("keystore.properties");
-    if !ks_props.exists() {
+    let mut props: std::collections::HashMap<String, String> = if ks_props.exists() {
+        fs::read_to_string(&ks_props)?
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+            .collect()
+    } else if dev {
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_default();
+        let debug_ks = Path::new(&home).join(".android").join("debug.keystore");
+        if !debug_ks.exists() {
+            eprintln!(
+                "⚠  no keystore.properties and no debug.keystore at {} — leaving APK unsigned",
+                debug_ks.display()
+            );
+            return Ok(Some(ApkResult {
+                path: unsigned,
+                signed: false,
+            }));
+        }
+        eprintln!(
+            "[and] dev build: signing with debug keystore {}",
+            debug_ks.display()
+        );
+        let mut p = std::collections::HashMap::new();
+        p.insert("storeFile".to_string(), debug_ks.to_string_lossy().to_string());
+        p.insert("storePassword".to_string(), "android".to_string());
+        p.insert("keyAlias".to_string(), "androiddebugkey".to_string());
+        p.insert("keyPassword".to_string(), "android".to_string());
+        p
+    } else {
         return Ok(Some(ApkResult {
             path: unsigned,
             signed: false,
         }));
-    }
-    let props: std::collections::HashMap<String, String> = fs::read_to_string(&ks_props)?
-        .lines()
-        .filter_map(|l| l.split_once('='))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect();
+    };
+    let _ = &mut props;
     let sdk = std::env::var("ANDROID_HOME").unwrap_or_else(|_| {
         let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
         format!("{local}\\Android\\Sdk")
