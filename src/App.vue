@@ -1135,7 +1135,7 @@ const fieldClass =
                             <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); openTrim(entry)">
                               <span class="material-symbols-outlined text-[18px]">content_cut</span> Cut / select range
                             </button>
-                            <button v-if="!sys?.is_mobile" class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); autoRename(entry)">
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); autoRename(entry)">
                               <span class="material-symbols-outlined text-[18px]">auto_awesome</span> Auto-rename
                             </button>
                             <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); openRename(entry)">
@@ -1308,7 +1308,6 @@ const fieldClass =
                         <span v-else class="material-symbols-outlined text-[18px]">content_cut</span>
                       </button>
                       <button
-                        v-if="!sys?.is_mobile"
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
                         title="Auto-rename (AI)"
                         @click="autoRename(entry)"
@@ -1582,7 +1581,7 @@ const fieldClass =
                     </button>
                   </div>
 
-                  <div v-if="!sys?.is_mobile" class="flex items-center justify-between gap-xs flex-1 min-w-0">
+                  <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
                     <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
                     <button
                       type="button"

@@ -9,6 +9,11 @@ _android_ndk := env_var_or_default('NDK_HOME', _android_sdk / 'ndk' / '27.2.1247
 _android_prebuilt := justfile_directory() / '.android-prebuilt'
 export ANDROID_HOME := _android_sdk
 export NDK_HOME := _android_ndk
+export ANDROID_NDK := _android_ndk
+export ANDROID_NDK_ROOT := _android_ndk
+export ANDROID_NDK_HOME := _android_ndk
+export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else { '' })
+export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 
 default:
     @just --list

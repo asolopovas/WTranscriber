@@ -40,8 +40,46 @@ pub fn is_installed() -> bool {
 }
 
 pub fn find() -> Option<PathBuf> {
+    #[cfg(target_os = "android")]
+    if let Some(p) = find_android() {
+        return Some(p);
+    }
     let p = binary_path().ok()?;
     p.exists().then_some(p)
+}
+
+#[cfg(target_os = "android")]
+fn find_android() -> Option<PathBuf> {
+    let needle = "libllama-cli.so";
+    if let Ok(maps) = std::fs::read_to_string("/proc/self/maps") {
+        for line in maps.lines() {
+            if let Some(idx) = line.find("/data/app/") {
+                let path = &line[idx..];
+                if path.ends_with(".so")
+                    && let Some(parent) = std::path::Path::new(path).parent()
+                {
+                    let candidate = parent.join(needle);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+    for env in ["LD_LIBRARY_PATH", "ANDROID_NATIVE_LIBS_DIR"] {
+        if let Ok(v) = std::env::var(env) {
+            for p in v.split(':') {
+                if p.is_empty() {
+                    continue;
+                }
+                let candidate = std::path::Path::new(p).join(needle);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn asset_name() -> Option<String> {
