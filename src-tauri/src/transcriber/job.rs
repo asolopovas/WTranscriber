@@ -413,7 +413,7 @@ fn run_diarize_streaming(
                 "diarizer auto: nemo failed at runtime ({e}); falling back to sherpa"
             ));
             let fallback =
-                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Sherpa)?;
+                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Eres2net)?;
             let fallback_name = fallback.name();
             let mut fb_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
             let fb_cancelled = || sink.is_cancelled();

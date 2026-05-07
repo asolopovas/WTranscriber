@@ -32,8 +32,14 @@ pub trait Backend {
 pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let _ = choice;
-        return Ok(Box::new(SherpaDiarizer::new(num_speakers)?));
+        let resolved = match choice {
+            DiarizerChoice::Titanet => DiarizerChoice::Titanet,
+            _ => DiarizerChoice::Eres2net,
+        };
+        return Ok(Box::new(SherpaDiarizer::new(
+            num_speakers,
+            resolved.embedding_rel(),
+        )?));
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -42,8 +48,9 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
             DiarizerChoice::Nemo => {
                 nemo::NemoDiarizer::new().map(|d| Box::new(d) as Box<dyn Backend>)
             }
-            DiarizerChoice::Sherpa => {
-                SherpaDiarizer::new(num_speakers).map(|d| Box::new(d) as Box<dyn Backend>)
+            DiarizerChoice::Eres2net | DiarizerChoice::Titanet => {
+                SherpaDiarizer::new(num_speakers, choice.embedding_rel())
+                    .map(|d| Box::new(d) as Box<dyn Backend>)
             }
             DiarizerChoice::Auto => {
                 if num_speakers > 0 {
@@ -56,35 +63,28 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
     }
 }
 
-#[deprecated(note = "use new_with_choice")]
-#[allow(dead_code)]
-pub fn new_with_preference(num_speakers: u32, prefer_sherpa: bool) -> Result<Box<dyn Backend>> {
-    new_with_choice(
-        num_speakers,
-        if prefer_sherpa {
-            DiarizerChoice::Sherpa
-        } else {
-            DiarizerChoice::Auto
-        },
-    )
-}
-
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn new_nemo_or_sherpa(num_speakers: u32) -> Result<Box<dyn Backend>> {
     match nemo::NemoDiarizer::new() {
         Ok(d) => Ok(Box::new(d)),
-        Err(primary) => SherpaDiarizer::new(num_speakers)
+        Err(primary) => sherpa_default(num_speakers)
             .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
     }
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn new_sherpa_or_nemo(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    match SherpaDiarizer::new(num_speakers) {
+    match sherpa_default(num_speakers) {
         Ok(d) => Ok(Box::new(d)),
         Err(primary) => nemo::NemoDiarizer::new()
             .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
     }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn sherpa_default(num_speakers: u32) -> Result<SherpaDiarizer> {
+    SherpaDiarizer::new(num_speakers, DiarizerChoice::Eres2net.embedding_rel())
+        .or_else(|_| SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel()))
 }
 
 pub fn speaker_id_for_time(

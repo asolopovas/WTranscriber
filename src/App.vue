@@ -330,6 +330,9 @@ onMounted(async () => {
   if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
     config.value.diarizer = "auto";
   }
+  if (config.value && (config.value.diarizer as string) === "sherpa") {
+    config.value.diarizer = "eres2net";
+  }
   unlistenProgress = await events.onTranscribeProgress((p) => {
     progressByPath.value = { ...progressByPath.value, [p.path]: p };
   });
@@ -1530,7 +1533,8 @@ const fieldClass =
                     >
                       <option value="auto">Auto</option>
                       <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-                      <option value="sherpa">Sherpa pyannote + TitaNet</option>
+                      <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
+                      <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
                     </select>
                   </label>
                   <label class="block">

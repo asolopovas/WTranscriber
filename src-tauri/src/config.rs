@@ -70,7 +70,9 @@ pub enum DiarizerChoice {
     #[default]
     Auto,
     Nemo,
-    Sherpa,
+    #[serde(alias = "sherpa")]
+    Eres2net,
+    Titanet,
 }
 
 impl DiarizerChoice {
@@ -78,8 +80,17 @@ impl DiarizerChoice {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
-            Self::Nemo => "nemo-sortformer",
-            Self::Sherpa => "sherpa-pyannote-titanet",
+            Self::Nemo => "nemo-sortformer-v2",
+            Self::Eres2net => "diar-eres2net-base",
+            Self::Titanet => "sherpa-pyannote-titanet",
+        }
+    }
+
+    #[must_use]
+    pub const fn embedding_rel(self) -> &'static str {
+        match self {
+            Self::Titanet => "titanet_large.onnx",
+            _ => "3dspeaker_eres2net_base.onnx",
         }
     }
 }

@@ -20,7 +20,6 @@ use crate::{
 };
 
 const SEG_REL: &str = "sherpa-onnx-pyannote-segmentation-3-0/model.onnx";
-const EMB_REL: &str = "titanet_large.onnx";
 
 static SEG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\s*([0-9]+\.[0-9]+)\s+--\s+([0-9]+\.[0-9]+)\s+speaker_(\d+)\s*$").unwrap()
@@ -70,10 +69,10 @@ fn find_bin() -> Result<PathBuf> {
     Err(Error::Transcribe(format!("{name} not found")))
 }
 
-fn resolve_models() -> Result<(PathBuf, PathBuf)> {
+fn resolve_models(emb_rel: &str) -> Result<(PathBuf, PathBuf)> {
     let root = paths::models_dir()?;
     let seg = root.join(SEG_REL.replace('/', std::path::MAIN_SEPARATOR_STR));
-    let emb = root.join(EMB_REL);
+    let emb = root.join(emb_rel);
     if !seg.exists() {
         return Err(Error::Transcribe(format!(
             "diarizer segmentation model missing at {}",
@@ -95,9 +94,9 @@ fn diarizer_threads() -> u32 {
 }
 
 impl SherpaDiarizer {
-    pub fn new(num_speakers: u32) -> Result<Self> {
+    pub fn new(num_speakers: u32, emb_rel: &str) -> Result<Self> {
         let bin = find_bin()?;
-        let (seg_model, emb_model) = resolve_models()?;
+        let (seg_model, emb_model) = resolve_models(emb_rel)?;
         Ok(Self {
             bin,
             seg_model,
