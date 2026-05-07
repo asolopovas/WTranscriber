@@ -20,6 +20,7 @@ export const api = {
   loadConfig: () => invoke<Config>("load_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
   listModels: () => invoke<ModelInfo[]>("list_models"),
+  essentialModels: () => invoke<string[]>("essential_models"),
   modelStatus: (id: string) => invoke<ModelStatus>("model_status", { id }),
   installModel: (id: string) => invoke<void>("install_model", { id }),
   deleteModel: (id: string) => invoke<void>("delete_model", { id }),
@@ -61,4 +62,6 @@ export const events = {
     listen<string>("model:error", (e) => cb(e.payload)),
   onTranscribeProgress: (cb: (p: TranscribeProgress) => void): Promise<UnlistenFn> =>
     listen<TranscribeProgress>("transcribe:progress", (e) => cb(e.payload)),
+  onEssentialsDone: (cb: (ok: boolean) => void): Promise<UnlistenFn> =>
+    listen<boolean>("model:essentials_done", (e) => cb(e.payload)),
 };

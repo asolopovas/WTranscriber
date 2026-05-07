@@ -10,6 +10,7 @@ import type {
   DirEntry,
   DirListing,
   ExportFormat,
+  FileProgress,
   ModelInfo,
   SystemInfo,
   TranscribeProgress,
@@ -18,6 +19,7 @@ import type {
 import Settings from "./components/Settings.vue";
 import LogViewer from "./components/LogViewer.vue";
 import Recorder from "./components/Recorder.vue";
+import SetupGate from "./components/SetupGate.vue";
 import TranscribeIcon from "./components/icons/TranscribeIcon.vue";
 import SaveIcon from "./components/icons/SaveIcon.vue";
 import CancelIcon from "./components/icons/CancelIcon.vue";
@@ -32,6 +34,18 @@ const version = ref("");
 const sys = ref<SystemInfo | null>(null);
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
+const essentialIds = ref<string[]>([]);
+const essentialProgress = ref<Record<string, FileProgress>>({});
+const essentialErrors = ref<Record<string, true>>({});
+const essentialsForceReady = ref(false);
+const essentialsReady = computed(() => {
+  if (essentialsForceReady.value) return true;
+  if (!essentialIds.value.length) return true;
+  return essentialIds.value.every((id) => {
+    const m = models.value.find((x) => x.id === id);
+    return m?.status === "installed";
+  });
+});
 const listing = ref<DirListing | null>(null);
 const selectedPath = ref<string>("");
 const transcript = ref<Transcript | null>(null);
@@ -365,16 +379,36 @@ onMounted(async () => {
   unlistenProgress = await events.onTranscribeProgress((p) => {
     progressByPath.value = { ...progressByPath.value, [p.path]: p };
   });
+  try {
+    essentialIds.value = await api.essentialModels();
+  } catch {
+    essentialIds.value = [];
+  }
   const refreshModels = async (id?: string) => {
     models.value = await api.listModels();
     if (id && error.value && error.value.includes("not installed") && config.value?.model === id) {
       error.value = null;
     }
   };
+  unlistenModelProgress = await events.onModelProgress((p) => {
+    if (essentialIds.value.includes(p.id)) {
+      essentialProgress.value = { ...essentialProgress.value, [p.id]: p };
+    }
+  });
   unlistenModelDone = await events.onModelDone((id) => {
+    if (id) {
+      const next = { ...essentialErrors.value };
+      delete next[id];
+      essentialErrors.value = next;
+    }
     void refreshModels(id);
   });
-  unlistenModelError = await events.onModelError(() => {
+  unlistenModelError = await events.onModelError((id) => {
+    if (id) essentialErrors.value = { ...essentialErrors.value, [id]: true };
+    void refreshModels();
+  });
+  unlistenEssentialsDone = await events.onEssentialsDone(() => {
+    essentialsForceReady.value = true;
     void refreshModels();
   });
   unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
@@ -393,11 +427,15 @@ let unlistenDrop: (() => void) | null = null;
 let unlistenProgress: (() => void) | null = null;
 let unlistenModelDone: (() => void) | null = null;
 let unlistenModelError: (() => void) | null = null;
+let unlistenModelProgress: (() => void) | null = null;
+let unlistenEssentialsDone: (() => void) | null = null;
 onUnmounted(() => {
   unlistenDrop?.();
   unlistenProgress?.();
   unlistenModelDone?.();
   unlistenModelError?.();
+  unlistenModelProgress?.();
+  unlistenEssentialsDone?.();
 });
 
 watch(tab, (t) => {
@@ -1000,6 +1038,13 @@ const fieldClass =
 </script>
 
 <template>
+  <SetupGate
+    v-if="!essentialsReady"
+    :essential-ids="essentialIds"
+    :models="models"
+    :progress="essentialProgress"
+    :errors="essentialErrors"
+  />
   <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
     <header
       class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"

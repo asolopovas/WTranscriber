@@ -125,6 +125,11 @@ pub fn list_models() -> Result<Vec<ModelInfo>> {
 }
 
 #[tauri::command]
+pub fn essential_models() -> Vec<String> {
+    crate::essential_model_ids()
+}
+
+#[tauri::command]
 pub fn model_status(id: String) -> Result<ModelStatus> {
     models::manager().status(&id)
 }

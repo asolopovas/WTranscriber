@@ -210,33 +210,61 @@ fn remove_recursive(p: &std::path::Path) -> std::io::Result<()> {
     }
 }
 
+pub fn essential_model_ids() -> Vec<String> {
+    [
+        models::Family::Asr,
+        models::Family::Diarizer,
+        models::Family::Llm,
+    ]
+    .iter()
+    .filter_map(|f| models::default_id(*f).map(String::from))
+    .collect()
+}
+
 fn auto_install_essentials(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         ensure_runtimes(&app).await;
         let manager = models::manager();
-        let entries: Vec<String> = [models::Family::Asr, models::Family::Diarizer, models::Family::Llm]
-            .iter()
-            .filter_map(|f| models::default_id(*f).map(String::from))
+        let pending: Vec<String> = essential_model_ids()
+            .into_iter()
             .filter(|id| matches!(manager.status(id), Ok(models::ModelStatus::NotInstalled)))
             .collect();
-        for id in entries {
-            logfile::info(&format!("auto_install {id} starting"));
-            let app_for_cb = app.clone();
-            let mut on_progress = move |p: models::FileProgress| {
-                let _ = app_for_cb.emit("model:progress", &p);
-            };
-            let result = manager.install(&id, &mut on_progress).await;
-            match &result {
-                Ok(()) => {
-                    logfile::info(&format!("auto_install {id} ok"));
-                    let _ = app.emit("model:done", &id);
+        if pending.is_empty() {
+            let _ = app.emit("model:essentials_done", true);
+            return;
+        }
+        let mut handles = Vec::with_capacity(pending.len());
+        for id in pending {
+            let app = app.clone();
+            handles.push(tauri::async_runtime::spawn(async move {
+                logfile::info(&format!("auto_install {id} starting"));
+                let app_for_cb = app.clone();
+                let mut on_progress = move |p: models::FileProgress| {
+                    let _ = app_for_cb.emit("model:progress", &p);
+                };
+                let manager = models::manager();
+                match manager.install(&id, &mut on_progress).await {
+                    Ok(()) => {
+                        logfile::info(&format!("auto_install {id} ok"));
+                        let _ = app.emit("model:done", &id);
+                        true
+                    }
+                    Err(e) => {
+                        logfile::error(&format!("auto_install {id}: {e}"));
+                        let _ = app.emit("model:error", &id);
+                        false
+                    }
                 }
-                Err(e) => {
-                    logfile::error(&format!("auto_install {id}: {e}"));
-                    let _ = app.emit("model:error", &id);
-                }
+            }));
+        }
+        let mut all_ok = true;
+        for h in handles {
+            match h.await {
+                Ok(true) => {}
+                _ => all_ok = false,
             }
         }
+        let _ = app.emit("model:essentials_done", all_ok);
     });
 }
 
@@ -310,6 +338,7 @@ pub fn run() {
             commands::load_config,
             commands::save_config,
             commands::list_models,
+            commands::essential_models,
             commands::model_status,
             commands::install_model,
             commands::delete_model,
