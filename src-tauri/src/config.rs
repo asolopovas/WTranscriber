@@ -127,6 +127,39 @@ fn default_asr() -> (String, Engine) {
     ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
 }
 
+fn migrate_for_platform(cfg: &mut Config) -> bool {
+    if !cfg!(target_os = "android") {
+        return false;
+    }
+    let saved = match by_id(&cfg.model) {
+        Some(e) => e,
+        None => return false,
+    };
+    if saved.android_default {
+        return false;
+    }
+    let Some(target_id) = default_id(Family::Asr) else {
+        return false;
+    };
+    if target_id == cfg.model {
+        return false;
+    }
+    let Some(target) = by_id(target_id) else {
+        return false;
+    };
+    let installed = crate::models::paths_for(target)
+        .map(|paths| paths.iter().all(|p| p.exists()))
+        .unwrap_or(false);
+    if !installed {
+        return false;
+    }
+    cfg.model = target_id.to_string();
+    if let Ok(eng) = target.engine.parse::<Engine>() {
+        cfg.engine = eng;
+    }
+    true
+}
+
 impl Config {
     pub fn load() -> Result<Self> {
         let path = paths::config_file()?;
@@ -136,7 +169,11 @@ impl Config {
             return Ok(cfg);
         }
         let raw = std::fs::read_to_string(&path)?;
-        Ok(serde_json::from_str(&raw).unwrap_or_default())
+        let mut cfg: Self = serde_json::from_str(&raw).unwrap_or_default();
+        if migrate_for_platform(&mut cfg) {
+            let _ = cfg.save();
+        }
+        Ok(cfg)
     }
 
     pub fn save(&self) -> Result<()> {

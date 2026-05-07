@@ -68,9 +68,10 @@ pub fn run(args: Args) -> Result<()> {
     if !args.no_android {
         let l = lock.clone();
         let skip = args.skip_rebuild;
+        let dev = args.dev;
         tasks.push((
             "and",
-            Box::new(move |_| build_android(skip, &l).unwrap_or(127)),
+            Box::new(move |_| build_android(skip, dev, &l).unwrap_or(127)),
         ));
     }
     if !args.no_wsl && is_windows() {
@@ -286,7 +287,7 @@ fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     )
 }
 
-fn build_android(skip: bool, lock: &SharedOut) -> Result<i32> {
+fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
         println!("[and] --skip-rebuild, reusing existing apk");
         return Ok(0);
@@ -295,13 +296,17 @@ fn build_android(skip: bool, lock: &SharedOut) -> Result<i32> {
     if rc != 0 {
         return Ok(rc);
     }
+    let mut env_vars: Vec<(&str, &str)> = vec![("CARGO_INCREMENTAL", "1")];
+    if dev {
+        env_vars.push(("WT_DEV_APK", "1"));
+    }
     run_streamed(
         "and",
         std::env::current_exe()?
             .to_string_lossy()
             .as_ref(),
         &["android", "build", "--target", "aarch64"],
-        &[("CARGO_INCREMENTAL", "1")],
+        &env_vars,
         lock,
     )
 }
