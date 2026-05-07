@@ -37,6 +37,10 @@ justfile            task recipes
 ## Conventions
 
 - **No comments in code.** Names carry intent.
+- **No `sleep` in scripts or shell pipelines.** Wait on real signals (process
+  exit, file existence, log markers, polling with timeout). Sleeps mask races
+  and bloat run time. Applies to bash, mjs, ps1, and one-off `adb shell`
+  commands.
 - Edition 2024 features encouraged (`std::sync::LazyLock`, `let-else`, etc.).
 - All Rust→JS errors go through `error::Error` (impl `Serialize`).
 - Frontend types in `src/types.ts` must mirror Rust structs (kebab/snake mapped via serde).
