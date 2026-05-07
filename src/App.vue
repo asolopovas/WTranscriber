@@ -11,6 +11,7 @@ import type {
   DirListing,
   ExportFormat,
   ModelInfo,
+  SystemInfo,
   TranscribeProgress,
   Transcript,
 } from "./types";
@@ -28,6 +29,7 @@ type Tab = "transcribe" | "settings" | "logs";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
+const sys = ref<SystemInfo | null>(null);
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
 const listing = ref<DirListing | null>(null);
@@ -161,8 +163,8 @@ async function installSelectedModel() {
 
 const languageOptions = computed(() => {
   const m = selectedAsrModel.value;
-  if (!m || !m.languages || !m.languages.length) return allLanguageOptions;
-  return m.languages;
+  const base = !m || !m.languages || !m.languages.length ? allLanguageOptions : m.languages;
+  return base.includes("auto") ? base : ["auto", ...base];
 });
 
 function syncEngineAndModel(next: Config, preferEngine = false) {
@@ -312,7 +314,14 @@ async function loadCached(key: string) {
 
 onMounted(async () => {
   version.value = await api.appVersion();
+  sys.value = await api.systemInfo();
   await reload();
+  if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
+    config.value.device = "cpu";
+  }
+  if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
+    config.value.diarizer = "auto";
+  }
   unlistenProgress = await events.onTranscribeProgress((p) => {
     progressByPath.value = { ...progressByPath.value, [p.path]: p };
   });
@@ -1495,7 +1504,7 @@ const fieldClass =
                     >
                     <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
                       <option value="cpu">CPU</option>
-                      <option value="cuda">CUDA</option>
+                      <option v-if="sys?.cuda_available" value="cuda">CUDA</option>
                     </select>
                   </label>
                 </div>
@@ -1512,7 +1521,7 @@ const fieldClass =
                       :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
                     >
                       <option value="auto">Auto</option>
-                      <option value="nemo">NVIDIA NeMo Sortformer</option>
+                      <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
                       <option value="sherpa">Sherpa pyannote + TitaNet</option>
                     </select>
                   </label>
@@ -1527,13 +1536,14 @@ const fieldClass =
                       min="1"
                       max="20"
                       placeholder="Auto"
-                      :disabled="!config.diarize"
-                      :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+                      :class="[fieldClass, 'mt-unit']"
                       @input="
                         (e) => {
                           const v = (e.target as HTMLInputElement).value.trim();
                           const n = v === '' ? 0 : Number(v);
-                          if (config) config.speakers = n > 0 ? n : null;
+                          if (!config) return;
+                          config.speakers = n > 0 ? n : null;
+                          if (n > 0 && !config.diarize) config.diarize = true;
                         }
                       "
                     />
