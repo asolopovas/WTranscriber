@@ -542,9 +542,19 @@ async function transcribeAll() {
   }
 }
 
+const autoRenamingPath = ref<string | null>(null);
 async function autoRename(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio) return;
+  if (autoRenamingPath.value) return;
+  autoRenamingPath.value = target.path;
+  try {
+    await runAutoRename(target);
+  } finally {
+    autoRenamingPath.value = null;
+  }
+}
+async function runAutoRename(target: DirEntry) {
   let t = transcript.value;
   if (!t) {
     if (target.cache_key) {
@@ -1250,16 +1260,27 @@ const fieldClass =
                               Cut / select range
                             </button>
                             <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
+                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+                              :disabled="autoRenamingPath === entry.path"
                               @click="
                                 closeMenus();
                                 autoRename(entry);
                               "
                             >
-                              <span class="material-symbols-outlined text-[18px]"
+                              <Spinner
+                                v-if="autoRenamingPath === entry.path"
+                                :size="18"
+                              />
+                              <span
+                                v-else
+                                class="material-symbols-outlined text-[18px]"
                                 >auto_awesome</span
                               >
-                              Auto-rename
+                              {{
+                                autoRenamingPath === entry.path
+                                  ? "Renaming…"
+                                  : "Auto-rename"
+                              }}
                             </button>
                             <button
                               class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
@@ -1448,11 +1469,21 @@ const fieldClass =
                         >
                       </button>
                       <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
-                        title="Auto-rename (AI)"
+                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
+                        :title="
+                          autoRenamingPath === entry.path
+                            ? 'Renaming…'
+                            : 'Auto-rename (AI)'
+                        "
+                        :disabled="autoRenamingPath === entry.path"
                         @click="autoRename(entry)"
                       >
-                        auto_awesome
+                        <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
+                        <span
+                          v-else
+                          class="material-symbols-outlined text-[18px]"
+                          >auto_awesome</span
+                        >
                       </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
