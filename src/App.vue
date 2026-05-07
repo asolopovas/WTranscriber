@@ -1264,20 +1264,6 @@ const fieldClass =
                         >
                           <TranscribeIcon :size="20" />
                         </button>
-                        <button
-                          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-highest transition-colors"
-                          :class="
-                            entry.trim_start_ms || entry.trim_end_ms
-                              ? 'text-primary'
-                              : 'text-on-surface-variant'
-                          "
-                          title="Play / select range"
-                          :disabled="loadingTrimPath === entry.path"
-                          @click="openTrim(entry)"
-                        >
-                          <Spinner v-if="loadingTrimPath === entry.path" :size="20" />
-                          <span v-else class="material-symbols-outlined">play_circle</span>
-                        </button>
                         <div class="relative">
                           <button
                             class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"
@@ -1323,17 +1309,6 @@ const fieldClass =
                                 >drive_file_rename_outline</span
                               >
                               Rename
-                            </button>
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30"
-                              :disabled="!entry.cache_key"
-                              @click="
-                                closeMenus();
-                                openPreview(entry);
-                              "
-                            >
-                              <span class="material-symbols-outlined text-[18px]">visibility</span>
-                              Preview
                             </button>
                             <button
                               class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30"
@@ -1522,15 +1497,6 @@ const fieldClass =
                         @click="openRename(entry)"
                       >
                         drive_file_rename_outline
-                      </button>
-                      <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
-                        title="Preview transcript"
-                        :disabled="!entry.cache_key"
-                        :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
-                        @click="openPreview(entry)"
-                      >
-                        visibility
                       </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
