@@ -2,19 +2,26 @@
 
 ## Supported versions
 
-Only the latest minor is patched.
+Only the latest minor release is patched.
 
 ## Reporting
 
-Email **andrius.solopovas@gmail.com**. Do not open public issues.
+Email **andrius.solopovas@gmail.com**. Do not open public issues for security reports.
 
-Include: affected version, repro steps, impact, PoC (redact secrets).
+Include:
 
-SLA: ack within 72h, fix or mitigation within 30 days for high severity. Public advisory via GitHub Security Advisories after a patched release.
+- Affected version (`wtranscriber --version`)
+- Steps to reproduce
+- Impact assessment
+- Proof-of-concept or logs (redact secrets)
+
+We acknowledge within 72 hours. For high-severity issues a fix or mitigation
+is committed within 30 days. Once a patched release is out we publish an
+advisory through GitHub Security Advisories.
 
 ## Release integrity
 
 - Stable tags `vX.Y.Z` are immutable.
 - Every release ships `SHA256SUMS[-<ver>]`. Verify before installing.
-- Android APKs on stable are v2/v3 signed.
-- Process: `docs/release.md`.
+- Stable APKs are signed with v2/v3 signatures.
+- Full process: `docs/release.md`.

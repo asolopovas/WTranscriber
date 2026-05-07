@@ -1,143 +1,165 @@
 # AGENTS.md
 
-Operational notes for agents working on this repo.
+Notes for agents working on this repo.
 
 ## Stack
 
 - Tauri 2 (Rust, edition 2024, MSRV 1.85)
 - Vue 3 + TypeScript + Vite
-- Bun (JS package manager / runner)
+- Bun (JS runtime + package manager)
 - `just` (task runner)
 
 ## Layout
 
 ```
 src/                Vue 3 frontend
-  api.ts            invoke wrappers for Tauri commands
-  types.ts          shared types mirroring Rust serde structs
+  api.ts            wrappers around Tauri commands
+  types.ts          TS types matching Rust structs
   App.vue           root component
 src-tauri/
   src/
-    main.rs         desktop binary entry (Tauri)
-    bin/wt.rs       headless CLI binary (clap)
-    lib.rs          tauri::Builder, plugin registration, command list
-    api.rs          public re-exports for the CLI / external consumers
+    main.rs         Tauri desktop binary
+    bin/wt.rs       headless CLI (clap)
+    lib.rs          tauri::Builder, plugins, command registration
+    api.rs          re-exports for the CLI / external code
     commands.rs     #[tauri::command] handlers (thin)
     config.rs       persisted user config
     models.rs       model registry / discovery
-    paths.rs        cross-platform config / data paths (LazyLock)
-    error.rs        thiserror Error + serde Serialize for IPC
-    transcriber/    transcription pipeline (port of internal/transcriber)
+    paths.rs        config / data paths (LazyLock)
+    error.rs        thiserror Error, serializable for IPC
+    transcriber/    transcription pipeline
   capabilities/     Tauri permissions
   tauri.conf.json
   rustfmt.toml
 justfile            task recipes
+docs/release.md     release process + build-speed reference
 ```
 
-## Conventions
+## Rules
 
-- **Rust builds run multicore** (cargo uses `-j$(nproc)` by default; this host has
-  16 logical cores). A clean release rebuild of `wtranscriber` lib + `wt` bin is
-  ~2–3 min on Windows MSVC; warm incremental rebuilds are sub-second. **Don't**
-  cap `-j`, don't add `CARGO_BUILD_JOBS=1`, and don't assume a long build means
-  a hang — verify by tailing `cargo build -v` (it prints `Compiling X v…` for
-  each crate). Long single-line stalls during link are normal (rust-lld /
-  sherpa-onnx static link).
 - **No comments in code.** Names carry intent.
-- **No `sleep` in scripts or shell pipelines.** Wait on real signals (process
-  exit, file existence, log markers, polling with timeout). Sleeps mask races
-  and bloat run time. Applies to bash, mjs, ps1, and one-off `adb shell`
-  commands.
-- Edition 2024 features encouraged (`std::sync::LazyLock`, `let-else`, etc.).
-- All Rust→JS errors go through `error::Error` (impl `Serialize`).
-- Frontend types in `src/types.ts` must mirror Rust structs (kebab/snake mapped via serde).
-- Lints: `cargo clippy -- -D warnings` with pedantic + nursery enabled.
-- Format: `cargo fmt`, `prettier` for TS/Vue.
+- **No `sleep` in scripts.** Wait on a real signal: process exit, file appears,
+  log line, or poll with timeout. Applies to bash, `.mjs`, `.ps1`, `adb shell`.
+- **Use edition 2024** features (`LazyLock`, `let-else`, etc.).
+- **Errors crossing Rust → JS** go through `error::Error` (impl `Serialize`).
+- **Frontend types** in `src/types.ts` must match the Rust structs.
+- **Lints**: `cargo clippy -- -D warnings`, pedantic + nursery on.
+- **Formatters**: `cargo fmt`, `prettier` (TS/Vue/MD/JSON/HTML).
 
-## Tasks
+## Build performance
+
+- Cargo runs on all cores by default. Don't cap `-j` or set `CARGO_BUILD_JOBS=1`.
+- A long single-line stall during link is normal — sherpa-onnx is statically linked.
+  Verify progress with `cargo build -v` (it logs `Compiling X v…` per crate).
+- Cold release build ≈ 3.5 min on Windows (16 cores). Warm rebuild after a Rust
+  change: 6–28 s depending on bundle target. See `docs/release.md` for the table.
+- The `[profile.release]` is tuned for build speed (incremental on, LTO off).
+  Don't re-enable LTO without proving it matters at runtime — heavy lifting is
+  C++ (sherpa-onnx, webkit), so Rust LTO is sub-1 % runtime gain at minutes per
+  build.
+
+## Recipes
 
 ```
-just              list recipes
-just setup        install JS deps + git pre-commit hook
-just dev          run app
-just build        production bundle (CPU / static sherpa-onnx)
-just build-cuda   production bundle with --features cuda
-just fmt          format Rust + TS/Vue
-just fmt-check    cargo fmt --check + prettier --check
-just lint         clippy (warnings as errors) + vue-tsc
-just test         cargo test (offline)
-just dep-check    cargo-machete (unused deps; manual)
-just audit        cargo-audit + bun audit (vulns; manual)
-just check        fast gate: fmt-check + lint + test (see below)
-just check-all    full gate: check + dep-check + audit (pre-release)
-just clean        remove target + dist + node_modules
-just icons        regenerate icon set from src-tauri/icons/icon.png
-just android-*    Android scaffold / build (see docs/android.md)
-just android-debug-attach   forward Chrome DevTools to live WebView (port 9222)
-just android-debug-eval EXPR   eval JS in running WebView via CDP
+just                list recipes
+just setup          install JS deps + git hooks
+
+# develop
+just dev            run app (Vue HMR + tauri dev)
+just watch          cargo watch, rebuild on save
+just build-bin      raw cargo build, no Tauri post-process    (~6 s warm)
+just build-app      Tauri-patched exe, no installer           (~9 s warm)
+just build          NSIS installer                            (~28 s warm)
+just build-all      NSIS + MSI (legacy / enterprise)
+just build-cpu      build with sherpa-static (no CUDA)
+just build-cuda     build with --features cuda
+just build-cli      build the headless `wt` CLI
+
+# quality
+just fmt / fmt-check
+just lint           clippy + vue-tsc
+just test           cargo test --offline
+just check          fast gate: fmt-check + lint + test         (pre-commit)
+just check-all      check + cargo-machete + cargo-audit + bun audit
+just dep-check      unused crate deps
+just audit          vulnerability scan
+
+# release
+just release            dev build → rolling 'dev' prerelease
+just release-stable     check + bump + tag + build + publish stable
+just release-bump       bump + commit + tag only
+just release-build      build artifacts only (--dev flag for dev channel)
+just release-publish    upload existing artifacts to dev or vX.Y.Z
+                        full reference: docs/release.md
+
+# misc
+just clean          remove target + dist + node_modules
+just icons          regenerate icons from src-tauri/icons/icon.png
+just android-*      Android scaffold / build / debug
 ```
 
-## Quality gate — tiered
+## Quality gates
 
-### `just check` (fast, pre-commit, no network)
+### `just check` (fast, no network) — runs pre-commit
 
-1. `cargo fmt --check` + `prettier --check`.
-2. `cargo clippy --all-targets --offline -- -D warnings` (pedantic + nursery,
-   `dead_code` / `unused_imports` enforced).
-3. `bun run typecheck` (`vue-tsc`).
-4. `cargo test --offline`.
+1. `cargo fmt --check` + `prettier --check`
+2. `cargo clippy --all-targets --offline -- -D warnings`
+3. `bun run typecheck` (`vue-tsc`)
+4. `cargo test --offline`
 
-Leans on cargo's incremental cache; warm runs are seconds.
+Warm cache: a few seconds.
 
-### `just check-all` (slower, manual / pre-release)
+### `just check-all` (manual, pre-release)
 
-Adds: 5. `cargo machete` — unused crate deps in `Cargo.toml`. 6. `cargo audit` (RustSec DB) + `bun audit` — vulnerability scan.
+Adds:
 
-Missing tools (`cargo-machete`, `cargo-audit`) auto-install on first run.
+5. `cargo machete` — unused crate deps in `Cargo.toml`
+6. `cargo audit` + `bun audit` — vulnerability scan
 
-### Git hooks (`.githooks/`)
+Missing tools auto-install on first run.
 
-Incremental — only run what's relevant.
+## Git hooks (`.githooks/`)
 
-**`pre-commit`** inspects `git diff --cached --name-only`:
+Only relevant work runs.
 
-- Rust file or `Cargo.toml` / `Cargo.lock` staged → `cargo fmt --check` +
-  `cargo clippy --offline -D warnings`. Warm cache: ~1–2s.
-- TS/Vue staged → `prettier --check` (changed files only) + `vue-tsc`.
-- Markdown / JSON / HTML staged → `prettier --check` (changed files).
-- Nothing relevant → skip.
+**`pre-commit`** looks at staged paths:
 
-**`pre-push`** runs `cargo test --offline` once before publishing.
-Faster feedback loop than blocking every commit on test compilation.
+- Rust / `Cargo.toml` / `Cargo.lock` → `cargo fmt --check` + clippy
+- TS / Vue → `prettier --check` (changed files) + `vue-tsc`
+- Markdown / JSON / HTML → `prettier --check` (changed files)
+- Nothing relevant → skip
 
-`just setup` (and `just install-hooks`) point `core.hooksPath` at
-`.githooks`. Bypass with `git commit --no-verify` /
-`git push --no-verify` only for emergencies.
+**`pre-push`** runs `cargo test --offline` once. Test compilation isn't on the
+commit path so iteration stays fast.
 
-## Debugging on Android
-
-Full guide: `docs/tauri-debug.md`. Cheat sheet:
-
-- `just android-debug-attach` — finds `webview_devtools_remote_<pid>`, runs
-  `adb forward tcp:9222 …`, prints page list. Open `chrome://inspect` to inspect.
-- `node scripts/cdp.mjs "<expr>"` — connects via
-  `chromium.connectOverCDP("http://localhost:9222")` and evaluates JS in the
-  live page (probe DOM, dispatch clicks, read Vue state).
-- Logcat tags: `chromium`/`Console` (JS), `RustStdoutStderr` (Rust println +
-  `tauri-plugin-log` Stdout target).
-- Screenshots: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`.
-  Repo root `*.png` is gitignored — keep captures under `tmp/`.
+`just setup` (or `just install-hooks`) sets `core.hooksPath = .githooks`.
+Bypass with `--no-verify` only in emergencies.
 
 ## Adding a Tauri command
 
-1. Implement function in `src-tauri/src/commands.rs` (or domain module re-exported).
+1. Write the function in `src-tauri/src/commands.rs` (or a domain module
+   that re-exports it).
 2. Register it in `lib.rs` `invoke_handler![…]`.
 3. Add a typed wrapper in `src/api.ts`.
 4. If it returns a domain type, add the type to `src/types.ts`.
 
+## Android debugging
+
+Full guide: `docs/tauri-debug.md`. Quick reference:
+
+- `just android-debug-attach` — finds `webview_devtools_remote_<pid>`,
+  runs `adb forward tcp:9222 …`, prints the page list.
+  Open `chrome://inspect` to attach.
+- `node scripts/cdp.mjs "<expr>"` — evaluates JS in the live WebView via CDP.
+  Use it to read Vue state or dispatch DOM events.
+- Logcat tags: `chromium` / `Console` for JS, `RustStdoutStderr` for Rust
+  `println!` + `tauri-plugin-log` Stdout target.
+- Screenshot: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`.
+  `*.png` at the repo root is gitignored — keep captures under `tmp/`.
+
 ## Migration from `wt` (Go)
 
-The Rust skeleton mirrors the Go module layout to make porting mechanical:
+The Rust layout mirrors the Go one to make porting mechanical:
 
 | Go (`internal/`) | Rust (`src-tauri/src/`)             |
 | ---------------- | ----------------------------------- |
@@ -146,9 +168,8 @@ The Rust skeleton mirrors the Go module layout to make porting mechanical:
 | `transcriber/`   | `transcriber/`                      |
 | `diarizer/`      | `transcriber/diarizer.rs` (planned) |
 | `gui/`           | `src/` (Vue)                        |
-| `appinfo/`       | `lib.rs` (`app_version` cmd)        |
+| `appinfo/`       | `lib.rs` (`app_version` command)    |
 
-Engine binaries (`sherpa-onnx-offline`, `llama-cli`, NeMo Sortformer) are
-invoked as sidecars via `tauri-plugin-shell`. They are not bundled in this
-repo; they are downloaded post-install (same pattern as the Windows installer
-in `wt`).
+Engine binaries (`sherpa-onnx-offline`, `llama-cli`, NeMo Sortformer) run as
+sidecars via `tauri-plugin-shell`. They are not bundled here; the user fetches
+them post-install (same pattern as the Windows installer in `wt`).
