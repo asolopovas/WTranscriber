@@ -43,17 +43,17 @@ function gitBranch() {
 const ver = pkgVersion();
 const sha = gitShortSha();
 const branch = gitBranch();
-const distDir = join(root, "dist");
-const distDevDir = join(distDir, "dev");
-mkdirSync(distDir, { recursive: true });
-if (dev) mkdirSync(distDevDir, { recursive: true });
+const outDir = join(root, "releases");
+const outDevDir = join(outDir, "dev");
 
 console.log(`release-build: ver=${ver} sha=${sha} branch=${branch} channel=${dev ? "dev" : "stable"}`);
 
 const artifacts = [];
 
 function copyAndRecord(src, destName) {
-  const target = dev ? join(distDevDir, destName) : join(distDir, destName);
+  const destDir = dev ? outDevDir : outDir;
+  mkdirSync(destDir, { recursive: true });
+  const target = join(destDir, destName);
   copyFileSync(src, target);
   artifacts.push(target);
   console.log(`  + ${target}  (${(statSync(target).size / 1024 / 1024).toFixed(1)} MB)`);
@@ -96,7 +96,7 @@ if (!skipAndroid) {
   if (!skipRebuild) {
     sh("bun", ["scripts/patch-android-signing.mjs"]);
     console.log("→ tauri android build (release)");
-    sh("bun", ["scripts/android.mjs", "build", "--target=aarch64", "--release"]);
+    sh("bun", ["scripts/android.mjs", "build", "--target=aarch64"]);
   } else {
     console.log("→ android: --skip-rebuild, reusing existing apk");
   }
@@ -164,7 +164,8 @@ if (artifacts.length === 0) {
   process.exit(1);
 }
 
-const sumsPath = dev ? join(distDevDir, "SHA256SUMS") : join(distDir, `SHA256SUMS-${ver}`);
+mkdirSync(dev ? outDevDir : outDir, { recursive: true });
+const sumsPath = dev ? join(outDevDir, "SHA256SUMS") : join(outDir, `SHA256SUMS-${ver}`);
 const lines = artifacts.map((p) => {
   const h = createHash("sha256").update(readFileSync(p)).digest("hex");
   return `${h}  ${basename(p)}`;
@@ -189,7 +190,7 @@ if (tauriKey) {
   }
 }
 
-const manifestPath = dev ? join(distDevDir, "release-manifest.json") : join(distDir, `release-manifest-${ver}.json`);
+const manifestPath = dev ? join(outDevDir, "release-manifest.json") : join(outDir, `release-manifest-${ver}.json`);
 writeFileSync(
   manifestPath,
   JSON.stringify(
@@ -208,5 +209,5 @@ writeFileSync(
 artifacts.push(manifestPath);
 console.log(`  + ${manifestPath}`);
 
-writeFileSync(join(root, "dist", dev ? ".release-dev-artifacts" : ".release-stable-artifacts"), artifacts.join("\n") + "\n");
+writeFileSync(join(outDir, dev ? ".release-dev-artifacts" : ".release-stable-artifacts"), artifacts.join("\n") + "\n");
 console.log(`✓ release-build done (${artifacts.length} files)`);

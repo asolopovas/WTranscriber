@@ -27,8 +27,26 @@ function findLine(predicate, from = 0) {
   return -1;
 }
 
-const tauriEnd = findLine((l) => l.trim() === "}", findLine((l) => l.includes("val tauriProperties")));
-if (tauriEnd === -1) {
+function findBlockEnd(startIdx) {
+  let depth = 0;
+  let seenOpen = false;
+  for (let i = startIdx; i < lines.length; i++) {
+    for (const ch of lines[i]) {
+      if (ch === "{") {
+        depth++;
+        seenOpen = true;
+      } else if (ch === "}") {
+        depth--;
+        if (seenOpen && depth === 0) return i;
+      }
+    }
+  }
+  return -1;
+}
+
+const tauriStart = findLine((l) => l.includes("val tauriProperties"));
+const tauriEnd = findBlockEnd(tauriStart);
+if (tauriStart === -1 || tauriEnd === -1) {
   console.error("patch-android-signing: could not locate tauriProperties block");
   process.exit(1);
 }

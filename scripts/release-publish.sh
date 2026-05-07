@@ -18,7 +18,7 @@ fi
 mode="${1:?usage: release-publish.sh <dev|stable>}"
 case "$mode" in dev|stable) ;; *) echo "mode must be dev or stable" >&2; exit 1;; esac
 
-list_file="dist/.release-${mode}-artifacts"
+list_file="releases/.release-${mode}-artifacts"
 [ -f "$list_file" ] || { echo "ERROR: $list_file not found — run release-build first" >&2; exit 1; }
 
 mapfile -t artifacts < "$list_file"

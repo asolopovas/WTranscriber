@@ -143,7 +143,6 @@ if (existsSync(manifestPath)) {
 const tauriArgs = ["run", "tauri", "android", subcmd, "--target", target];
 if (subcmd === "build") tauriArgs.push("--apk");
 if (flags.has("debug")) tauriArgs.push("--debug");
-if (flags.has("release")) tauriArgs.push("--release");
 if (flags.has("open")) tauriArgs.push("--open");
 
 const result = spawnSync("bun", tauriArgs, { cwd: root, env, stdio: "inherit", shell: isWin });

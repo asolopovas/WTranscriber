@@ -36,8 +36,7 @@ src-tauri/target/
 src-tauri/gen/
 
 # Release artifacts
-dist/
-!dist/.gitkeep
+releases/
 
 # Android signing (NEVER commit)
 keystore.properties

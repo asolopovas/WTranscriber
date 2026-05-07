@@ -143,6 +143,6 @@ one place.
 just release-bump patch         # bump + commit + tag, no build/publish
 just release-build --dev        # build artifacts only (dev naming)
 just release-build              # build artifacts only (stable naming)
-just release-publish dev        # upload existing dist/dev/* to 'dev' tag
+just release-publish dev        # upload existing releases/dev/* to 'dev' tag
 just release-publish stable     # push HEAD+tag, create release, upload
 ```
