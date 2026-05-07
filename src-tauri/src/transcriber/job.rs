@@ -77,13 +77,22 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let key = compute_key(&key_params);
 
     if let Some(cached) = cache::load(&key)? {
-        logfile::info(&format!(
-            "cache hit; reusing transcript ({} utterances, {})",
-            cached.utterances.len(),
-            format_hms(std::time::Duration::from_millis(cached.duration_ms)),
-        ));
-        sink.phase(Phase::Done);
-        return Ok(cached);
+        let stale = config.diarize && cached.speakers_detected == 0;
+        if stale {
+            logfile::info(&format!(
+                "cache hit but stale (0 speakers with diarize on); rerunning key={key}"
+            ));
+            let _ = cache::invalidate(&key);
+        } else {
+            logfile::info(&format!(
+                "cache hit; reusing transcript ({} utterances, {}, {} speakers)",
+                cached.utterances.len(),
+                format_hms(std::time::Duration::from_millis(cached.duration_ms)),
+                cached.speakers_detected,
+            ));
+            sink.phase(Phase::Done);
+            return Ok(cached);
+        }
     }
 
     if sink.is_cancelled() {
