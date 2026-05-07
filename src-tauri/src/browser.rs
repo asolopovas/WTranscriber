@@ -148,3 +148,105 @@ pub fn home_dir() -> PathBuf {
     let _ = std::fs::create_dir_all(&fallback);
     fallback
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use chrono::Utc;
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::transcriber::cache::{self as txc, Entry as CacheEntry};
+
+    static FS_LOCK: Mutex<()> = Mutex::new(());
+
+    fn fresh_root() -> TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::paths::init(
+            tmp.path().join("config"),
+            tmp.path().join("data"),
+            tmp.path().join("cache"),
+        );
+        tmp
+    }
+
+    fn store_entry(key: &str, src: &Path) {
+        let entry = CacheEntry {
+            key: key.into(),
+            source_path: std::path::absolute(src).unwrap(),
+            source_name: src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            model: "whisper".into(),
+            language: "en".into(),
+            speakers: 0,
+            no_diarize: false,
+            utterances: 1,
+            duration_ms: 1000,
+            created_at: Utc::now(),
+            size_bytes: 0,
+        };
+        let transcript = crate::transcriber::Transcript {
+            model: "whisper".into(),
+            language: "en".into(),
+            duration_ms: 1000,
+            diarizer: Some(String::new()),
+            device: None,
+            speakers_detected: 0,
+            utterances: vec![],
+            words: vec![],
+        };
+        txc::store(entry, &transcript).unwrap();
+    }
+
+    #[test]
+    fn cache_key_survives_rename() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+
+        let workdir = tempfile::tempdir().unwrap();
+        let original = workdir.path().join("recording_260507-120738.wav");
+        std::fs::write(&original, b"x").unwrap();
+        store_entry("k-survive", &original);
+
+        let renamed = workdir.path().join("named-topic_260507-150000.wav");
+        std::fs::rename(&original, &renamed).unwrap();
+        txc::rename_source(&original, &renamed).unwrap();
+
+        let listing = list(workdir.path()).unwrap();
+        let entry = listing
+            .entries
+            .iter()
+            .find(|e| e.is_audio)
+            .expect("audio entry expected");
+        assert_eq!(entry.name, "named-topic_260507-150000.wav");
+        assert_eq!(entry.cache_key.as_deref(), Some("k-survive"));
+    }
+
+    #[test]
+    fn cache_key_is_null_without_rename_sync() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+
+        let workdir = tempfile::tempdir().unwrap();
+        let original = workdir.path().join("recording_260507-120738.wav");
+        std::fs::write(&original, b"x").unwrap();
+        store_entry("k-stale", &original);
+
+        let renamed = workdir.path().join("renamed.wav");
+        std::fs::rename(&original, &renamed).unwrap();
+
+        let listing = list(workdir.path()).unwrap();
+        let entry = listing
+            .entries
+            .iter()
+            .find(|e| e.is_audio)
+            .expect("audio entry expected");
+        assert!(
+            entry.cache_key.is_none(),
+            "without rename_source, lookup must miss (this is the original bug)"
+        );
+    }
+}

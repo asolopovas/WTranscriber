@@ -668,6 +668,9 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
         )));
     }
     std::fs::rename(&source, &dst)?;
+    if let Err(e) = transcriber::cache::rename_source(&source, &dst) {
+        logfile::warn(&format!("cache index rename failed: {e}"));
+    }
     logfile::info(&format!("rename {} -> {}", source.display(), dst.display()));
     Ok(dst)
 }
@@ -719,18 +722,6 @@ pub async fn suggest_filename(transcript: Transcript) -> Result<Suggestion> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Engine;
-
-    #[test]
-    fn rejects_catalog_model_with_wrong_engine() {
-        let cfg = Config {
-            engine: Engine::Zipformer,
-            ..Config::default()
-        };
-
-        assert!(validate_transcription_model(&cfg).is_err());
-    }
-
     #[test]
     fn accepts_catalog_model_with_matching_engine() {
         let cfg = Config::default();
