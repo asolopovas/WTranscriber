@@ -5,9 +5,7 @@ import { api } from "../api";
 const tail = ref<string>("");
 const path = ref<string>("");
 const auto = ref(true);
-const retain = ref<number>(
-  Number(localStorage.getItem("wt.logRetain") ?? "1") || 1,
-);
+const retain = ref<number>(Number(localStorage.getItem("wt.logRetain") ?? "1") || 1);
 const error = ref<string | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -85,7 +83,9 @@ function levelClass(line: string): string {
       <div class="flex flex-col gap-md pb-md border-b border-outline-variant/50">
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-md">
           <div class="min-w-0">
-            <h1 class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface">
+            <h1
+              class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface"
+            >
               Application Log
             </h1>
             <p class="text-bodyMedium text-on-surface-variant mt-unit">

@@ -140,7 +140,9 @@ const fieldClass =
         class="flex flex-col md:flex-row md:items-end justify-between gap-margin pb-md border-b border-outline-variant/50"
       >
         <div>
-          <h1 class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface">
+          <h1
+            class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface"
+          >
             Settings
           </h1>
           <p class="text-bodyMedium text-on-surface-variant mt-unit">
@@ -187,7 +189,9 @@ const fieldClass =
             <span class="material-symbols-outlined text-primary">phone_android</span>
             <h2 class="text-titleMedium text-on-surface">Device</h2>
           </div>
-          <dl class="p-margin grid grid-cols-1 md:grid-cols-2 gap-x-margin gap-y-md text-bodyMedium">
+          <dl
+            class="p-margin grid grid-cols-1 md:grid-cols-2 gap-x-margin gap-y-md text-bodyMedium"
+          >
             <div class="flex justify-between gap-md">
               <dt class="text-on-surface-variant">OS</dt>
               <dd class="text-on-surface font-mono">{{ sys.os }}</dd>
@@ -292,13 +296,17 @@ const fieldClass =
                   <span
                     class="material-symbols-outlined text-[24px] shrink-0"
                     :class="m.status === 'installed' ? 'text-primary' : 'text-on-surface-variant'"
-                  >deployed_code</span>
+                    >deployed_code</span
+                  >
                   <div class="flex flex-col min-w-0 flex-1">
                     <span
                       class="text-bodyMedium truncate"
-                      :class="m.status === 'installed' ? 'text-on-surface' : 'text-on-surface-variant'"
+                      :class="
+                        m.status === 'installed' ? 'text-on-surface' : 'text-on-surface-variant'
+                      "
                       :title="m.id"
-                    >{{ m.display_name || m.id }}</span>
+                      >{{ m.display_name || m.id }}</span
+                    >
                     <span class="font-mono text-labelSmall text-secondary">
                       {{ fmtSize(m.size_bytes) }}
                       <template v-if="m.status === 'installed'"> · Installed</template>
@@ -312,7 +320,9 @@ const fieldClass =
                   disabled
                   :title="`Downloading \u00b7 ${pct(modelProgress[m.id]).toFixed(0)}%`"
                 >
-                  <span class="material-symbols-outlined text-[20px] animate-pulse">progress_activity</span>
+                  <span class="material-symbols-outlined text-[20px] animate-pulse"
+                    >progress_activity</span
+                  >
                 </button>
                 <button
                   v-else-if="m.status === 'not_installed'"
@@ -332,9 +342,17 @@ const fieldClass =
               </div>
               <div v-if="modelProgress[m.id]" class="flex flex-col gap-unit">
                 <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
-                  <div class="h-full bg-primary transition-all" :style="{ width: pct(modelProgress[m.id]) + '%' }"></div>
+                  <div
+                    class="h-full bg-primary transition-all"
+                    :style="{ width: pct(modelProgress[m.id]) + '%' }"
+                  ></div>
                 </div>
-                <span class="font-mono text-labelSmall text-primary">{{ pct(modelProgress[m.id]).toFixed(0) }}% · file {{ modelProgress[m.id].file_index + 1 }}/{{ modelProgress[m.id].file_count }}</span>
+                <span class="font-mono text-labelSmall text-primary"
+                  >{{ pct(modelProgress[m.id]).toFixed(0) }}% · file
+                  {{ modelProgress[m.id].file_index + 1 }}/{{
+                    modelProgress[m.id].file_count
+                  }}</span
+                >
               </div>
               <div v-else class="flex flex-col gap-unit">
                 <div class="flex items-center gap-xs">

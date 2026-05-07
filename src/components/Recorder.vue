@@ -32,12 +32,7 @@ const elapsed = computed(() => {
 });
 
 function pickMime(): string {
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-    "audio/mp4",
-  ];
+  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
   for (const c of candidates) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
   }
@@ -58,7 +53,8 @@ async function blobToWav16kMono(blob: Blob): Promise<Uint8Array> {
     const data = buf.getChannelData(i);
     for (let j = 0; j < len; j++) mono[j] += data[j] / ch;
   }
-  const resampled = buf.sampleRate === TARGET_SR ? mono : resampleLinear(mono, buf.sampleRate, TARGET_SR);
+  const resampled =
+    buf.sampleRate === TARGET_SR ? mono : resampleLinear(mono, buf.sampleRate, TARGET_SR);
   return encodeWav16(resampled, TARGET_SR);
 }
 
@@ -184,7 +180,13 @@ function cleanup() {
 
 onUnmounted(cleanup);
 
-defineExpose({ recording, elapsed, start, stop, toggle: () => (recording.value ? stop() : start()) });
+defineExpose({
+  recording,
+  elapsed,
+  start,
+  stop,
+  toggle: () => (recording.value ? stop() : start()),
+});
 </script>
 
 <template>
@@ -206,7 +208,10 @@ defineExpose({ recording, elapsed, start, stop, toggle: () => (recording.value ?
         @click="start"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-error-container text-on-error-container py-md rounded-full font-titleSmall hover:opacity-90 transition-opacity"
       >
-        <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1">
+        <span
+          class="material-symbols-outlined text-[18px]"
+          style="font-variation-settings: &quot;FILL&quot; 1"
+        >
           fiber_manual_record
         </span>
         Rec
@@ -216,7 +221,11 @@ defineExpose({ recording, elapsed, start, stop, toggle: () => (recording.value ?
         @click="stop"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-primary text-on-primary py-md rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
       >
-        <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1">stop</span>
+        <span
+          class="material-symbols-outlined text-[18px]"
+          style="font-variation-settings: &quot;FILL&quot; 1"
+          >stop</span
+        >
         Stop · {{ elapsed }}
       </button>
     </div>

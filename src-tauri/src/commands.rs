@@ -100,8 +100,6 @@ fn read_total_memory() -> u64 {
     0
 }
 
-
-
 #[tauri::command]
 pub fn load_config() -> Result<Config> {
     Config::load()
@@ -164,7 +162,11 @@ pub fn delete_model(id: String) -> Result<()> {
         }
     }
     let dir = models::model_dir(&id)?;
-    if dir.exists() && std::fs::read_dir(&dir).map(|r| r.count() == 0).unwrap_or(false) {
+    if dir.exists()
+        && std::fs::read_dir(&dir)
+            .map(|r| r.count() == 0)
+            .unwrap_or(false)
+    {
         std::fs::remove_dir(&dir).ok();
     }
     logfile::info(&format!("delete_model {id} ok"));
@@ -346,7 +348,11 @@ impl Sink for TranscribeSink {
 }
 
 #[tauri::command]
-pub async fn transcribe_file(app: AppHandle, input: PathBuf, mut config: Config) -> Result<Transcript> {
+pub async fn transcribe_file(
+    app: AppHandle,
+    input: PathBuf,
+    mut config: Config,
+) -> Result<Transcript> {
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
     let label = format!("transcribe {}", input.display());
