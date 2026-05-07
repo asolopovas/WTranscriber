@@ -283,6 +283,32 @@ fn default_catalog() -> Vec<Entry> {
             files: Vec::new(),
         },
         Entry {
+            id: "diar-eres2net-base".into(),
+            family: Family::Diarizer,
+            engine: "sherpa".into(),
+            display_name: "pyannote-3.0 + 3D-Speaker ERes2Net-base".into(),
+            description: "Higher-quality CPU diarizer for mobile. Newer ERes2Net architecture, multilingual zh+en. ~46 MB.".into(),
+            languages: Vec::new(),
+            size_bytes: 45_586_678,
+            default_active: false,
+            android_default: true,
+            desktop_only: false,
+            files: vec![
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx".into(),
+                    rel_path: "sherpa-onnx-pyannote-segmentation-3-0/model.onnx".into(),
+                    size_bytes: 5_992_913,
+                    sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079".into(),
+                },
+                FileSpec {
+                    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx".into(),
+                    rel_path: "3dspeaker_eres2net_base.onnx".into(),
+                    size_bytes: 39_593_761,
+                    sha256: "1a331345f04805badbb495c775a6ddffcdd1a732567d5ec8b3d5749e3c7a5e4b".into(),
+                },
+            ],
+        },
+        Entry {
             id: "sherpa-pyannote-titanet".into(),
             family: Family::Diarizer,
             engine: "sherpa".into(),
@@ -291,7 +317,7 @@ fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 0,
             default_active: false,
-            android_default: true,
+            android_default: false,
             desktop_only: false,
             files: vec![
                 FileSpec {
