@@ -34,5 +34,14 @@ bun.lock
 # Tauri build outputs
 src-tauri/target/
 src-tauri/gen/
+
+# Release artifacts
+dist/
+!dist/.gitkeep
+
+# Android signing (NEVER commit)
+keystore.properties
+*.jks
+*.keystore
 .playwright-cli/
 .android-prebuilt/

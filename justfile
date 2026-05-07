@@ -155,3 +155,22 @@ nemo-deps:
 
 bump version:
     bun pm version {{version}} --no-git-tag-version
+
+release:
+    bun scripts/release-build.mjs --dev
+    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh dev
+
+release-stable level="patch":
+    @just check
+    bun scripts/release-bump.mjs {{level}}
+    bun scripts/release-build.mjs
+    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh stable
+
+release-bump level="patch":
+    bun scripts/release-bump.mjs {{level}}
+
+release-build *args:
+    bun scripts/release-build.mjs {{args}}
+
+release-publish channel:
+    {{ if os() == 'windows' { 'C:/msys64/usr/bin/bash.exe' } else { 'bash' } }} scripts/release-publish.sh {{channel}}
