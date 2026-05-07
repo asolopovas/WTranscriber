@@ -131,6 +131,85 @@ fn progress_emitter(
     }
 }
 
+#[cfg(target_os = "android")]
+fn migrate_legacy_android_data(new_data_dir: &std::path::Path, _workdir: &std::path::Path) {
+    let legacy = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
+    if !legacy.exists() {
+        return;
+    }
+    let new_config = new_data_dir.join("config.yml");
+    if !new_config.exists()
+        && let Ok(raw) = std::fs::read_to_string(legacy.join("config.yml"))
+        && std::fs::write(&new_config, &raw).is_ok()
+    {
+        logfile::info("android: migrated legacy config.yml");
+    }
+    let new_models = new_data_dir.join("models");
+    let legacy_models = legacy.join("Models");
+    let Ok(entries) = std::fs::read_dir(&legacy_models) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let src = e.path();
+        let Some(name) = src.file_name() else { continue };
+        let dst = new_models.join(name);
+        match copy_recursive(&src, &dst) {
+            Ok(bytes) if bytes > 0 => {
+                let _ = remove_recursive(&src);
+                logfile::info(&format!(
+                    "android: migrated {} ({bytes} bytes)",
+                    name.to_string_lossy()
+                ));
+            }
+            Ok(_) => {
+                let _ = remove_recursive(&dst);
+            }
+            Err(e) => {
+                let _ = remove_recursive(&dst);
+                logfile::error(&format!(
+                    "android: migrate {} failed: {e}",
+                    src.display()
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<u64> {
+    let meta = std::fs::metadata(src)?;
+    if meta.is_file() {
+        if let Some(p) = dst.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        return std::fs::copy(src, dst);
+    }
+    if !meta.is_dir() {
+        return Ok(0);
+    }
+    std::fs::create_dir_all(dst)?;
+    let mut total: u64 = 0;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let Some(name) = from.file_name() else { continue };
+        total = total.saturating_add(copy_recursive(&from, &dst.join(name))?);
+    }
+    Ok(total)
+}
+
+#[cfg(target_os = "android")]
+fn remove_recursive(p: &std::path::Path) -> std::io::Result<()> {
+    let Ok(meta) = std::fs::metadata(p) else {
+        return Ok(());
+    };
+    if meta.is_dir() {
+        std::fs::remove_dir_all(p)
+    } else {
+        std::fs::remove_file(p)
+    }
+}
+
 fn auto_install_essentials(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         ensure_runtimes(&app).await;
@@ -179,11 +258,44 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "android")]
             {
-                let workdir = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
+                let data_dir = std::path::PathBuf::from(
+                    "/data/user/0/com.asolopovas.wtranscriber/files",
+                );
+                let writable = std::fs::create_dir_all(&data_dir).is_ok()
+                    && std::fs::create_dir_all(data_dir.join("models")).is_ok();
+                let data_dir = if writable {
+                    data_dir
+                } else {
+                    use tauri::Manager;
+                    let fallback = app
+                        .path()
+                        .app_local_data_dir()
+                        .or_else(|_| app.path().app_data_dir())
+                        .unwrap_or_else(|_| std::path::PathBuf::from("/sdcard"));
+                    let _ = std::fs::create_dir_all(&fallback);
+                    let _ = std::fs::create_dir_all(fallback.join("models"));
+                    fallback
+                };
+                paths::set_config_file(data_dir.join("config.yml"));
+                paths::set_models_dir(data_dir.join("models"));
+
+                let ext_workdir = std::path::PathBuf::from(
+                    "/sdcard/Android/data/com.asolopovas.wtranscriber/files/transcripts",
+                );
+                let workdir = if std::fs::create_dir_all(&ext_workdir).is_ok() {
+                    ext_workdir
+                } else {
+                    let fallback = data_dir.join("transcripts");
+                    let _ = std::fs::create_dir_all(&fallback);
+                    fallback
+                };
                 paths::set_default_workdir(workdir.clone());
-                paths::set_models_dir(workdir.join("Models"));
-                paths::set_config_file(workdir.join("config.yml"));
-                logfile::info(&format!("android workdir: {}", workdir.display()));
+                migrate_legacy_android_data(&data_dir, &workdir);
+                logfile::info(&format!(
+                    "android: data={} workdir={}",
+                    data_dir.display(),
+                    workdir.display()
+                ));
             }
             auto_install_essentials(app.handle().clone());
             Ok(())
