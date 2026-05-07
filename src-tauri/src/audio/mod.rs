@@ -1,4 +1,5 @@
 mod cache;
+mod decode;
 mod ffmpeg;
 pub mod meta;
 mod wav;
@@ -6,9 +7,13 @@ mod wav;
 use std::path::Path;
 
 pub use cache::audio_cache_key;
+pub use ffmpeg::find_ffmpeg;
 #[allow(unused_imports)]
 pub use ffmpeg::find_ffprobe;
-pub use ffmpeg::{find_ffmpeg, probe_duration_ms};
+
+pub fn probe_duration_ms(path: &std::path::Path) -> Option<u64> {
+    ffmpeg::probe_duration_ms(path).or_else(|| decode::probe_duration_ms(path))
+}
 pub use meta::AudioMeta;
 #[allow(unused_imports)]
 pub use meta::meta_path;
@@ -36,12 +41,6 @@ pub fn load_samples(path: &Path) -> Result<Vec<f32>> {
 }
 
 fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| {
-        Error::Transcribe(
-            "ffmpeg not found; install ffmpeg or provide a 16 kHz mono WAV file".into(),
-        )
-    })?;
-
     let cache_dir = crate::paths::cache_dir()?;
     let cached = audio_cache_key(path).ok().map(|name| cache_dir.join(name));
 
@@ -58,12 +57,19 @@ fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
         std::fs::create_dir_all(parent)?;
     }
 
-    if let Err(err) = ffmpeg::run(&ffmpeg, path, &target) {
+    if let Err(err) = run_decoder(path, &target) {
         let _ = std::fs::remove_file(&target);
         return Err(err);
     }
 
     read_pcm16_wav(&target)
+}
+
+fn run_decoder(input: &Path, output: &Path) -> Result<()> {
+    if let Some(ffmpeg) = find_ffmpeg() {
+        return ffmpeg::run(&ffmpeg, input, output);
+    }
+    decode::decode_to_wav(input, output)
 }
 
 pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
@@ -73,9 +79,6 @@ pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
     {
         return Ok(path.to_path_buf());
     }
-    let ffmpeg = find_ffmpeg().ok_or_else(|| {
-        Error::Transcribe("ffmpeg not found; install ffmpeg or provide a 16 kHz mono WAV".into())
-    })?;
     let cache_dir = crate::paths::cache_dir()?;
     let name = audio_cache_key(path)?;
     let target = cache_dir.join(name);
@@ -85,7 +88,7 @@ pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if let Err(err) = ffmpeg::run(&ffmpeg, path, &target) {
+    if let Err(err) = run_decoder(path, &target) {
         let _ = std::fs::remove_file(&target);
         return Err(err);
     }

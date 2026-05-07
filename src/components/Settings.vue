@@ -37,6 +37,27 @@ function pct(p?: FileProgress): number {
   return ((p.file_index + fileFrac) / p.file_count) * 100;
 }
 
+const SIZE_CAP_BYTES = 2_000_000_000;
+function sizePct(m: ModelInfo): number {
+  return Math.min(100, Math.round((m.size_bytes / SIZE_CAP_BYTES) * 100));
+}
+function perfPct(m: ModelInfo): number {
+  const sizeFrac = Math.min(1, m.size_bytes / SIZE_CAP_BYTES);
+  return Math.round((1 - sizeFrac * 0.85) * 100);
+}
+function accPct(m: ModelInfo): number {
+  const buckets: Record<string, number> = {
+    "whisper-onnx": 92,
+    canary: 88,
+    parakeet: 84,
+    "nemo-ctc": 80,
+    zipformer: 75,
+  };
+  if (m.family === "diarizer") return 78;
+  if (m.family === "llm") return 70;
+  return buckets[m.engine] ?? 70;
+}
+
 const groupedModels = computed(() => {
   const families: Record<string, ModelInfo[]> = { asr: [], diarizer: [], llm: [] };
   for (const m of models.value) families[m.family]?.push(m);
@@ -101,15 +122,17 @@ const fieldClass =
 </script>
 
 <template>
-  <main class="flex-1 overflow-y-auto p-xl bg-surface-container-lowest scroll-thin">
+  <main class="flex-1 overflow-y-auto p-margin md:p-xl bg-surface-container-lowest scroll-thin">
     <div class="max-w-5xl mx-auto flex flex-col gap-xl pb-xl">
       <div
         class="flex flex-col md:flex-row md:items-end justify-between gap-margin pb-md border-b border-outline-variant/50"
       >
         <div>
-          <h1 class="text-[24px] leading-[32px] font-bold text-on-surface">Compute</h1>
+          <h1 class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface">
+            Settings
+          </h1>
           <p class="text-bodyMedium text-on-surface-variant mt-unit">
-            Runtime device, local models, and storage maintenance.
+            Runtime, local models, and storage maintenance.
           </p>
         </div>
         <div class="flex items-center gap-xs shrink-0 font-mono text-labelMedium">
@@ -179,7 +202,84 @@ const fieldClass =
             <span class="material-symbols-outlined text-tertiary">{{ g.icon }}</span>
             <h2 class="text-titleMedium text-on-surface">{{ g.label }}</h2>
           </div>
-          <table class="w-full text-left border-collapse">
+          <ul class="flex flex-col md:hidden gap-xs p-md">
+            <li
+              v-for="m in g.items"
+              :key="`m-${m.id}`"
+              class="bg-surface-container-low rounded-lg p-md flex flex-col gap-md"
+            >
+              <div class="flex items-center justify-between gap-md">
+                <div class="flex items-center gap-md min-w-0 flex-1">
+                  <span
+                    class="material-symbols-outlined text-[24px] shrink-0"
+                    :class="m.status === 'installed' ? 'text-primary' : 'text-on-surface-variant'"
+                  >deployed_code</span>
+                  <div class="flex flex-col min-w-0 flex-1">
+                    <span
+                      class="text-bodyMedium truncate"
+                      :class="m.status === 'installed' ? 'text-on-surface' : 'text-on-surface-variant'"
+                      :title="m.id"
+                    >{{ m.display_name || m.id }}</span>
+                    <span class="font-mono text-labelSmall text-secondary">
+                      {{ fmtSize(m.size_bytes) }}
+                      <template v-if="m.status === 'installed'"> · Installed</template>
+                      <template v-else-if="m.default_active"> · Default</template>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  v-if="modelProgress[m.id]"
+                  class="shrink-0 w-9 h-9 rounded-full bg-surface-container-high text-secondary flex items-center justify-center"
+                  disabled
+                  :title="`Downloading \u00b7 ${pct(modelProgress[m.id]).toFixed(0)}%`"
+                >
+                  <span class="material-symbols-outlined text-[20px] animate-pulse">progress_activity</span>
+                </button>
+                <button
+                  v-else-if="m.status === 'not_installed'"
+                  class="shrink-0 w-10 h-10 rounded-full bg-primary-container text-on-primary-container hover:bg-primary transition-colors flex items-center justify-center"
+                  @click="installModel(m.id)"
+                  title="Install"
+                >
+                  <span class="material-symbols-outlined text-[20px]">download</span>
+                </button>
+                <button
+                  v-else
+                  class="shrink-0 w-9 h-9 rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors flex items-center justify-center -mr-unit"
+                  title="More"
+                >
+                  <span class="material-symbols-outlined text-[20px]">more_vert</span>
+                </button>
+              </div>
+              <div v-if="modelProgress[m.id]" class="flex flex-col gap-unit">
+                <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
+                  <div class="h-full bg-primary transition-all" :style="{ width: pct(modelProgress[m.id]) + '%' }"></div>
+                </div>
+                <span class="font-mono text-labelSmall text-primary">{{ pct(modelProgress[m.id]).toFixed(0) }}% · file {{ modelProgress[m.id].file_index + 1 }}/{{ modelProgress[m.id].file_count }}</span>
+              </div>
+              <div v-else class="flex flex-col gap-unit">
+                <div class="flex items-center gap-xs">
+                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Perf</span>
+                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
+                    <div class="h-full bg-tertiary" :style="{ width: perfPct(m) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Acc</span>
+                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
+                    <div class="h-full bg-primary" :style="{ width: accPct(m) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Size</span>
+                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
+                    <div class="h-full bg-secondary" :style="{ width: sizePct(m) + '%' }"></div>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+          <table class="hidden md:table w-full text-left border-collapse">
             <thead>
               <tr class="border-b border-outline-variant/40 bg-surface-container-highest/40">
                 <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium">

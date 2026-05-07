@@ -45,20 +45,27 @@ android-prebuilts:
 android-init: android-targets android-prebuilts
     bun run tauri android init
 
-android-dev:
-    bun run tauri android dev
+android-dev target="aarch64":
+    bun scripts/android.mjs dev --target={{target}}
 
 android-build target="aarch64":
-    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/android-build.ps1 -Target {{target}}
+    bun scripts/android.mjs build --target={{target}} --release
 
 android-build-debug target="aarch64":
-    pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/android-build.ps1 -Target {{target}} -DebugBuild
+    bun scripts/android.mjs build --target={{target}} --debug
 
-android-doctor:
-    @echo "ANDROID_HOME    = {{_android_sdk}}"
-    @echo "NDK_HOME        = {{_android_ndk}}"
-    @echo "prebuilts       = {{_android_prebuilt}}"
+android-doctor target="aarch64":
+    bun scripts/android.mjs doctor --target={{target}}
     @rustup target list --installed
+
+android-cli target="aarch64":
+    bun scripts/android.mjs cli --target={{target}} --debug
+
+android-cli-push: android-cli
+    bash scripts/android-wt.sh push
+
+android-cli-run *args:
+    bash scripts/android-wt.sh run {{args}}
 
 cli *args:
     cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}

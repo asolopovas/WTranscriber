@@ -20,22 +20,42 @@ use crate::{
     error::{Error, Result},
 };
 
+enum Backend {
+    Ffmpeg {
+        child: Option<Child>,
+        reader: BufReader<std::process::ChildStdout>,
+    },
+    Memory {
+        samples: Vec<f32>,
+        pos: usize,
+    },
+}
+
 pub struct StreamSource {
-    child: Option<Child>,
-    reader: BufReader<std::process::ChildStdout>,
+    backend: Backend,
     cancel: Arc<AtomicBool>,
     finished: bool,
 }
 
 impl StreamSource {
-    pub const fn new(
+    pub const fn from_ffmpeg(
         reader: BufReader<std::process::ChildStdout>,
         child: Child,
         cancel: Arc<AtomicBool>,
     ) -> Self {
         Self {
-            child: Some(child),
-            reader,
+            backend: Backend::Ffmpeg {
+                child: Some(child),
+                reader,
+            },
+            cancel,
+            finished: false,
+        }
+    }
+
+    pub const fn from_samples(samples: Vec<f32>, cancel: Arc<AtomicBool>) -> Self {
+        Self {
+            backend: Backend::Memory { samples, pos: 0 },
             cancel,
             finished: false,
         }
@@ -45,32 +65,53 @@ impl StreamSource {
         if self.finished {
             return Ok(0);
         }
-        let mut filled = 0;
-        while filled < buf.len() {
-            if self.cancel.load(Ordering::SeqCst) {
-                self.kill_child();
-                return Err(Error::Cancelled);
-            }
-            match self.reader.read_i16::<LittleEndian>() {
-                Ok(s) => {
-                    buf[filled] = f32::from(s) / f32::from(i16::MAX);
-                    filled += 1;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+        if self.cancel.load(Ordering::SeqCst) {
+            self.kill_child();
+            return Err(Error::Cancelled);
+        }
+        match &mut self.backend {
+            Backend::Memory { samples, pos } => {
+                let remaining = samples.len() - *pos;
+                let n = remaining.min(buf.len());
+                if n == 0 {
                     self.finished = true;
-                    break;
+                    return Ok(0);
                 }
-                Err(e) => {
-                    self.kill_child();
-                    return Err(Error::Transcribe(format!("ffmpeg stream read: {e}")));
+                buf[..n].copy_from_slice(&samples[*pos..*pos + n]);
+                *pos += n;
+                Ok(n)
+            }
+            Backend::Ffmpeg { reader, .. } => {
+                let mut filled = 0;
+                while filled < buf.len() {
+                    if self.cancel.load(Ordering::SeqCst) {
+                        self.kill_child();
+                        return Err(Error::Cancelled);
+                    }
+                    match reader.read_i16::<LittleEndian>() {
+                        Ok(s) => {
+                            buf[filled] = f32::from(s) / f32::from(i16::MAX);
+                            filled += 1;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                            self.finished = true;
+                            break;
+                        }
+                        Err(e) => {
+                            self.kill_child();
+                            return Err(Error::Transcribe(format!("stream read: {e}")));
+                        }
+                    }
                 }
+                Ok(filled)
             }
         }
-        Ok(filled)
     }
 
     fn kill_child(&mut self) {
-        if let Some(mut c) = self.child.take() {
+        if let Backend::Ffmpeg { child, .. } = &mut self.backend
+            && let Some(mut c) = child.take()
+        {
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -79,7 +120,9 @@ impl StreamSource {
 
 impl Drop for StreamSource {
     fn drop(&mut self) {
-        if let Some(mut c) = self.child.take() {
+        if let Backend::Ffmpeg { child, .. } = &mut self.backend
+            && let Some(mut c) = child.take()
+        {
             let _ = c.wait();
         }
     }
@@ -91,9 +134,9 @@ pub fn ffmpeg_stream(
     end_ms: Option<u64>,
     cancel: Arc<AtomicBool>,
 ) -> Result<StreamSource> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| {
-        Error::Transcribe("ffmpeg not found; install ffmpeg or provide a 16 kHz mono WAV".into())
-    })?;
+    let Some(ffmpeg) = find_ffmpeg() else {
+        return symphonia_stream(input, start_ms, end_ms, cancel);
+    };
     let mut cmd = build_command(&ffmpeg);
     if start_ms > 0 {
         cmd.arg("-ss").arg(format_ms(start_ms));
@@ -124,7 +167,34 @@ pub fn ffmpeg_stream(
         .stdout
         .take()
         .ok_or_else(|| Error::Transcribe("ffmpeg has no stdout".into()))?;
-    Ok(StreamSource::new(BufReader::new(stdout), child, cancel))
+    Ok(StreamSource::from_ffmpeg(
+        BufReader::new(stdout),
+        child,
+        cancel,
+    ))
+}
+
+fn symphonia_stream(
+    input: &Path,
+    start_ms: u64,
+    end_ms: Option<u64>,
+    cancel: Arc<AtomicBool>,
+) -> Result<StreamSource> {
+    let samples = crate::audio::load_samples(input)?;
+    let total = samples.len();
+    let start = sample_index(start_ms, total);
+    let end = end_ms.map_or(total, |ms| sample_index(ms, total).max(start));
+    let slice = if start == 0 && end == total {
+        samples
+    } else {
+        samples[start..end.min(total)].to_vec()
+    };
+    Ok(StreamSource::from_samples(slice, cancel))
+}
+
+fn sample_index(ms: u64, total: usize) -> usize {
+    let idx = (ms as f64 / 1000.0 * f64::from(WHISPER_SAMPLE_RATE)) as usize;
+    idx.min(total)
 }
 
 pub struct SamplesIter<'a> {

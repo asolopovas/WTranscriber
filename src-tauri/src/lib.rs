@@ -33,6 +33,10 @@ struct RuntimeProgress {
 }
 
 async fn ensure_runtimes(app: &tauri::AppHandle) {
+    if cfg!(target_os = "android") {
+        logfile::info("runtime install skipped (android: jniLibs bundled in APK)");
+        return;
+    }
     let cfg = config::Config::load().unwrap_or_default();
     let variant = runtimes::SherpaVariant::from_device(cfg.device);
     install_sherpa(app, variant).await;
@@ -179,6 +183,20 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::Manager;
+            let p = app.path();
+            if let (Ok(c), Ok(d), Ok(k)) = (p.app_config_dir(), p.app_data_dir(), p.app_cache_dir())
+            {
+                paths::init(c, d, k);
+            }
+            #[cfg(target_os = "android")]
+            {
+                let workdir = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
+                paths::set_default_workdir(workdir.clone());
+                paths::set_models_dir(workdir.join("Models"));
+                paths::set_config_file(workdir.join("config.yml"));
+                logfile::info(&format!("android workdir: {}", workdir.display()));
+            }
             auto_install_essentials(app.handle().clone());
             Ok(())
         })
@@ -205,6 +223,8 @@ pub fn run() {
             commands::list_directory,
             commands::default_dir,
             commands::add_to_workdir,
+            commands::save_recording,
+            commands::read_audio_bytes,
             commands::history_load,
             commands::suggest_filename,
             commands::log_path,

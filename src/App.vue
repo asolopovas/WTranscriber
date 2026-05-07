@@ -16,8 +16,15 @@ import type {
 } from "./types";
 import Settings from "./components/Settings.vue";
 import LogViewer from "./components/LogViewer.vue";
+import Recorder from "./components/Recorder.vue";
+import TranscribeIcon from "./components/icons/TranscribeIcon.vue";
+import SaveIcon from "./components/icons/SaveIcon.vue";
+import CancelIcon from "./components/icons/CancelIcon.vue";
+import Spinner from "./components/icons/Spinner.vue";
+import SettingsIcon from "./components/icons/SettingsIcon.vue";
+import LogIcon from "./components/icons/LogIcon.vue";
 
-type Tab = "transcribe" | "compute" | "logs";
+type Tab = "transcribe" | "settings" | "logs";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -36,6 +43,39 @@ const dialogOpen = ref(false);
 const queueActive = ref(false);
 const queueTotal = ref(0);
 const queueDone = ref(0);
+const configOpen = ref(
+  typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
+);
+const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
+const openMenuPath = ref<string | null>(null);
+function toggleMenu(path: string) {
+  openMenuPath.value = openMenuPath.value === path ? null : path;
+}
+function closeMenus() {
+  openMenuPath.value = null;
+}
+
+function prettyName(name: string): { display: string; timestamp: string | null } {
+  const noExt = name.replace(/\.[^.]+$/, "");
+  const patterns: { re: RegExp; full4: boolean }[] = [
+    { re: /[-_](\d{4})-(\d{2})-(\d{2})[-_T](\d{2})-(\d{2})-(\d{2})$/, full4: true },
+    { re: /[-_](\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: true },
+    { re: /[-_](\d{2})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: false },
+  ];
+  for (const { re, full4 } of patterns) {
+    const m = noExt.match(re);
+    if (m && m.index !== undefined) {
+      const display = noExt.slice(0, m.index);
+      const [, a, b, c, d, e] = m;
+      const yy = full4 ? a.slice(2) : a;
+      const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const mi = parseInt(b, 10) - 1;
+      const mon = mi >= 0 && mi < 12 ? months[mi] : b;
+      return { display: display || noExt, timestamp: `${yy}-${mon}-${c} ${d}:${e}` };
+    }
+  }
+  return { display: noExt, timestamp: null };
+}
 
 function fmtClock(secs: number): string {
   if (!Number.isFinite(secs) || secs < 0) secs = 0;
@@ -76,7 +116,7 @@ async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "transcribe", label: "Transcribe" },
-  { id: "compute", label: "Compute" },
+  { id: "settings", label: "Settings" },
   { id: "logs", label: "Logs" },
 ];
 
@@ -238,6 +278,13 @@ async function addPathsToWorkdir(paths: string[]) {
 function hasAudioExt(path: string): boolean {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   return audioExtensions.includes(ext);
+}
+
+async function onRecordingSaved(path: string) {
+  await refreshListing();
+  selectedPath.value = path;
+  transcript.value = null;
+  error.value = null;
 }
 
 function chooseEntry(entry: DirEntry) {
@@ -566,31 +613,53 @@ const trimEndFrac = computed(() =>
   trimDuration.value > 0 ? trimEnd.value / trimDuration.value : 1,
 );
 
-async function openTrim(entry?: DirEntry) {
+const loadingTrimPath = ref<string | null>(null);
+
+function openTrim(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio) return;
   if (trimming.value || renaming.value || exporting.value || previewing.value) return;
-  trimTarget.value = target;
+  if (loadingTrimPath.value) return;
+  loadingTrimPath.value = target.path;
   trimError.value = null;
-  trimLoading.value = true;
-  trimAudioSrc.value = convertFileSrc(target.path);
-  trimming.value = true;
+  if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
+  trimAudioSrc.value = "";
   trimPeaks.value = [];
+  setTimeout(() => void doOpenTrim(target), 0);
+}
+
+async function doOpenTrim(target: DirEntry) {
+  let nextDur = 0;
+  let nextStart = 0;
+  let nextEnd = 0;
+  let nextPeaks: number[] = [];
+  const nextSrc = convertFileSrc(target.path);
   try {
-    const durMs = (await api.probeAudio(target.path)) ?? target.duration_ms ?? 0;
-    trimDuration.value = Math.max(0, Math.floor(durMs));
-    const meta = await api.loadAudioMeta(target.path);
-    trimStart.value = Math.min(meta.trim_start_ms ?? 0, trimDuration.value);
-    trimEnd.value = Math.min(meta.trim_end_ms ?? trimDuration.value, trimDuration.value);
-    if (trimEnd.value <= trimStart.value) trimEnd.value = trimDuration.value;
-    const peaks = await api.audioWaveform(target.path, 320);
-    trimPeaks.value = peaks;
-    await renderTrimWaveform();
+    const [durMs, meta, peaks] = await Promise.all([
+      api.probeAudio(target.path).catch(() => null),
+      api.loadAudioMeta(target.path),
+      api.audioWaveform(target.path, 320),
+    ]);
+    nextDur = Math.max(0, Math.floor((durMs ?? target.duration_ms ?? 0) as number));
+    nextStart = Math.min(meta.trim_start_ms ?? 0, nextDur);
+    nextEnd = Math.min(meta.trim_end_ms ?? nextDur, nextDur);
+    if (nextEnd <= nextStart) nextEnd = nextDur;
+    nextPeaks = peaks;
   } catch (e) {
-    trimError.value = String(e);
-  } finally {
-    trimLoading.value = false;
+    loadingTrimPath.value = null;
+    error.value = `prepare: ${String(e)}`;
+    return;
   }
+  trimTarget.value = target;
+  trimAudioSrc.value = nextSrc;
+  trimDuration.value = nextDur;
+  trimStart.value = nextStart;
+  trimEnd.value = nextEnd;
+  trimPeaks.value = nextPeaks;
+  trimLoading.value = false;
+  trimming.value = true;
+  loadingTrimPath.value = null;
+  await renderTrimWaveform();
 }
 
 async function renderTrimWaveform() {
@@ -608,13 +677,85 @@ watch([trimStart, trimEnd, trimPeaks], () => {
   if (trimming.value) void renderTrimWaveform();
 });
 
-function onTrimStartInput(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value);
-  trimStart.value = Math.min(v, Math.max(0, trimEnd.value - 100));
+const waveformBox = ref<HTMLElement | null>(null);
+const MIN_TRIM_GAP_MS = 10_000;
+const trimPlaying = ref(false);
+let trimAudio: HTMLAudioElement | null = null;
+let trimStopTimer: ReturnType<typeof setTimeout> | null = null;
+
+function stopTrimPlay() {
+  if (trimAudio) {
+    trimAudio.pause();
+    trimAudio.src = "";
+    trimAudio = null;
+  }
+  if (trimStopTimer) clearTimeout(trimStopTimer);
+  trimStopTimer = null;
+  trimPlaying.value = false;
 }
-function onTrimEndInput(e: Event) {
-  const v = Number((e.target as HTMLInputElement).value);
-  trimEnd.value = Math.max(v, trimStart.value + 100);
+
+function pauseTrimPlay() {
+  if (trimAudio) trimAudio.pause();
+  if (trimStopTimer) clearTimeout(trimStopTimer);
+  trimStopTimer = null;
+  trimPlaying.value = false;
+}
+
+async function toggleTrimPlay() {
+  if (trimPlaying.value) {
+    pauseTrimPlay();
+    return;
+  }
+  if (!trimAudioSrc.value) return;
+  if (!trimAudio) {
+    trimAudio = new Audio(trimAudioSrc.value);
+    trimAudio.currentTime = trimStart.value / 1000;
+    trimAudio.onended = () => stopTrimPlay();
+    trimAudio.onerror = () => stopTrimPlay();
+    trimAudio.ontimeupdate = () => {
+      if (trimAudio && trimAudio.currentTime * 1000 >= trimEnd.value) stopTrimPlay();
+    };
+  } else {
+    const ms = trimAudio.currentTime * 1000;
+    if (ms < trimStart.value || ms >= trimEnd.value) trimAudio.currentTime = trimStart.value / 1000;
+  }
+  try {
+    await trimAudio.play();
+    trimPlaying.value = true;
+    const remaining = Math.max(0, trimEnd.value - trimAudio.currentTime * 1000);
+    trimStopTimer = setTimeout(stopTrimPlay, remaining + 250);
+  } catch (e) {
+    trimError.value = `play: ${String(e)}`;
+    stopTrimPlay();
+  }
+}
+
+function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const box = waveformBox.value;
+  if (!box || trimDuration.value === 0) return;
+  const dur = trimDuration.value;
+  const gap = Math.min(MIN_TRIM_GAP_MS, Math.max(100, Math.floor(dur / 4)));
+  const move = (e: PointerEvent) => {
+    const rect = box.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const ms = Math.round((x / rect.width) * dur);
+    if (side === "start") {
+      trimStart.value = Math.max(0, Math.min(ms, trimEnd.value - gap));
+    } else {
+      trimEnd.value = Math.min(dur, Math.max(ms, trimStart.value + gap));
+    }
+  };
+  const up = (e: PointerEvent) => {
+    move(e);
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
 }
 
 function resetTrim() {
@@ -634,8 +775,10 @@ async function commitTrim() {
   if (start === 0) meta.trim_start_ms = 0;
   try {
     await api.saveAudioMeta(target.path, meta);
+    stopTrimPlay();
     trimming.value = false;
     trimTarget.value = null;
+    if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
     trimAudioSrc.value = "";
     await refreshListing();
   } catch (e) {
@@ -644,8 +787,10 @@ async function commitTrim() {
 }
 
 function closeTrim() {
+  stopTrimPlay();
   trimming.value = false;
   trimTarget.value = null;
+  if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
   trimAudioSrc.value = "";
   trimError.value = null;
 }
@@ -733,10 +878,11 @@ const fieldClass =
 </script>
 
 <template>
-  <div class="h-screen flex flex-col bg-background text-on-background overflow-hidden">
+  <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
     <header
-      class="flex justify-between items-center w-full px-margin h-16 shrink-0 border-b border-outline-variant/40 bg-surface"
+      class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
     >
+
       <div class="flex items-center gap-xs">
         <span class="material-symbols-outlined text-primary text-[24px]">graphic_eq</span>
         <span
@@ -744,12 +890,12 @@ const fieldClass =
           >wt</span
         >
       </div>
-      <nav class="flex items-center gap-xl h-full">
+      <nav class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0">
         <button
           v-for="t in tabs"
           :key="t.id"
           @click="tab = t.id"
-          class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors"
+          class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors whitespace-nowrap shrink-0"
           :class="
             tab === t.id
               ? 'border-primary text-on-surface'
@@ -759,36 +905,36 @@ const fieldClass =
           {{ t.label }}
         </button>
       </nav>
-      <div class="flex items-center gap-xs text-on-surface-variant">
-        <span class="font-mono text-labelSmall">v{{ version }}</span>
-        <span class="material-symbols-outlined text-[20px]">more_vert</span>
-      </div>
+      <button class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs">
+        <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
+        <span class="material-symbols-outlined text-[22px]">more_vert</span>
+      </button>
     </header>
 
-    <main class="flex-1 flex overflow-hidden">
+    <main class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0" @click="closeMenus">
       <template v-if="tab === 'transcribe'">
         <section
           class="flex-1 flex flex-col overflow-hidden bg-surface relative"
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
           <div
-            class="flex items-center gap-xs px-margin h-12 border-b border-outline-variant/40 shrink-0"
+            class="flex items-center gap-xs px-margin h-14 md:h-12 border-b border-outline-variant/40 shrink-0 overflow-x-auto md:overflow-visible scroll-thin"
           >
-            <span class="material-symbols-outlined text-on-surface-variant text-[18px]"
+            <span class="material-symbols-outlined text-on-surface-variant text-[20px] md:text-[18px] shrink-0"
               >folder</span
             >
             <span
-              class="font-mono text-labelMedium text-on-surface truncate"
+              class="font-mono text-labelMedium text-on-surface truncate min-w-0 hidden sm:inline"
               :title="listing?.path"
             >
               {{ listing?.path ?? "—" }}
             </span>
             <button
-              class="text-on-surface-variant hover:text-on-surface transition-colors"
+              class="text-on-surface-variant hover:text-on-surface transition-colors w-11 h-11 md:w-auto md:h-auto flex items-center justify-center shrink-0"
               @click="refreshListing"
               title="Refresh"
             >
-              <span class="material-symbols-outlined text-[18px]">refresh</span>
+              <span class="material-symbols-outlined text-[22px] md:text-[18px]">refresh</span>
             </button>
             <div class="flex-1"></div>
             <div
@@ -799,29 +945,29 @@ const fieldClass =
               queue {{ queueDone + 1 }}/{{ queueTotal }}
             </div>
             <button
-              class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit disabled:opacity-40 disabled:cursor-not-allowed"
+              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
               :disabled="queueActive || untranscribedEntries.length === 0"
               @click="transcribeAll"
               title="Transcribe every untranscribed audio file in this folder"
             >
-              <span class="material-symbols-outlined text-[16px]">playlist_play</span>
-              Transcribe all
+              <span class="material-symbols-outlined text-[20px] md:text-[16px]">playlist_play</span>
+              <span class="hidden sm:inline">Transcribe all</span>
             </button>
             <button
-              class="px-md py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap"
               @click="pickFolder"
               title="Change working folder"
             >
-              <span class="material-symbols-outlined text-[16px]">folder_open</span>
-              Change
+              <span class="material-symbols-outlined text-[20px] md:text-[16px]">folder_open</span>
+              <span class="hidden sm:inline">Change</span>
             </button>
             <button
-              class="px-md py-unit rounded-full bg-primary text-on-primary text-labelMedium hover:bg-primary-fixed-dim transition-colors flex items-center gap-unit"
+              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full bg-primary text-on-primary text-labelMedium hover:bg-primary-fixed-dim transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap"
               @click="pickAudio"
               title="Add audio file(s) to working folder"
             >
-              <span class="material-symbols-outlined text-[16px]">add</span>
-              Add audio
+              <span class="material-symbols-outlined text-[20px] md:text-[16px]">add</span>
+              <span class="hidden sm:inline">Add audio</span>
             </button>
           </div>
 
@@ -864,7 +1010,111 @@ const fieldClass =
               </p>
             </div>
 
-            <table v-else class="w-full text-bodyMedium">
+            <ul v-else class="flex flex-col md:hidden">
+              <li
+                v-for="entry in audioEntries"
+                :key="`m-${entry.path}`"
+                class="border-b border-outline-variant/20 px-margin py-md cursor-pointer transition-colors"
+                :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
+                @click="chooseEntry(entry)"
+              >
+                <div class="flex items-start gap-xs">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-start gap-xs">
+                      <div class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words" :title="entry.name">{{ prettyName(entry.name).display }}</div>
+                      <div class="flex items-center gap-unit shrink-0 -mt-unit -mr-xs" @click.stop>
+                        <button
+                          v-if="busy[entry.path]"
+                          class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-error hover:bg-error-container/40 transition-colors"
+                          title="Stop"
+                          @click="stopTranscribe(entry)"
+                        >stop</button>
+                        <button
+                          v-else
+                          class="w-10 h-10 flex items-center justify-center rounded-full text-primary hover:bg-surface-container-highest transition-colors"
+                          title="Transcribe"
+                          @click="runTranscribe(entry)"
+                        ><TranscribeIcon :size="20" /></button>
+                        <button
+                          class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-highest transition-colors"
+                          :class="entry.trim_start_ms || entry.trim_end_ms ? 'text-primary' : 'text-on-surface-variant'"
+                          title="Play / select range"
+                          :disabled="loadingTrimPath === entry.path"
+                          @click="openTrim(entry)"
+                        >
+                          <Spinner v-if="loadingTrimPath === entry.path" :size="20" />
+                          <span v-else class="material-symbols-outlined">play_circle</span>
+                        </button>
+                        <div class="relative">
+                          <button
+                            class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"
+                            title="More"
+                            @click="toggleMenu(entry.path)"
+                          >more_vert</button>
+                          <div
+                            v-if="openMenuPath === entry.path"
+                            class="absolute right-0 top-full mt-unit z-30 min-w-[180px] bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
+                          >
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); openTrim(entry)">
+                              <span class="material-symbols-outlined text-[18px]">content_cut</span> Cut / select range
+                            </button>
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); autoRename(entry)">
+                              <span class="material-symbols-outlined text-[18px]">auto_awesome</span> Auto-rename
+                            </button>
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors" @click="closeMenus(); openRename(entry)">
+                              <span class="material-symbols-outlined text-[18px]">drive_file_rename_outline</span> Rename
+                            </button>
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30" :disabled="!entry.cache_key" @click="closeMenus(); openPreview(entry)">
+                              <span class="material-symbols-outlined text-[18px]">visibility</span> Preview
+                            </button>
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30" :disabled="!entry.cache_key" @click="closeMenus(); openExport(entry)">
+                              <span class="material-symbols-outlined text-[18px]">download</span> Export
+                            </button>
+                            <div class="my-unit border-t border-outline-variant/40"></div>
+                            <button class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-error hover:bg-error-container/40 transition-colors" @click="closeMenus(); deleteEntry(entry)">
+                              <span class="material-symbols-outlined text-[18px]">delete</span> Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center flex-wrap gap-xs mt-xs font-mono text-labelSmall text-on-surface-variant">
+                  <span>{{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}</span>
+                  <span class="text-outline">·</span>
+                  <span>{{ fmtBytes(entry.size_bytes) }}</span>
+                  <template v-if="busy[entry.path]">
+                    <span class="text-outline">·</span>
+                    <span class="text-secondary flex items-center gap-unit">
+                      <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+                      <template v-if="progressByPath[entry.path]">
+                        <span v-if="progressByPath[entry.path].phase === 'transcribing'">{{ progressByPath[entry.path].displayPct.toFixed(1) }}%</span>
+                        <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
+                      </template>
+                      <span v-else>transcribing</span>
+                    </span>
+                    <span class="text-outline">·</span>
+                    <span>{{ fmtClock(progressByPath[entry.path]?.elapsedSec ?? 0) }} elapsed</span>
+                    <span class="text-outline">·</span>
+                    <span>{{ fmtClock(progressByPath[entry.path]?.etaSec ?? 0) }} left</span>
+                  </template>
+                  <template v-else-if="entry.cache_key">
+                    <span class="text-outline">·</span>
+                    <span class="text-tertiary flex items-center gap-unit">
+                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                      transcribed
+                    </span>
+                  </template>
+                  <span
+                    v-if="prettyName(entry.name).timestamp"
+                    class="ml-auto text-secondary"
+                  >{{ prettyName(entry.name).timestamp }}</span>
+                </div>
+              </li>
+            </ul>
+
+            <table v-if="audioEntries.length" class="hidden md:table w-full text-bodyMedium">
               <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
                 <tr
                   class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
@@ -892,7 +1142,11 @@ const fieldClass =
                     >
                   </td>
                   <td class="px-xs py-xs truncate max-w-0">
-                    <span class="text-on-surface">{{ entry.name }}</span>
+                    <span class="text-on-surface" :title="entry.name">{{ prettyName(entry.name).display }}</span>
+                    <span
+                      v-if="prettyName(entry.name).timestamp"
+                      class="font-mono text-labelSmall text-secondary ml-xs"
+                    >{{ prettyName(entry.name).timestamp }}</span>
                   </td>
                   <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
                     {{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}
@@ -950,14 +1204,14 @@ const fieldClass =
                       </button>
                       <button
                         v-else
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
+                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
                         title="Transcribe"
                         @click="runTranscribe(entry)"
                       >
-                        play_arrow
+                        <TranscribeIcon :size="18" />
                       </button>
                       <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant transition-colors"
+                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant transition-colors"
                         :class="
                           entry.trim_start_ms || entry.trim_end_ms
                             ? 'text-primary'
@@ -970,9 +1224,11 @@ const fieldClass =
                               )}`
                             : 'Trim — select range to transcribe'
                         "
+                        :disabled="loadingTrimPath === entry.path"
                         @click="openTrim(entry)"
                       >
-                        content_cut
+                        <Spinner v-if="loadingTrimPath === entry.path" :size="18" />
+                        <span v-else class="material-symbols-outlined text-[18px]">content_cut</span>
                       </button>
                       <button
                         class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors"
@@ -1062,13 +1318,44 @@ const fieldClass =
         </section>
 
         <aside
-          class="w-[340px] bg-surface-container border-l border-outline-variant/40 flex flex-col h-full shrink-0 overflow-y-auto scroll-thin"
+          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-y-auto scroll-thin max-h-[40vh] md:max-h-none"
         >
-          <div v-if="config" class="p-margin space-y-xl">
-            <div>
-              <div class="flex items-center justify-between mb-md">
-                <h3 class="text-titleSmall text-on-surface">Configuration</h3>
+          <div v-if="config" class="py-unit px-md md:p-margin space-y-unit md:space-y-xl">
+            <Recorder
+              v-if="listing?.path"
+              ref="recorderRef"
+              :workdir="listing.path"
+              :headless="true"
+              @saved="onRecordingSaved"
+            />
+            <details :open="configOpen" @toggle="(e: Event) => (configOpen = (e.target as HTMLDetailsElement).open)">
+              <summary
+                class="flex items-center justify-between cursor-pointer list-none mb-unit md:mb-md md:pointer-events-none gap-xs"
+              >
+                <h3 class="text-titleSmall text-on-surface flex items-center gap-unit">
+                  <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
+                  Configuration
+                </h3>
+                <button
+                  v-if="recorderRef && !recorderRef.recording"
+                  @click.stop.prevent="recorderRef?.start()"
+                  class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
+                  title="Record"
+                >
+                  <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1">fiber_manual_record</span>
+                  Rec
+                </button>
+                <button
+                  v-else-if="recorderRef"
+                  @click.stop.prevent="recorderRef?.stop()"
+                  class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
+                  :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
+                >
+                  <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1">stop</span>
+                  {{ recorderRef?.elapsed }}
+                </button>
                 <span
+                  v-else
                   class="font-mono text-labelSmall flex items-center gap-unit"
                   :class="
                     saveState === 'saving'
@@ -1092,7 +1379,7 @@ const fieldClass =
                     saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced"
                   }}
                 </span>
-              </div>
+              </summary>
 
               <div class="space-y-md">
                 <label class="block">
@@ -1233,9 +1520,9 @@ const fieldClass =
                   </div>
                 </div>
               </div>
-            </div>
+            </details>
 
-            <div>
+            <div class="hidden md:block">
               <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
               <div
                 class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium"
@@ -1323,9 +1610,57 @@ const fieldClass =
         </aside>
       </template>
 
-      <Settings v-else-if="tab === 'compute'" />
+      <Settings v-else-if="tab === 'settings'" />
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
+
+    <div
+      v-if="tab === 'transcribe' && (recorderRef?.recording || (selectedEntry && progressByPath[selectedEntry.path] && status === 'running') || transcript)"
+      class="md:hidden shrink-0 border-t border-outline-variant/40 bg-surface-container-low px-margin py-xs flex items-center gap-xs font-mono text-labelSmall overflow-hidden"
+    >
+      <template v-if="recorderRef?.recording">
+        <span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0"></span>
+        <span class="text-error uppercase tracking-wide">REC</span>
+        <span class="text-on-surface ml-auto">{{ recorderRef?.elapsed }}</span>
+      </template>
+      <template v-else-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'">
+        <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
+        <span class="text-on-surface truncate min-w-0 flex-1" :title="selectedEntry.name">{{ selectedEntry.name }}</span>
+        <span class="text-secondary shrink-0">
+          <template v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
+            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% · ETA {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
+          </template>
+          <template v-else>{{ phaseLabel(progressByPath[selectedEntry.path].phase) }}</template>
+        </span>
+      </template>
+      <template v-else-if="transcript">
+        <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0">check_circle</span>
+        <span class="text-on-surface truncate min-w-0 flex-1" :title="selectedEntry?.name">{{ selectedEntry?.name ?? '—' }}</span>
+        <span class="text-on-surface-variant shrink-0">{{ fmtLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt · {{ transcript.speakers_detected }} spk</span>
+      </template>
+    </div>
+
+    <nav
+      class="md:hidden flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface"
+    >
+      <button
+        v-for="t in tabs"
+        :key="t.id"
+        @click="tab = t.id"
+        class="flex-1 flex flex-col items-center justify-center h-14 transition-colors"
+        :class="
+          tab === t.id
+            ? 'text-primary'
+            : 'text-on-surface-variant hover:text-on-surface'
+        "
+        :title="t.label"
+        :aria-label="t.label"
+      >
+        <TranscribeIcon v-if="t.id === 'transcribe'" :size="26" />
+        <SettingsIcon v-else-if="t.id === 'settings'" :size="26" />
+        <LogIcon v-else :size="26" />
+      </button>
+    </nav>
 
     <div
       v-if="renaming"
@@ -1575,69 +1910,39 @@ const fieldClass =
               <span class="material-symbols-outlined text-[20px] animate-pulse">graphic_eq</span>
               <span class="font-mono text-labelSmall">analysing…</span>
             </div>
-            <div class="relative">
-              <canvas ref="trimCanvas" width="720" height="120" class="w-full h-28 block"></canvas>
+            <div ref="waveformBox" class="relative select-none touch-none">
+              <canvas ref="trimCanvas" width="720" height="120" class="w-full h-28 block pointer-events-none"></canvas>
               <div
-                class="absolute top-0 bottom-0 border-l-2 border-r-2 border-primary pointer-events-none"
+                class="absolute top-0 bottom-0 bg-primary/15 border-l-2 border-r-2 border-primary pointer-events-none"
                 :style="{
                   left: trimStartFrac * 100 + '%',
                   right: (1 - trimEndFrac) * 100 + '%',
                 }"
               ></div>
+              <div
+                class="absolute -top-2 -bottom-2 -ml-7 w-14 cursor-ew-resize flex items-center justify-center touch-none"
+                :style="{ left: trimStartFrac * 100 + '%' }"
+                @pointerdown="(e) => beginHandleDrag('start', e)"
+              >
+                <div class="w-2 h-full bg-primary rounded-full shadow-lg"></div>
+              </div>
+              <div
+                class="absolute -top-2 -bottom-2 -ml-7 w-14 cursor-ew-resize flex items-center justify-center touch-none"
+                :style="{ left: trimEndFrac * 100 + '%' }"
+                @pointerdown="(e) => beginHandleDrag('end', e)"
+              >
+                <div class="w-2 h-full bg-primary rounded-full shadow-lg"></div>
+              </div>
             </div>
-            <audio
-              v-if="trimAudioSrc"
-              class="w-full h-10 mt-md"
-              controls
-              preload="metadata"
-              :src="trimAudioSrc"
-            ></audio>
+
           </div>
 
-          <div class="space-y-md">
-            <div>
-              <div
-                class="flex items-center justify-between font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide mb-unit"
-              >
-                <span>Start</span>
-                <span class="text-primary">{{ fmt(trimStart) }}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                :max="trimDuration"
-                step="100"
-                :value="trimStart"
-                class="w-full accent-primary"
-                @input="onTrimStartInput"
-              />
-            </div>
-            <div>
-              <div
-                class="flex items-center justify-between font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide mb-unit"
-              >
-                <span>End</span>
-                <span class="text-primary">{{ fmt(trimEnd) }}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                :max="trimDuration"
-                step="100"
-                :value="trimEnd"
-                class="w-full accent-primary"
-                @input="onTrimEndInput"
-              />
-            </div>
-            <div
-              class="flex justify-between font-mono text-labelSmall text-on-surface-variant pt-xs border-t border-outline-variant/40"
-            >
-              <span>0:00</span>
-              <span class="text-on-surface"
-                >selected {{ fmt(Math.max(0, trimEnd - trimStart)) }}</span
-              >
-              <span>{{ fmt(trimDuration) }}</span>
-            </div>
+          <div
+            class="flex justify-between font-mono text-labelMedium text-on-surface-variant pt-xs border-t border-outline-variant/40"
+          >
+            <span class="text-primary">{{ fmt(trimStart) }}</span>
+            <span class="text-on-surface">selected {{ fmt(Math.max(0, trimEnd - trimStart)) }}</span>
+            <span class="text-primary">{{ fmt(trimEnd) }}</span>
           </div>
         </div>
 
@@ -1645,25 +1950,35 @@ const fieldClass =
           class="px-margin py-md border-t border-outline-variant/40 bg-surface-container-low flex justify-between items-center gap-xs"
         >
           <button
-            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+            class="min-h-12 px-lg rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
             @click="resetTrim"
             title="Reset to full track"
           >
-            <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+            <span class="material-symbols-outlined text-[18px]">restart_alt</span>
             Full track
           </button>
           <div class="flex gap-xs">
             <button
-              class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
-              @click="closeTrim"
+              class="min-h-12 w-12 rounded-full border border-outline-variant text-primary hover:bg-surface-container-high transition-colors flex items-center justify-center"
+              :title="trimPlaying ? 'Stop' : 'Play selection'"
+              :disabled="!trimAudioSrc"
+              @click="toggleTrimPlay"
             >
-              Cancel
+              <span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1">{{ trimPlaying ? 'pause' : 'play_arrow' }}</span>
             </button>
             <button
-              class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
+              class="min-h-12 w-12 rounded-full border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"
+              title="Cancel"
+              @click="closeTrim"
+            >
+              <CancelIcon :size="20" />
+            </button>
+            <button
+              class="min-h-12 w-12 rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors flex items-center justify-center"
+              title="Save"
               @click="commitTrim"
             >
-              Save
+              <SaveIcon :size="20" />
             </button>
           </div>
         </div>

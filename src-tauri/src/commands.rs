@@ -506,6 +506,55 @@ pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
 }
 
 #[tauri::command]
+pub fn read_audio_bytes(path: PathBuf) -> Result<Vec<u8>> {
+    Ok(std::fs::read(&path)?)
+}
+
+#[tauri::command]
+pub fn save_recording(workdir: PathBuf, filename: String, bytes: Vec<u8>) -> Result<PathBuf> {
+    std::fs::create_dir_all(&workdir)?;
+    let safe = filename
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect::<String>();
+    let mut dst = workdir.join(&safe);
+    if dst.exists() {
+        let stem = std::path::Path::new(&safe)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("recording");
+        let ext = std::path::Path::new(&safe)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        for n in 1..=999 {
+            let candidate = if ext.is_empty() {
+                workdir.join(format!("{stem} ({n})"))
+            } else {
+                workdir.join(format!("{stem} ({n}).{ext}"))
+            };
+            if !candidate.exists() {
+                dst = candidate;
+                break;
+            }
+        }
+    }
+    std::fs::write(&dst, &bytes)?;
+    logfile::info(&format!(
+        "save_recording {} bytes -> {}",
+        bytes.len(),
+        dst.display()
+    ));
+    Ok(dst)
+}
+
+#[tauri::command]
 pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
     let trimmed = new_name.trim();
     if trimmed.is_empty() {

@@ -60,34 +60,38 @@ function levelClass(line: string): string {
 <template>
   <main class="flex-1 flex flex-col overflow-hidden bg-surface-container-lowest">
     <div
-      class="flex-1 flex flex-col overflow-hidden max-w-[768px] w-full mx-auto px-xl pt-xl pb-xl gap-md"
+      class="flex-1 flex flex-col overflow-hidden max-w-[768px] w-full mx-auto px-margin md:px-xl pt-margin md:pt-xl pb-margin md:pb-xl gap-md"
     >
       <div class="flex flex-col gap-md pb-md border-b border-outline-variant/50">
-        <div class="flex items-end justify-between gap-margin">
-          <div>
-            <h1 class="text-[24px] leading-[32px] font-bold text-on-surface">Application Log</h1>
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-md">
+          <div class="min-w-0">
+            <h1 class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface">
+              Application Log
+            </h1>
             <p class="text-bodyMedium text-on-surface-variant mt-unit">
               Persistent runtime log — engine errors, model installs, transcribe runs.
             </p>
           </div>
-          <div class="flex items-center gap-xs shrink-0">
+          <div class="flex items-center flex-wrap gap-xs shrink-0">
             <label
-              class="flex items-center gap-unit text-bodyMedium text-on-surface-variant cursor-pointer select-none"
+              class="flex items-center gap-unit text-bodyMedium text-on-surface-variant cursor-pointer select-none h-11 md:h-auto px-xs"
             >
-              <input v-model="auto" type="checkbox" class="accent-primary" />
+              <input v-model="auto" type="checkbox" class="accent-primary w-4 h-4" />
               auto-scroll
             </label>
             <button
               @click="refresh"
-              class="px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
             >
-              <span class="material-symbols-outlined text-[16px]">refresh</span> Refresh
+              <span class="material-symbols-outlined text-[18px] md:text-[16px]">refresh</span>
+              Refresh
             </button>
             <button
               @click="clear"
-              class="px-md py-xs rounded-full border border-error/60 text-error text-titleSmall hover:bg-error/10 transition-colors flex items-center gap-unit"
+              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-error/60 text-error text-titleSmall hover:bg-error/10 transition-colors flex items-center gap-unit"
             >
-              <span class="material-symbols-outlined text-[16px]">delete</span> Clear
+              <span class="material-symbols-outlined text-[18px] md:text-[16px]">delete</span>
+              Clear
             </button>
           </div>
         </div>

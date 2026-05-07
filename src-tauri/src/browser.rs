@@ -85,6 +85,9 @@ pub fn list(path: &Path) -> Result<DirListing> {
                     break;
                 }
             }
+            if duration_ms.is_none() {
+                duration_ms = audio::probe_duration_ms(&path);
+            }
             if let Some(m) = audio::meta::load(&path) {
                 if m.trim_start_ms > 0 {
                     trim_start_ms = Some(m.trim_start_ms);
@@ -124,14 +127,24 @@ pub fn list(path: &Path) -> Result<DirListing> {
 }
 
 pub fn home_dir() -> PathBuf {
-    let base = directories::UserDirs::new().map_or_else(
-        || PathBuf::from("."),
-        |u| {
-            u.document_dir()
-                .map_or_else(|| u.home_dir().to_path_buf(), Path::to_path_buf)
-        },
-    );
-    let dir = base.join("WTranscribe");
-    let _ = std::fs::create_dir_all(&dir);
-    dir
+    if let Some(p) = crate::paths::default_workdir_override() {
+        let _ = std::fs::create_dir_all(&p);
+        return p;
+    }
+    let base = directories::UserDirs::new().and_then(|u| {
+        u.document_dir()
+            .map(Path::to_path_buf)
+            .or_else(|| Some(u.home_dir().to_path_buf()))
+    });
+    let candidate = base.map(|b| b.join("WTranscribe"));
+    if let Some(dir) = candidate.as_ref()
+        && std::fs::create_dir_all(dir).is_ok()
+    {
+        return dir.clone();
+    }
+    let fallback = crate::paths::data_dir()
+        .map(|d| d.join("WTranscribe"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("WTranscribe"));
+    let _ = std::fs::create_dir_all(&fallback);
+    fallback
 }

@@ -44,6 +44,9 @@ export const api = {
     invoke<string>("export_transcript", { transcript, dest, format }),
   addToWorkdir: (source: string, workdir: string) =>
     invoke<string>("add_to_workdir", { source, workdir }),
+  saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
+    invoke<string>("save_recording", { workdir, filename, bytes: Array.from(bytes) }),
+  readAudioBytes: (path: string) => invoke<number[]>("read_audio_bytes", { path }),
 };
 
 export const events = {

@@ -37,30 +37,46 @@ pub struct Entry {
     pub size_bytes: u64,
     #[serde(default)]
     pub default_active: bool,
+    #[serde(default)]
+    pub android_default: bool,
+    #[serde(default)]
+    pub desktop_only: bool,
     pub files: Vec<FileSpec>,
 }
 
 static CATALOG: LazyLock<Vec<Entry>> = LazyLock::new(default_catalog);
 
-pub fn catalog() -> &'static [Entry] {
-    &CATALOG
+const IS_ANDROID: bool = cfg!(target_os = "android");
+
+fn visible(e: &Entry) -> bool {
+    !(IS_ANDROID && e.desktop_only)
+}
+
+pub fn catalog() -> Vec<&'static Entry> {
+    CATALOG.iter().filter(|e| visible(e)).collect()
 }
 
 pub fn by_id(id: &str) -> Option<&'static Entry> {
-    CATALOG.iter().find(|e| e.id == id)
+    CATALOG.iter().find(|e| e.id == id && visible(e))
 }
 
 #[allow(dead_code)]
 pub fn by_family(family: Family) -> Vec<&'static Entry> {
-    CATALOG.iter().filter(|e| e.family == family).collect()
+    CATALOG
+        .iter()
+        .filter(|e| e.family == family && visible(e))
+        .collect()
 }
 
 #[allow(dead_code)]
 pub fn default_id(family: Family) -> Option<&'static str> {
-    by_family(family)
-        .into_iter()
+    let list = by_family(family);
+    if IS_ANDROID && let Some(e) = list.iter().find(|e| e.android_default) {
+        return Some(e.id.as_str());
+    }
+    list.iter()
         .find(|e| e.default_active)
-        .or_else(|| by_family(family).into_iter().next())
+        .or_else(|| list.first())
         .map(|e| e.id.as_str())
 }
 
@@ -90,6 +106,8 @@ fn default_catalog() -> Vec<Entry> {
                 .into_iter().map(String::from).collect(),
             size_bytes: 1_036_613_791,
             default_active: true,
+            android_default: false,
+            desktop_only: false,
             files: vec![
                 FileSpec {
                     url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx".into(),
@@ -112,6 +130,71 @@ fn default_catalog() -> Vec<Entry> {
             ],
         },
         Entry {
+            id: "parakeet-tdt-0.6b-v3-int8".into(),
+            family: Family::Asr,
+            engine: "parakeet".into(),
+            display_name: "Parakeet TDT 0.6B v3 (25 EU langs)".into(),
+            description: "NVIDIA Parakeet TDT v3, 25 European languages. ~671 MB.".into(),
+            languages: vec!["bg","hr","cs","da","nl","en","et","fi","fr","de","el","hu","it","lv","lt","mt","pl","pt","ro","sk","sl","es","sv","ru","uk"]
+                .into_iter().map(String::from).collect(),
+            size_bytes: 670_478_772,
+            default_active: false,
+            android_default: false,
+            desktop_only: false,
+            files: vec![
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/encoder.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/encoder.int8.onnx".into(),
+                    size_bytes: 652_184_281,
+                    sha256: "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/decoder.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/decoder.int8.onnx".into(),
+                    size_bytes: 11_845_275,
+                    sha256: "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/joiner.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/joiner.int8.onnx".into(),
+                    size_bytes: 6_355_277,
+                    sha256: "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main/tokens.txt".into(),
+                    rel_path: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/tokens.txt".into(),
+                    size_bytes: 93_939,
+                    sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d".into(),
+                },
+            ],
+        },
+        Entry {
+            id: "gigaam-v3-ru".into(),
+            family: Family::Asr,
+            engine: "nemo-ctc".into(),
+            display_name: "GigaAM v3 (Russian)".into(),
+            description: "Sber GigaAM v3 NeMo CTC, Russian-only. Fast and accurate. ~225 MB.".into(),
+            languages: vec!["ru".into()],
+            size_bytes: 224_721_672,
+            default_active: false,
+            android_default: false,
+            desktop_only: false,
+            files: vec![
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-ctc-giga-am-v3-russian-2025-12-16/resolve/main/model.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-nemo-ctc-giga-am-v3-russian-2025-12-16/model.int8.onnx".into(),
+                    size_bytes: 224_721_476,
+                    sha256: "f86ebfa0429ced91be6054fc344827e9c6c2572f3c318416cd974b06f66437ec".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-ctc-giga-am-v3-russian-2025-12-16/resolve/main/tokens.txt".into(),
+                    rel_path: "sherpa-onnx-nemo-ctc-giga-am-v3-russian-2025-12-16/tokens.txt".into(),
+                    size_bytes: 196,
+                    sha256: "17cc514451bcceac9c280068c71502f8448f99e9fb1456b8d0761651fd0392f2".into(),
+                },
+            ],
+        },
+        Entry {
             id: "qwen3-0.6b-q4km".into(),
             family: Family::Llm,
             engine: "llama-cli".into(),
@@ -120,12 +203,58 @@ fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 396_705_472,
             default_active: true,
+            android_default: false,
+            desktop_only: false,
             files: vec![FileSpec {
                 url: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf".into(),
                 rel_path: "qwen3-0.6b-q4km.gguf".into(),
                 size_bytes: 396_705_472,
                 sha256: "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a".into(),
             }],
+        },
+        Entry {
+            id: "qwen3-1.7b-q4km".into(),
+            family: Family::Llm,
+            engine: "llama-cli".into(),
+            display_name: "Qwen3 1.7B (Q4_K_M, namer)".into(),
+            description: "Larger, slightly higher-quality naming. Slower on phone.".into(),
+            languages: Vec::new(),
+            size_bytes: 1_107_409_472,
+            default_active: false,
+            android_default: false,
+            desktop_only: false,
+            files: vec![FileSpec {
+                url: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf".into(),
+                rel_path: "qwen3-1.7b-q4km.gguf".into(),
+                size_bytes: 1_107_409_472,
+                sha256: "b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897".into(),
+            }],
+        },
+        Entry {
+            id: "diar-multilingual".into(),
+            family: Family::Diarizer,
+            engine: "sherpa".into(),
+            display_name: "Multilingual (pyannote-3.0 + CAM++ zh+en)".into(),
+            description: "3D-Speaker CAM++ zh+en advanced. Best multilingual + small (~34 MB).".into(),
+            languages: Vec::new(),
+            size_bytes: 34_274_077,
+            default_active: false,
+            android_default: false,
+            desktop_only: false,
+            files: vec![
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx".into(),
+                    rel_path: "sherpa-onnx-pyannote-segmentation-3-0/model.onnx".into(),
+                    size_bytes: 5_992_913,
+                    sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079".into(),
+                },
+                FileSpec {
+                    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx".into(),
+                    rel_path: "3dspeaker_campplus_zh_en_advanced.onnx".into(),
+                    size_bytes: 28_281_164,
+                    sha256: "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2".into(),
+                },
+            ],
         },
         Entry {
             id: "nemo-sortformer-v2".into(),
@@ -136,6 +265,8 @@ fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 0,
             default_active: true,
+            android_default: false,
+            desktop_only: true,
             files: Vec::new(),
         },
         Entry {
@@ -147,6 +278,8 @@ fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 0,
             default_active: false,
+            android_default: true,
+            desktop_only: false,
             files: vec![
                 FileSpec {
                     url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx".into(),
@@ -181,10 +314,11 @@ mod tests {
 
     #[test]
     fn diarizer_family_has_nemo_and_fallback() {
-        assert_eq!(by_family(Family::Diarizer).len(), 2);
+        assert!(by_family(Family::Diarizer).len() >= 2);
     }
 
     #[test]
+    #[cfg(not(target_os = "android"))]
     fn default_diarizer_is_nemo_sortformer() {
         assert_eq!(default_id(Family::Diarizer), Some("nemo-sortformer-v2"));
     }
