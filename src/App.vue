@@ -161,6 +161,14 @@ async function installSelectedModel() {
   }
 }
 
+const speakerOptions = computed<{ value: number; label: string }[]>(() => {
+  const choice = config.value?.diarizer ?? "auto";
+  const cap = choice === "nemo" ? 4 : 10;
+  const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
+  for (let i = 1; i <= cap; i++) opts.push({ value: i, label: String(i) });
+  return opts;
+});
+
 const languageOptions = computed(() => {
   const m = selectedAsrModel.value;
   const base = !m || !m.languages || !m.languages.length ? allLanguageOptions : m.languages;
@@ -1530,23 +1538,22 @@ const fieldClass =
                       class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
                       >Speakers</span
                     >
-                    <input
-                      :value="config.speakers && config.speakers > 0 ? String(config.speakers) : ''"
-                      type="number"
-                      min="1"
-                      max="20"
-                      placeholder="Auto"
+                    <select
+                      :value="config.speakers ?? 0"
                       :class="[fieldClass, 'mt-unit']"
-                      @input="
+                      @change="
                         (e) => {
-                          const v = (e.target as HTMLInputElement).value.trim();
-                          const n = v === '' ? 0 : Number(v);
+                          const n = Number((e.target as HTMLSelectElement).value);
                           if (!config) return;
                           config.speakers = n > 0 ? n : null;
                           if (n > 0 && !config.diarize) config.diarize = true;
                         }
                       "
-                    />
+                    >
+                      <option v-for="o in speakerOptions" :key="o.value" :value="o.value">
+                        {{ o.label }}
+                      </option>
+                    </select>
                   </label>
                 </div>
 
