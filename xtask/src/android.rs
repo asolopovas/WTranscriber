@@ -11,7 +11,7 @@ pub enum Cmd {
     /// Build APK for a target ABI (default aarch64)
     Build(TargetArgs),
     /// Build (debuggable), sign with debug.keystore, adb install -r — fast iteration
-    Install(TargetArgs),
+    Install(InstallArgs),
     /// Run `tauri android dev` for a target ABI
     Dev(DevArgs),
     /// Print Android toolchain locations and prebuilts status
@@ -41,6 +41,15 @@ pub struct TargetArgs {
 }
 
 #[derive(ClapArgs)]
+pub struct InstallArgs {
+    #[arg(long, default_value = "aarch64")]
+    pub target: String,
+    /// adb uninstall before installing (wipes app data, including downloaded models)
+    #[arg(long)]
+    pub fresh: bool,
+}
+
+#[derive(ClapArgs)]
 pub struct DevArgs {
     #[arg(long, default_value = "aarch64")]
     pub target: String,
@@ -59,7 +68,7 @@ pub struct CliArgs {
 pub fn run(c: Cmd) -> Result<()> {
     match c {
         Cmd::Build(a) => cmd_build(&a.target),
-        Cmd::Install(a) => cmd_install(&a.target),
+        Cmd::Install(a) => cmd_install(&a.target, a.fresh),
         Cmd::Dev(a) => cmd_dev(&a.target, a.open),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
@@ -248,7 +257,7 @@ fn cmd_build(target: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_install(target: &str) -> Result<()> {
+fn cmd_install(target: &str, fresh: bool) -> Result<()> {
     let t0 = std::time::Instant::now();
     ensure_prebuilts(target)?;
     let _ = sign_patch_inline()?;
@@ -278,13 +287,20 @@ fn cmd_install(target: &str) -> Result<()> {
     let signed = apk_dir.join("app-universal-release.apk");
     sign_with_debug_keystore(&unsigned, &signed)?;
     let signed_str = signed.to_string_lossy().to_string();
+    if fresh {
+        println!("\n→ adb uninstall com.asolopovas.wtranscriber (--fresh)");
+        let _ = std::process::Command::new("adb")
+            .args(["uninstall", "com.asolopovas.wtranscriber"])
+            .status();
+    }
     println!("\n→ adb install -r {}", signed.display());
     sh("adb", &["install", "-r", &signed_str])?;
     let mb = fs::metadata(&signed)?.len() as f64 / 1024.0 / 1024.0;
     println!(
-        "\n✓ installed {:.1} MB in {:.1}s",
+        "\n✓ installed {:.1} MB in {:.1}s{}",
         mb,
-        t0.elapsed().as_secs_f64()
+        t0.elapsed().as_secs_f64(),
+        if fresh { " (fresh, models will re-download)" } else { " (data preserved)" }
     );
     Ok(())
 }

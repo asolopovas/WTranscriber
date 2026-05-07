@@ -132,6 +132,64 @@ fn progress_emitter(
 }
 
 #[cfg(target_os = "android")]
+fn pick_persistent_models_dir(internal: std::path::PathBuf) -> std::path::PathBuf {
+    let public = std::path::PathBuf::from("/sdcard/WTranscriberModels");
+    let probe = public.join(".wtranscriber-write-test");
+    if let Some(parent) = probe.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let public_writable = match std::fs::write(&probe, b"ok") {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    };
+    if !public_writable {
+        logfile::info(&format!(
+            "android: public models dir unavailable (no MANAGE_EXTERNAL_STORAGE) — using {}",
+            internal.display()
+        ));
+        return internal;
+    }
+    let _ = std::fs::create_dir_all(&internal);
+    sync_models_bidirectional(&internal, &public);
+    logfile::info(&format!(
+        "android: persistent models dir = {} (mirrored from {})",
+        public.display(),
+        internal.display()
+    ));
+    public
+}
+
+#[cfg(target_os = "android")]
+fn sync_models_bidirectional(internal: &std::path::Path, public: &std::path::Path) {
+    if let Ok(entries) = std::fs::read_dir(internal) {
+        for e in entries.flatten() {
+            let src = e.path();
+            let Some(name) = src.file_name() else { continue };
+            let dst = public.join(name);
+            if dst.exists() {
+                continue;
+            }
+            match copy_recursive(&src, &dst) {
+                Ok(b) if b > 0 => logfile::info(&format!(
+                    "android: copied {} → public ({b} bytes)",
+                    name.to_string_lossy()
+                )),
+                Ok(_) => {
+                    let _ = remove_recursive(&dst);
+                }
+                Err(e) => logfile::error(&format!(
+                    "android: copy {} → public failed: {e}",
+                    src.display()
+                )),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
 fn migrate_legacy_android_data(new_data_dir: &std::path::Path, _workdir: &std::path::Path) {
     let legacy = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
     if !legacy.exists() {
@@ -305,7 +363,8 @@ pub fn run() {
                     fallback
                 };
                 paths::set_config_file(data_dir.join("config.yml"));
-                paths::set_models_dir(data_dir.join("models"));
+                let models_dir = pick_persistent_models_dir(data_dir.join("models"));
+                paths::set_models_dir(models_dir);
 
                 let ext_workdir = std::path::PathBuf::from(
                     "/sdcard/Android/data/com.asolopovas.wtranscriber/files/transcripts",

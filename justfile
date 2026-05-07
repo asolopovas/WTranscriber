@@ -73,6 +73,9 @@ android-build target="aarch64":
 android-install target="aarch64":
     cargo xtask android install --target {{target}}
 
+android-install-fresh target="aarch64":
+    cargo xtask android install --target {{target}} --fresh
+
 android-doctor target="aarch64":
     cargo xtask android doctor --target {{target}}
     @rustup target list --installed
