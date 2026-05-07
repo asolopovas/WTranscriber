@@ -244,32 +244,6 @@ fn default_catalog() -> Vec<Entry> {
             }],
         },
         Entry {
-            id: "diar-multilingual".into(),
-            family: Family::Diarizer,
-            engine: "sherpa".into(),
-            display_name: "Multilingual (pyannote-3.0 + CAM++ zh+en)".into(),
-            description: "3D-Speaker CAM++ zh+en advanced. Best multilingual + small (~34 MB).".into(),
-            languages: Vec::new(),
-            size_bytes: 34_274_077,
-            default_active: false,
-            android_default: false,
-            desktop_only: false,
-            files: vec![
-                FileSpec {
-                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx".into(),
-                    rel_path: "sherpa-onnx-pyannote-segmentation-3-0/model.onnx".into(),
-                    size_bytes: 5_992_913,
-                    sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079".into(),
-                },
-                FileSpec {
-                    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx".into(),
-                    rel_path: "3dspeaker_campplus_zh_en_advanced.onnx".into(),
-                    size_bytes: 28_281_164,
-                    sha256: "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2".into(),
-                },
-            ],
-        },
-        Entry {
             id: "nemo-sortformer-v2".into(),
             family: Family::Diarizer,
             engine: "nemo-sortformer".into(),
