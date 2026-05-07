@@ -10,6 +10,8 @@ use crate::util::{exe, root, sh, sh_in};
 pub enum Cmd {
     /// Build APK for a target ABI (default aarch64)
     Build(TargetArgs),
+    /// Build (debuggable), sign with debug.keystore, adb install -r — fast iteration
+    Install(TargetArgs),
     /// Run `tauri android dev` for a target ABI
     Dev(DevArgs),
     /// Print Android toolchain locations and prebuilts status
@@ -57,6 +59,7 @@ pub struct CliArgs {
 pub fn run(c: Cmd) -> Result<()> {
     match c {
         Cmd::Build(a) => cmd_build(&a.target),
+        Cmd::Install(a) => cmd_install(&a.target),
         Cmd::Dev(a) => cmd_dev(&a.target, a.open),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
@@ -242,6 +245,102 @@ fn cmd_build(target: &str) -> Result<()> {
         let mb = fs::metadata(&apk)?.len() as f64 / 1024.0 / 1024.0;
         println!("\nAPK: {}\nsize: {:.1} MB", apk.display(), mb);
     }
+    Ok(())
+}
+
+fn cmd_install(target: &str) -> Result<()> {
+    let t0 = std::time::Instant::now();
+    ensure_prebuilts(target)?;
+    let _ = sign_patch_inline()?;
+    copy_llama_jni(target)?;
+    patch_manifest()?;
+    let mut env = build_env(target)?;
+    env.push(("WT_DEV_APK".to_string(), "1".to_string()));
+    spawn_with_env(
+        "bun",
+        &["run", "tauri", "android", "build", "--target", target, "--apk"],
+        &env,
+    )?;
+    let apk_dir = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("app")
+        .join("build")
+        .join("outputs")
+        .join("apk")
+        .join("universal")
+        .join("release");
+    let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
+    if !unsigned.exists() {
+        bail!("unsigned APK not found at {}", unsigned.display());
+    }
+    let signed = apk_dir.join("app-universal-release.apk");
+    sign_with_debug_keystore(&unsigned, &signed)?;
+    let signed_str = signed.to_string_lossy().to_string();
+    println!("\n→ adb install -r {}", signed.display());
+    sh("adb", &["install", "-r", &signed_str])?;
+    let mb = fs::metadata(&signed)?.len() as f64 / 1024.0 / 1024.0;
+    println!(
+        "\n✓ installed {:.1} MB in {:.1}s",
+        mb,
+        t0.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
+fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let ks = Path::new(&home).join(".android").join("debug.keystore");
+    if !ks.exists() {
+        bail!("debug.keystore not found at {}", ks.display());
+    }
+    let sdk = std::env::var("ANDROID_HOME").unwrap_or_else(|_| {
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        format!("{local}\\Android\\Sdk")
+    });
+    let bt_dir = Path::new(&sdk).join("build-tools");
+    let bt_ver = fs::read_dir(&bt_dir)?
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .max()
+        .context("no Android build-tools installed")?;
+    let bt = bt_dir.join(bt_ver);
+    let zipalign = bt.join(exe("zipalign"));
+    let apksigner = if cfg!(target_os = "windows") {
+        bt.join("apksigner.bat")
+    } else {
+        bt.join("apksigner")
+    };
+    let aligned = unsigned.with_file_name("app-universal-release-aligned.apk");
+    let aligned_str = aligned.to_string_lossy().to_string();
+    let unsigned_str = unsigned.to_string_lossy().to_string();
+    let signed_str = signed.to_string_lossy().to_string();
+    let ks_str = ks.to_string_lossy().to_string();
+    sh(
+        zipalign.to_string_lossy().as_ref(),
+        &["-f", "-p", "4", &unsigned_str, &aligned_str],
+    )?;
+    sh(
+        apksigner.to_string_lossy().as_ref(),
+        &[
+            "sign",
+            "--ks",
+            &ks_str,
+            "--ks-pass",
+            "pass:android",
+            "--ks-key-alias",
+            "androiddebugkey",
+            "--key-pass",
+            "pass:android",
+            "--out",
+            &signed_str,
+            &aligned_str,
+        ],
+    )?;
+    let _ = fs::remove_file(&aligned);
     Ok(())
 }
 

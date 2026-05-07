@@ -365,11 +365,18 @@ onMounted(async () => {
   unlistenProgress = await events.onTranscribeProgress((p) => {
     progressByPath.value = { ...progressByPath.value, [p.path]: p };
   });
-  const refreshModels = async () => {
+  const refreshModels = async (id?: string) => {
     models.value = await api.listModels();
+    if (id && error.value && error.value.includes("not installed") && config.value?.model === id) {
+      error.value = null;
+    }
   };
-  unlistenModelDone = await events.onModelDone(refreshModels);
-  unlistenModelError = await events.onModelError(refreshModels);
+  unlistenModelDone = await events.onModelDone((id) => {
+    void refreshModels(id);
+  });
+  unlistenModelError = await events.onModelError(() => {
+    void refreshModels();
+  });
   unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
     if (tab.value !== "transcribe") return;
     if (event.payload.type === "over") dragOver.value = true;
