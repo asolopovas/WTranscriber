@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { api, events } from "./api";
 import type {
   AudioMeta,
@@ -627,50 +626,33 @@ const exporting = ref(false);
 const exportTarget = ref<DirEntry | null>(null);
 const exportFormat = ref<ExportFormat>("txt");
 
-const previewing = ref(false);
-const previewTarget = ref<DirEntry | null>(null);
-const previewTranscript = ref<Transcript | null>(null);
-const previewLoading = ref(false);
-const previewError = ref<string | null>(null);
-const previewAudioSrc = ref("");
-const previewWaveform = ref<HTMLCanvasElement | null>(null);
-
-async function openPreview(entry?: DirEntry) {
-  const target = entry ?? selectedEntry.value;
-  if (!target) return;
-  if (renaming.value || exporting.value || previewing.value) return;
-  previewTarget.value = target;
-  previewError.value = null;
-  previewTranscript.value = null;
-  previewAudioSrc.value = target.is_audio ? convertFileSrc(target.path) : "";
-  previewing.value = true;
-  if (target.is_audio) void drawWaveform(target.path);
-  let t: Transcript | null = null;
-  if (transcript.value && selectedEntry.value && selectedEntry.value.path === target.path) {
-    t = transcript.value;
-  }
-  if (!t && target.cache_key) {
-    previewLoading.value = true;
-    try {
-      t = await api.historyLoad(target.cache_key);
-    } catch (e) {
-      previewError.value = String(e);
-    } finally {
-      previewLoading.value = false;
-    }
-  }
-  if (!t && !previewError.value) {
-    previewError.value = "No transcript available — transcribe this file first.";
-  }
-  previewTranscript.value = t;
-}
-
-function closePreview() {
-  previewing.value = false;
-  previewTarget.value = null;
-  previewTranscript.value = null;
-  previewError.value = null;
-  previewAudioSrc.value = "";
+const TRANSCRIPT_HEIGHT_KEY = "wt.transcriptHeightVh";
+const transcriptHeightVh = ref(
+  (() => {
+    const v = Number(localStorage.getItem(TRANSCRIPT_HEIGHT_KEY) ?? "");
+    return Number.isFinite(v) && v >= 20 && v <= 80 ? v : 40;
+  })(),
+);
+watch(transcriptHeightVh, (v) => {
+  localStorage.setItem(TRANSCRIPT_HEIGHT_KEY, String(Math.round(v)));
+});
+const resizingTranscript = ref(false);
+function beginTranscriptResize(ev: PointerEvent) {
+  ev.preventDefault();
+  resizingTranscript.value = true;
+  const move = (e: PointerEvent) => {
+    const vh = ((window.innerHeight - e.clientY) / window.innerHeight) * 100;
+    transcriptHeightVh.value = Math.max(20, Math.min(80, vh));
+  };
+  const up = () => {
+    resizingTranscript.value = false;
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
 }
 
 function drawWaveformFallback(canvas: HTMLCanvasElement) {
@@ -704,22 +686,6 @@ function drawWaveformPeaks(canvas: HTMLCanvasElement, peaks: number[], startFrac
   });
 }
 
-async function drawWaveform(path: string) {
-  await nextTick();
-  const canvas = previewWaveform.value;
-  if (!canvas || !path) return;
-  try {
-    const peaks = await api.audioWaveform(path, 160);
-    if (peaks.length) {
-      drawWaveformPeaks(canvas, peaks);
-    } else {
-      drawWaveformFallback(canvas);
-    }
-  } catch {
-    drawWaveformFallback(canvas);
-  }
-}
-
 const trimming = ref(false);
 const trimTarget = ref<DirEntry | null>(null);
 const trimDuration = ref(0);
@@ -743,7 +709,7 @@ const loadingTrimPath = ref<string | null>(null);
 function openTrim(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio) return;
-  if (trimming.value || renaming.value || exporting.value || previewing.value) return;
+  if (trimming.value || renaming.value || exporting.value) return;
   if (loadingTrimPath.value) return;
   loadingTrimPath.value = target.path;
   trimError.value = null;
@@ -1000,18 +966,6 @@ function closeTrim() {
   trimTarget.value = null;
   trimAudioSrc.value = "";
   trimError.value = null;
-}
-
-async function copyPreviewText() {
-  if (!previewTranscript.value) return;
-  const text = previewTranscript.value.utterances
-    .map((u) => (u.speaker ? `${u.speaker}: ${u.text}` : u.text))
-    .join("\n\n");
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (e) {
-    previewError.value = `Copy failed: ${String(e)}`;
-  }
 }
 
 async function openExport(entry?: DirEntry) {
@@ -1523,8 +1477,21 @@ const fieldClass =
 
           <div
             v-if="transcript"
-            class="border-t border-outline-variant/40 max-h-[40%] overflow-y-auto scroll-thin p-margin shrink-0"
+            class="relative shrink-0 border-t border-outline-variant/40 flex flex-col"
+            :style="{ height: transcriptHeightVh + 'vh' }"
           >
+            <div
+              class="absolute -top-1 left-0 right-0 h-2 cursor-row-resize touch-none flex items-center justify-center group z-10"
+              :class="resizingTranscript ? 'bg-primary/20' : ''"
+              @pointerdown="beginTranscriptResize"
+              title="Drag to resize transcript pane"
+            >
+              <div
+                class="w-12 h-1 rounded-full transition-colors"
+                :class="resizingTranscript ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'"
+              ></div>
+            </div>
+            <div class="flex-1 overflow-y-auto scroll-thin p-margin">
             <div class="flex items-center justify-between mb-md">
               <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
                 <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
@@ -1559,6 +1526,7 @@ const fieldClass =
                 </p>
               </div>
             </article>
+            </div>
           </div>
         </section>
 
@@ -1987,135 +1955,6 @@ const fieldClass =
           >
             Save…
           </button>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="previewing"
-      class="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-margin"
-      @click.self="closePreview"
-      @keydown.escape="closePreview"
-    >
-      <div
-        class="bg-surface-container rounded-xl border border-outline-variant/50 w-full max-w-[768px] max-h-[85vh] flex flex-col overflow-hidden shadow-2xl"
-      >
-        <div
-          class="px-margin py-md border-b border-outline-variant/40 bg-surface-container-low flex items-start gap-md"
-        >
-          <span class="material-symbols-outlined text-primary text-[22px] mt-unit">subtitles</span>
-          <div class="flex-1 min-w-0">
-            <h3 class="text-titleSmall text-on-surface">Transcript preview</h3>
-            <p
-              class="font-mono text-labelSmall text-on-surface-variant truncate"
-              :title="previewTarget?.name"
-            >
-              {{ previewTarget?.name ?? "—" }}
-            </p>
-            <div
-              v-if="previewTranscript"
-              class="flex flex-wrap gap-md mt-xs font-mono text-labelSmall text-on-surface-variant"
-            >
-              <span class="flex items-center gap-unit">
-                <span class="material-symbols-outlined text-[14px]">schedule</span>
-                {{ fmtLong(previewTranscript.duration_ms) }}
-              </span>
-              <span class="flex items-center gap-unit">
-                <span class="material-symbols-outlined text-[14px]">format_list_bulleted</span>
-                {{ previewTranscript.utterances.length }} utterances
-              </span>
-              <span
-                v-if="previewTranscript.speakers_detected"
-                class="flex items-center gap-unit text-primary"
-              >
-                <span class="material-symbols-outlined text-[14px]">groups</span>
-                {{ previewTranscript.speakers_detected }} speakers
-              </span>
-            </div>
-          </div>
-          <div class="flex items-center gap-xs shrink-0">
-            <button
-              v-if="previewTranscript"
-              @click="copyPreviewText"
-              class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
-              title="Copy plain text"
-            >
-              <span class="material-symbols-outlined text-[16px]">content_copy</span>
-              Copy
-            </button>
-            <button
-              class="material-symbols-outlined text-[20px] p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
-              title="Close"
-              @click="closePreview"
-            >
-              close
-            </button>
-          </div>
-        </div>
-
-        <div
-          v-if="previewError"
-          class="mx-margin mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
-        >
-          {{ previewError }}
-        </div>
-
-        <div v-if="previewAudioSrc" class="px-margin pt-md">
-          <div class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md">
-            <canvas
-              ref="previewWaveform"
-              data-testid="preview-waveform"
-              width="640"
-              height="96"
-              class="w-full h-16 block"
-            ></canvas>
-            <audio
-              class="w-full h-10 mt-md"
-              controls
-              preload="metadata"
-              :src="previewAudioSrc"
-            ></audio>
-          </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto scroll-thin px-margin py-md">
-          <div
-            v-if="previewLoading"
-            class="h-full flex flex-col items-center justify-center gap-xs text-on-surface-variant"
-          >
-            <span class="material-symbols-outlined text-[32px] animate-pulse">graphic_eq</span>
-            <p class="text-bodyMedium">Loading transcript…</p>
-          </div>
-          <div
-            v-else-if="previewTranscript && previewTranscript.utterances.length"
-            class="flex flex-col gap-xs"
-          >
-            <article
-              v-for="(u, i) in previewTranscript.utterances"
-              :key="i"
-              class="flex gap-md items-start group hover:bg-surface-container-high/40 -mx-xs px-xs py-xs rounded transition-colors"
-            >
-              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
-                fmt(u.start_ms)
-              }}</span>
-              <div class="flex-1 min-w-0">
-                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
-                  {{ u.speaker }}
-                </div>
-                <p
-                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
-                >
-                  {{ u.text }}
-                </p>
-              </div>
-            </article>
-          </div>
-          <div
-            v-else-if="!previewError"
-            class="h-full flex items-center justify-center text-outline italic"
-          >
-            (transcript is empty)
-          </div>
         </div>
       </div>
     </div>
