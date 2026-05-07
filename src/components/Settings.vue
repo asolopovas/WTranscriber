@@ -79,6 +79,9 @@ function fmtBytes(n: number): string {
 onMounted(async () => {
   config.value = await api.loadConfig();
   sys.value = await api.systemInfo();
+  if (config.value && sys.value && config.value.threads > sys.value.cpu_threads) {
+    config.value.threads = sys.value.cpu_threads;
+  }
   await refreshModels();
   unlisten.push(
     await events.onModelProgress((p) => {
@@ -257,12 +260,12 @@ const fieldClass =
                 v-model.number="config.threads"
                 type="number"
                 min="1"
-                max="32"
+                :max="sys?.cpu_threads ?? 32"
                 :class="fieldClass"
               />
-              <span class="text-bodyMedium text-on-surface-variant"
-                >CPU worker threads (1–32).</span
-              >
+              <span class="text-bodyMedium text-on-surface-variant">
+                CPU worker threads (1–{{ sys?.cpu_threads ?? 32 }}). 0 = auto.
+              </span>
             </label>
           </div>
         </section>
