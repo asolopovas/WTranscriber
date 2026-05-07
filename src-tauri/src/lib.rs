@@ -177,12 +177,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .setup(|app| {
-            use tauri::Manager;
-            let p = app.path();
-            if let (Ok(c), Ok(d), Ok(k)) = (p.app_config_dir(), p.app_data_dir(), p.app_cache_dir())
-            {
-                paths::init(c, d, k);
-            }
             #[cfg(target_os = "android")]
             {
                 let workdir = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
