@@ -640,9 +640,12 @@ const resizingTranscript = ref(false);
 function beginTranscriptResize(ev: PointerEvent) {
   ev.preventDefault();
   resizingTranscript.value = true;
+  const startY = ev.clientY;
+  const startVh = transcriptHeightVh.value;
   const move = (e: PointerEvent) => {
-    const vh = ((window.innerHeight - e.clientY) / window.innerHeight) * 100;
-    transcriptHeightVh.value = Math.max(20, Math.min(80, vh));
+    const deltaPx = startY - e.clientY;
+    const deltaVh = (deltaPx / window.innerHeight) * 100;
+    transcriptHeightVh.value = Math.max(20, Math.min(80, startVh + deltaVh));
   };
   const up = () => {
     resizingTranscript.value = false;
