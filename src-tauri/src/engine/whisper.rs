@@ -20,7 +20,7 @@ struct WhisperPaths {
 }
 
 fn resolve_paths(model_id: &str) -> Result<WhisperPaths> {
-    let dir = paths::models_dir()?.join(model_id);
+    let dir = crate::models::model_dir(model_id)?;
     let stems: &[&str] = &[
         model_id,
         model_id.strip_prefix("sherpa-whisper-").unwrap_or(model_id),

@@ -43,6 +43,20 @@ impl Engine {
     }
 }
 
+impl std::str::FromStr for Engine {
+    type Err = ();
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "whisper-onnx" => Ok(Self::WhisperOnnx),
+            "zipformer" => Ok(Self::Zipformer),
+            "parakeet" => Ok(Self::Parakeet),
+            "canary" => Ok(Self::Canary),
+            "nemo-ctc" => Ok(Self::NemoCtc),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Device {

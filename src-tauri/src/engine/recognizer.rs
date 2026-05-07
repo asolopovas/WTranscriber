@@ -134,7 +134,7 @@ fn build(config: &Config) -> Result<OfflineRecognizer> {
 }
 
 fn model_dir(model_id: &str) -> Result<PathBuf> {
-    Ok(paths::models_dir()?.join(model_id))
+    Ok(crate::models::model_dir(model_id)?)
 }
 
 fn locate_three(
@@ -145,17 +145,28 @@ fn locate_three(
     let no_sherpa = model_id.strip_prefix("sherpa-").unwrap_or(model_id);
     let last_segment = model_id.rsplit('-').next().unwrap_or(model_id);
     let stems: &[&str] = &[model_id, no_sherpa, last_segment, ""];
-    for stem in stems {
-        let prefix = if stem.is_empty() {
-            String::new()
-        } else {
-            format!("{stem}-")
-        };
-        let p0 = dir.join(format!("{prefix}{}", suffixes[0]));
-        let p1 = dir.join(format!("{prefix}{}", suffixes[1]));
-        let p2 = dir.join(format!("{prefix}{}", suffixes[2]));
-        if p0.exists() && p1.exists() && p2.exists() {
-            return Ok([p0, p1, p2]);
+    let int8_suffixes: [String; 3] = [
+        suffixes[0].replace(".onnx", ".int8.onnx"),
+        suffixes[1].replace(".onnx", ".int8.onnx"),
+        suffixes[2].replace(".onnx", ".int8.onnx"),
+    ];
+    let variants: [[&str; 3]; 2] = [
+        [&int8_suffixes[0], &int8_suffixes[1], &int8_suffixes[2]],
+        [suffixes[0], suffixes[1], suffixes[2]],
+    ];
+    for variant in &variants {
+        for stem in stems {
+            let prefix = if stem.is_empty() {
+                String::new()
+            } else {
+                format!("{stem}-")
+            };
+            let p0 = dir.join(format!("{prefix}{}", variant[0]));
+            let p1 = dir.join(format!("{prefix}{}", variant[1]));
+            let p2 = dir.join(format!("{prefix}{}", variant[2]));
+            if p0.exists() && p1.exists() && p2.exists() {
+                return Ok([p0, p1, p2]);
+            }
         }
     }
     Err(Error::Transcribe(format!(
@@ -240,11 +251,20 @@ fn nemo_ctc_config(
     threads: u32,
 ) -> Result<OfflineRecognizerConfig> {
     let dir = model_dir(&config.model)?;
-    let model = dir.join("model.onnx");
     let tokens = dir.join("tokens.txt");
-    if !model.exists() || !tokens.exists() {
+    let model = ["model.int8.onnx", "model.onnx"]
+        .into_iter()
+        .map(|n| dir.join(n))
+        .find(|p| p.exists())
+        .ok_or_else(|| {
+            Error::Transcribe(format!(
+                "model(.int8).onnx or tokens.txt missing in {}",
+                dir.display()
+            ))
+        })?;
+    if !tokens.exists() {
         return Err(Error::Transcribe(format!(
-            "model.onnx or tokens.txt missing in {}",
+            "tokens.txt missing in {}",
             dir.display()
         )));
     }

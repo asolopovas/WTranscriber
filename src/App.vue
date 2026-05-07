@@ -120,25 +120,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "logs", label: "Logs" },
 ];
 
-const engineLabels = {
-  "whisper-onnx": "Whisper (ONNX)",
-  zipformer: "Zipformer",
-  parakeet: "Parakeet (NeMo)",
-  canary: "Canary",
-  "nemo-ctc": "NeMo CTC",
-} as const;
-
-const engineOptions = Object.entries(engineLabels).map(([value, label]) => ({ value, label }));
-
-const fallbackEngineOptions = [
-  { value: "whisper-onnx", label: "Whisper (ONNX)" },
-  { value: "zipformer", label: "Zipformer" },
-  { value: "parakeet", label: "Parakeet (NeMo)" },
-  { value: "canary", label: "Canary" },
-  { value: "nemo-ctc", label: "NeMo CTC" },
-] as const;
-
-const languageOptions = ["auto", "en", "de", "fr", "es", "it", "pt", "ru", "uk", "zh", "ja", "ko"];
+const allLanguageOptions = ["auto", "en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "zh", "ja", "ko", "ar", "tr", "hi"];
 
 const exportFormats: { value: ExportFormat; label: string }[] = [
   { value: "txt", label: "Plain text (.txt)" },
@@ -152,15 +134,36 @@ const asrModels = computed(() =>
   models.value.filter((m) => m.family === "asr" && m.status === "installed"),
 );
 
-const availableEngineOptions = computed(() => {
-  const engines = new Set(asrModels.value.map((m) => m.engine));
-  const options = engineOptions.filter((o) => engines.has(o.value));
-  return options.length ? options : fallbackEngineOptions;
-});
+const allAsrModels = computed(() => models.value.filter((m) => m.family === "asr"));
 
-const compatibleAsrModels = computed(() =>
-  asrModels.value.filter((m) => m.engine === config.value?.engine),
+const selectedAsrModel = computed(() =>
+  allAsrModels.value.find((m) => m.id === config.value?.model) ?? null,
 );
+
+const selectedModelInstalled = computed(
+  () => selectedAsrModel.value?.status === "installed",
+);
+
+const installingSelected = ref(false);
+async function installSelectedModel() {
+  const id = config.value?.model;
+  if (!id) return;
+  installingSelected.value = true;
+  try {
+    await api.installModel(id);
+    models.value = await api.listModels();
+  } catch (e) {
+    console.error("install failed", e);
+  } finally {
+    installingSelected.value = false;
+  }
+}
+
+const languageOptions = computed(() => {
+  const m = selectedAsrModel.value;
+  if (!m || !m.languages || !m.languages.length) return allLanguageOptions;
+  return m.languages;
+});
 
 function syncEngineAndModel(next: Config, preferEngine = false) {
   const installed = asrModels.value;
@@ -186,12 +189,13 @@ function syncEngineAndModel(next: Config, preferEngine = false) {
   next.model = fallback.id;
 }
 
-function onEngineChanged() {
-  if (config.value) syncEngineAndModel(config.value, true);
-}
-
 function onModelChanged() {
-  if (config.value) syncEngineAndModel(config.value);
+  if (!config.value) return;
+  syncEngineAndModel(config.value);
+  const opts = languageOptions.value;
+  if (opts.length && !opts.includes(config.value.language)) {
+    config.value.language = opts.includes("auto") ? "auto" : opts[0];
+  }
 }
 
 const selectedEntry = computed<DirEntry | null>(() => {
@@ -362,6 +366,11 @@ async function runTranscribe(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !config.value) return;
   if (!target.is_audio) return;
+  if (!selectedModelInstalled.value) {
+    error.value = `Model "${selectedAsrModel.value?.display_name ?? config.value.model}" is not installed. Download it in Configuration.`;
+    tab.value = "transcribe";
+    return;
+  }
   selectedPath.value = target.path;
   status.value = "running";
   error.value = null;
@@ -633,7 +642,6 @@ async function doOpenTrim(target: DirEntry) {
   let nextStart = 0;
   let nextEnd = 0;
   let nextPeaks: number[] = [];
-  const nextSrc = convertFileSrc(target.path);
   try {
     const [durMs, meta, peaks] = await Promise.all([
       api.probeAudio(target.path).catch(() => null),
@@ -651,10 +659,13 @@ async function doOpenTrim(target: DirEntry) {
     return;
   }
   trimTarget.value = target;
-  trimAudioSrc.value = nextSrc;
+  trimAudioSrc.value = "";
   trimDuration.value = nextDur;
   trimStart.value = nextStart;
   trimEnd.value = nextEnd;
+  trimPlayOffsetMs = nextStart;
+  trimAudioBuffer = null;
+  trimAudioPath = null;
   trimPeaks.value = nextPeaks;
   trimLoading.value = false;
   trimming.value = true;
@@ -680,24 +691,59 @@ watch([trimStart, trimEnd, trimPeaks], () => {
 const waveformBox = ref<HTMLElement | null>(null);
 const MIN_TRIM_GAP_MS = 10_000;
 const trimPlaying = ref(false);
-let trimAudio: HTMLAudioElement | null = null;
+const trimAudioLoading = ref(false);
+let trimAudioCtx: AudioContext | null = null;
+let trimAudioBuffer: AudioBuffer | null = null;
+let trimAudioSource: AudioBufferSourceNode | null = null;
+let trimPlayStartCtx = 0;
+let trimPlayOffsetMs = 0;
+let trimAudioPath: string | null = null;
 let trimStopTimer: ReturnType<typeof setTimeout> | null = null;
 
-function stopTrimPlay() {
-  if (trimAudio) {
-    trimAudio.pause();
-    trimAudio.src = "";
-    trimAudio = null;
+async function ensureTrimBuffer(): Promise<AudioBuffer | null> {
+  const target = trimTarget.value;
+  if (!target) return null;
+  if (trimAudioBuffer && trimAudioPath === target.path) return trimAudioBuffer;
+  trimAudioLoading.value = true;
+  try {
+    const bytes = await api.readAudioBytes(target.path);
+    if (!trimAudioCtx) trimAudioCtx = new AudioContext();
+    const ab = new Uint8Array(bytes).buffer;
+    trimAudioBuffer = await trimAudioCtx.decodeAudioData(ab);
+    trimAudioPath = target.path;
+    return trimAudioBuffer;
+  } finally {
+    trimAudioLoading.value = false;
+  }
+}
+
+function clearTrimSource() {
+  if (trimAudioSource) {
+    try {
+      trimAudioSource.onended = null;
+      trimAudioSource.stop();
+    } catch {}
+    try {
+      trimAudioSource.disconnect();
+    } catch {}
+    trimAudioSource = null;
   }
   if (trimStopTimer) clearTimeout(trimStopTimer);
   trimStopTimer = null;
+}
+
+function stopTrimPlay() {
+  clearTrimSource();
+  trimPlayOffsetMs = trimStart.value;
   trimPlaying.value = false;
 }
 
 function pauseTrimPlay() {
-  if (trimAudio) trimAudio.pause();
-  if (trimStopTimer) clearTimeout(trimStopTimer);
-  trimStopTimer = null;
+  if (trimPlaying.value && trimAudioCtx) {
+    const elapsed = (trimAudioCtx.currentTime - trimPlayStartCtx) * 1000;
+    trimPlayOffsetMs = Math.min(trimEnd.value, trimPlayOffsetMs + elapsed);
+  }
+  clearTrimSource();
   trimPlaying.value = false;
 }
 
@@ -706,28 +752,35 @@ async function toggleTrimPlay() {
     pauseTrimPlay();
     return;
   }
-  if (!trimAudioSrc.value) return;
-  if (!trimAudio) {
-    trimAudio = new Audio(trimAudioSrc.value);
-    trimAudio.currentTime = trimStart.value / 1000;
-    trimAudio.onended = () => stopTrimPlay();
-    trimAudio.onerror = () => stopTrimPlay();
-    trimAudio.ontimeupdate = () => {
-      if (trimAudio && trimAudio.currentTime * 1000 >= trimEnd.value) stopTrimPlay();
-    };
-  } else {
-    const ms = trimAudio.currentTime * 1000;
-    if (ms < trimStart.value || ms >= trimEnd.value) trimAudio.currentTime = trimStart.value / 1000;
-  }
-  try {
-    await trimAudio.play();
-    trimPlaying.value = true;
-    const remaining = Math.max(0, trimEnd.value - trimAudio.currentTime * 1000);
-    trimStopTimer = setTimeout(stopTrimPlay, remaining + 250);
-  } catch (e) {
-    trimError.value = `play: ${String(e)}`;
-    stopTrimPlay();
-  }
+  const buffer = await ensureTrimBuffer().catch((e) => {
+    trimError.value = `load: ${String(e)}`;
+    return null;
+  });
+  if (!buffer || !trimAudioCtx) return;
+  if (trimAudioCtx.state === "suspended") await trimAudioCtx.resume();
+  let offsetMs = trimPlayOffsetMs;
+  if (offsetMs < trimStart.value || offsetMs >= trimEnd.value) offsetMs = trimStart.value;
+  const durMs = Math.max(0, trimEnd.value - offsetMs);
+  const src = trimAudioCtx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(trimAudioCtx.destination);
+  src.onended = () => {
+    if (trimAudioSource === src) {
+      trimAudioSource = null;
+      trimPlayOffsetMs = trimStart.value;
+      trimPlaying.value = false;
+    }
+  };
+  trimAudioSource = src;
+  trimPlayStartCtx = trimAudioCtx.currentTime;
+  trimPlayOffsetMs = offsetMs;
+  src.start(0, offsetMs / 1000, durMs / 1000);
+  trimPlaying.value = true;
+  trimStopTimer = setTimeout(() => {
+    if (trimAudioSource === src) clearTrimSource();
+    trimPlayOffsetMs = trimStart.value;
+    trimPlaying.value = false;
+  }, durMs + 200);
 }
 
 function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
@@ -776,9 +829,11 @@ async function commitTrim() {
   try {
     await api.saveAudioMeta(target.path, meta);
     stopTrimPlay();
+    trimAudioBuffer = null;
+    trimAudioPath = null;
+    trimPlayOffsetMs = 0;
     trimming.value = false;
     trimTarget.value = null;
-    if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
     trimAudioSrc.value = "";
     await refreshListing();
   } catch (e) {
@@ -788,9 +843,11 @@ async function commitTrim() {
 
 function closeTrim() {
   stopTrimPlay();
+  trimAudioBuffer = null;
+  trimAudioPath = null;
+  trimPlayOffsetMs = 0;
   trimming.value = false;
   trimTarget.value = null;
-  if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
   trimAudioSrc.value = "";
   trimError.value = null;
 }
@@ -1385,22 +1442,6 @@ const fieldClass =
                 <label class="block">
                   <span
                     class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Engine</span
-                  >
-                  <select
-                    v-model="config.engine"
-                    :class="[fieldClass, 'mt-unit']"
-                    @change="onEngineChanged"
-                  >
-                    <option v-for="o in availableEngineOptions" :key="o.value" :value="o.value">
-                      {{ o.label }}
-                    </option>
-                  </select>
-                </label>
-
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
                     >Model</span
                   >
                   <select
@@ -1408,14 +1449,34 @@ const fieldClass =
                     :class="[fieldClass, 'mt-unit']"
                     @change="onModelChanged"
                   >
-                    <option v-if="!asrModels.length" :value="config.model" disabled>
-                      No installed models — open Models tab
-                    </option>
-                    <option v-for="m in compatibleAsrModels" :key="m.id" :value="m.id">
-                      {{ m.display_name }}
+                    <option v-for="m in allAsrModels" :key="m.id" :value="m.id">
+                      {{ m.display_name }}{{ m.status === 'installed' ? '' : ' \u2014 not installed' }}
                     </option>
                   </select>
                 </label>
+
+                <div
+                  v-if="selectedAsrModel && !selectedModelInstalled"
+                  class="flex items-center gap-md p-md rounded-lg bg-error-container/40 border border-error/40"
+                >
+                  <span class="material-symbols-outlined text-error">cloud_download</span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-bodyMedium text-on-surface">Model not installed</div>
+                    <div class="text-labelSmall text-on-surface-variant truncate">
+                      {{ selectedAsrModel.display_name }} · {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="px-md h-9 rounded-md bg-primary text-on-primary text-labelLarge inline-flex items-center gap-xs disabled:opacity-50"
+                    :disabled="installingSelected || selectedAsrModel.status === 'downloading'"
+                    @click="installSelectedModel"
+                  >
+                    <Spinner v-if="installingSelected || selectedAsrModel.status === 'downloading'" :size="16" />
+                    <span v-else class="material-symbols-outlined text-[18px]">download</span>
+                    {{ selectedAsrModel.status === 'downloading' ? 'Downloading…' : (installingSelected ? 'Starting…' : 'Download') }}
+                  </button>
+                </div>
 
                 <div class="grid grid-cols-2 gap-md">
                   <label class="block">
@@ -1424,7 +1485,7 @@ const fieldClass =
                       >Language</span
                     >
                     <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
-                      <option v-for="l in languageOptions" :key="l" :value="l">{{ l }}</option>
+                      <option v-for="l in languageOptions" :key="l" :value="l">{{ l === 'auto' ? 'Auto' : l }}</option>
                     </select>
                   </label>
                   <label class="block">
@@ -1461,22 +1522,21 @@ const fieldClass =
                       >Speakers</span
                     >
                     <input
-                      :value="config.speakers ?? 0"
+                      :value="config.speakers && config.speakers > 0 ? String(config.speakers) : ''"
                       type="number"
-                      min="0"
+                      min="1"
                       max="20"
+                      placeholder="Auto"
                       :disabled="!config.diarize"
                       :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
                       @input="
                         (e) => {
-                          const n = Number((e.target as HTMLInputElement).value);
+                          const v = (e.target as HTMLInputElement).value.trim();
+                          const n = v === '' ? 0 : Number(v);
                           if (config) config.speakers = n > 0 ? n : null;
                         }
                       "
                     />
-                    <span class="font-mono text-labelSmall text-outline mt-unit block"
-                      >0 = auto</span
-                    >
                   </label>
                 </div>
 
@@ -1961,10 +2021,11 @@ const fieldClass =
             <button
               class="min-h-12 w-12 rounded-full border border-outline-variant text-primary hover:bg-surface-container-high transition-colors flex items-center justify-center"
               :title="trimPlaying ? 'Stop' : 'Play selection'"
-              :disabled="!trimAudioSrc"
+              :disabled="trimAudioLoading || !trimTarget"
               @click="toggleTrimPlay"
             >
-              <span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1">{{ trimPlaying ? 'pause' : 'play_arrow' }}</span>
+              <Spinner v-if="trimAudioLoading" :size="20" />
+              <span v-else class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1">{{ trimPlaying ? 'pause' : 'play_arrow' }}</span>
             </button>
             <button
               class="min-h-12 w-12 rounded-full border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"

@@ -19,7 +19,7 @@ struct Paths {
 }
 
 fn resolve(model_id: &str) -> Result<Paths> {
-    let dir = paths::models_dir()?.join(model_id);
+    let dir = crate::models::model_dir(model_id)?;
     for m in ["model.int8.onnx", "model.onnx"] {
         let p = Paths {
             model: dir.join(m),

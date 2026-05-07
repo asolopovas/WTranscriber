@@ -31,6 +31,7 @@ pub struct ModelInfo {
     pub size_bytes: u64,
     pub default_active: bool,
     pub status: ModelStatus,
+    pub languages: Vec<String>,
 }
 
 #[derive(Default)]
@@ -82,6 +83,7 @@ impl Manager {
             size_bytes: entry.size_bytes,
             default_active: entry.default_active,
             status: self.status(&entry.id)?,
+            languages: entry.languages.clone(),
         })
     }
 

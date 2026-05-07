@@ -20,7 +20,7 @@ struct Paths {
 }
 
 fn resolve(model_id: &str) -> Result<Paths> {
-    let dir = paths::models_dir()?.join(model_id);
+    let dir = crate::models::model_dir(model_id)?;
     for (e, d) in [
         ("encoder.int8.onnx", "decoder.int8.onnx"),
         ("encoder.onnx", "decoder.onnx"),

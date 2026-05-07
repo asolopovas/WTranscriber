@@ -80,6 +80,19 @@ pub fn default_id(family: Family) -> Option<&'static str> {
         .map(|e| e.id.as_str())
 }
 
+pub fn model_dir(model_id: &str) -> Result<PathBuf> {
+    let root = paths::models_dir()?;
+    let Some(entry) = by_id(model_id) else {
+        return Ok(root.join(model_id));
+    };
+    let segment = entry
+        .files
+        .iter()
+        .find_map(|f| f.rel_path.split('/').next().filter(|s| !s.is_empty()))
+        .unwrap_or(&entry.id);
+    Ok(root.join(segment))
+}
+
 pub fn paths_for(entry: &Entry) -> Result<Vec<PathBuf>> {
     let root = paths::models_dir()?;
     Ok(entry

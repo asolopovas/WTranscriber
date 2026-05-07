@@ -46,8 +46,17 @@ pub fn load_config() -> Result<Config> {
 }
 
 #[tauri::command]
-pub fn save_config(config: Config) -> Result<()> {
+pub fn save_config(mut config: Config) -> Result<()> {
+    sync_engine(&mut config);
     config.save()
+}
+
+fn sync_engine(config: &mut Config) {
+    if let Some(m) = models::by_id(&config.model)
+        && let Ok(e) = m.engine.parse::<crate::config::Engine>()
+    {
+        config.engine = e;
+    }
 }
 
 #[tauri::command]
@@ -257,7 +266,8 @@ impl Sink for TranscribeSink {
 }
 
 #[tauri::command]
-pub async fn transcribe_file(app: AppHandle, input: PathBuf, config: Config) -> Result<Transcript> {
+pub async fn transcribe_file(app: AppHandle, input: PathBuf, mut config: Config) -> Result<Transcript> {
+    sync_engine(&mut config);
     validate_transcription_model(&config)?;
     let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
@@ -391,14 +401,6 @@ fn validate_transcription_model(config: &Config) -> Result<()> {
         return Err(Error::Config(format!(
             "{} is not a transcription model",
             config.model
-        )));
-    }
-    if model.engine != config.engine.as_str() {
-        return Err(Error::Config(format!(
-            "{} requires {} engine, not {}",
-            config.model,
-            model.engine,
-            config.engine.as_str()
         )));
     }
     Ok(())

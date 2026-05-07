@@ -57,6 +57,7 @@ export interface ModelInfo {
   size_bytes: number;
   default_active: boolean;
   status: ModelStatus;
+  languages: string[];
 }
 
 export interface FileProgress {
