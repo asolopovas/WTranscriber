@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, mkdirSync, copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { platform, homedir } from "node:os";
@@ -119,6 +119,25 @@ if (subcmd === "cli") {
     console.log(`\nbinary: ${bin}\nsize: ${sizeMb} MB`);
   }
   process.exit(0);
+}
+
+const llamaSrc = join(root, "src-tauri", "jniLibs", t.abi, "libllama-cli.so");
+const genJniDir = join(root, "src-tauri", "gen", "android", "app", "src", "main", "jniLibs", t.abi);
+if (existsSync(llamaSrc) && existsSync(genJniDir)) {
+  mkdirSync(genJniDir, { recursive: true });
+  copyFileSync(llamaSrc, join(genJniDir, "libllama-cli.so"));
+}
+
+const manifestPath = join(root, "src-tauri", "gen", "android", "app", "src", "main", "AndroidManifest.xml");
+if (existsSync(manifestPath)) {
+  let manifest = readFileSync(manifestPath, "utf8");
+  if (!manifest.includes("android:extractNativeLibs")) {
+    manifest = manifest.replace(
+      /(<application\b)/,
+      '$1\n        android:extractNativeLibs="true"',
+    );
+    writeFileSync(manifestPath, manifest);
+  }
 }
 
 const tauriArgs = ["run", "tauri", "android", subcmd, "--target", target];
