@@ -11,6 +11,8 @@ use crate::util::{
     run_streamed_stdin, shared_out,
 };
 
+type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);
+
 #[derive(ClapArgs)]
 #[command(about = "Build release artifacts (host + Android + WSL deb on Windows)")]
 pub struct Args {
@@ -56,7 +58,7 @@ pub fn run(args: Args) -> Result<()> {
     }
 
     let lock = shared_out();
-    let mut tasks: Vec<(&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>)> = Vec::new();
+    let mut tasks: Vec<BuildTask> = Vec::new();
     if !args.no_host {
         let l = lock.clone();
         let skip = args.skip_rebuild;
@@ -77,10 +79,7 @@ pub fn run(args: Args) -> Result<()> {
     if !args.no_wsl && is_windows() {
         let l = lock.clone();
         let skip = args.skip_rebuild;
-        tasks.push((
-            "wsl",
-            Box::new(move |_| build_wsl(skip, &l).unwrap_or(127)),
-        ));
+        tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
     }
 
     println!(
@@ -93,7 +92,8 @@ pub fn run(args: Args) -> Result<()> {
         }
     );
 
-    let mut results: std::collections::HashMap<&'static str, i32> = std::collections::HashMap::new();
+    let mut results: std::collections::HashMap<&'static str, i32> =
+        std::collections::HashMap::new();
     if args.sequential {
         for (name, f) in tasks {
             let rc = f(lock.clone());
@@ -125,15 +125,16 @@ pub fn run(args: Args) -> Result<()> {
         }
     }
 
-    if !args.no_wsl && is_windows() {
-        if let Some(&rc) = results.get("wsl") {
-            if rc == -1 {
-                eprintln!("⚠  WSL build skipped (no distro with bun + cargo)");
-            } else if rc != 0 {
-                eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb");
-            } else if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
-                artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
-            }
+    if !args.no_wsl
+        && is_windows()
+        && let Some(&rc) = results.get("wsl")
+    {
+        if rc == -1 {
+            eprintln!("⚠  WSL build skipped (no distro with bun + cargo)");
+        } else if rc != 0 {
+            eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb");
+        } else if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
+            artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
         }
     }
 
@@ -302,9 +303,7 @@ fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i32> {
     }
     run_streamed(
         "and",
-        std::env::current_exe()?
-            .to_string_lossy()
-            .as_ref(),
+        std::env::current_exe()?.to_string_lossy().as_ref(),
         &["android", "build", "--target", "aarch64"],
         &env_vars,
         lock,
@@ -345,7 +344,11 @@ fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
 }
 
 fn find_host_bundle(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
-    let target = root().join("src-tauri").join("target").join("release").join("bundle");
+    let target = root()
+        .join("src-tauri")
+        .join("target")
+        .join("release")
+        .join("bundle");
     if is_windows() {
         let dir = target.join("nsis");
         if let Ok(entries) = fs::read_dir(&dir) {
@@ -496,7 +499,10 @@ fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
             debug_ks.display()
         );
         let mut p = std::collections::HashMap::new();
-        p.insert("storeFile".to_string(), debug_ks.to_string_lossy().to_string());
+        p.insert(
+            "storeFile".to_string(),
+            debug_ks.to_string_lossy().to_string(),
+        );
         p.insert("storePassword".to_string(), "android".to_string());
         p.insert("keyAlias".to_string(), "androiddebugkey".to_string());
         p.insert("keyPassword".to_string(), "android".to_string());
@@ -561,8 +567,14 @@ fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
             signed: false,
         }));
     }
-    let store_pass = format!("pass:{}", props.get("storePassword").cloned().unwrap_or_default());
-    let key_pass = format!("pass:{}", props.get("keyPassword").cloned().unwrap_or_default());
+    let store_pass = format!(
+        "pass:{}",
+        props.get("storePassword").cloned().unwrap_or_default()
+    );
+    let key_pass = format!(
+        "pass:{}",
+        props.get("keyPassword").cloned().unwrap_or_default()
+    );
     let aligned_str = aligned.to_string_lossy().to_string();
     let store_file = props.get("storeFile").cloned().unwrap_or_default();
     let alias = props.get("keyAlias").cloned().unwrap_or_default();
@@ -619,4 +631,3 @@ fn write_sha256sums(artifacts: &[PathBuf], sums_path: &Path) -> Result<()> {
     fs::write(sums_path, format!("{}\n", lines.join("\n")))?;
     Ok(())
 }
-

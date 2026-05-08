@@ -77,7 +77,10 @@ fn publish_dev(artifacts: &[PathBuf]) -> Result<()> {
 
     if release_exists(tag) {
         println!("--- deleting existing {tag} release ---");
-        sh("gh", &["release", "delete", tag, "--yes", "--cleanup-tag=false"])?;
+        sh(
+            "gh",
+            &["release", "delete", tag, "--yes", "--cleanup-tag=false"],
+        )?;
     }
     println!("--- creating {tag} prerelease ---");
     let title = format!("Dev ({branch} @ {sha})");
@@ -204,15 +207,15 @@ fn ensure_gh_config_dir() {
     if std::env::var_os("GH_CONFIG_DIR").is_some() {
         return;
     }
-    if cfg!(windows) {
-        if let Some(profile) = std::env::var_os("USERPROFILE") {
-            let p = PathBuf::from(profile)
-                .join("AppData")
-                .join("Roaming")
-                .join("GitHub CLI");
-            if p.join("hosts.yml").exists() {
-                unsafe { std::env::set_var("GH_CONFIG_DIR", &p) };
-            }
+    if cfg!(windows)
+        && let Some(profile) = std::env::var_os("USERPROFILE")
+    {
+        let p = PathBuf::from(profile)
+            .join("AppData")
+            .join("Roaming")
+            .join("GitHub CLI");
+        if p.join("hosts.yml").exists() {
+            unsafe { std::env::set_var("GH_CONFIG_DIR", &p) };
         }
     }
 }

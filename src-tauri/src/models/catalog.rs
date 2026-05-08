@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::LazyLock};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Result, paths};
+use crate::{config::Engine, error::Result, paths};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -10,6 +10,17 @@ pub enum Family {
     Asr,
     Diarizer,
     Llm,
+}
+
+impl Family {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Asr => "asr",
+            Self::Diarizer => "diarizer",
+            Self::Llm => "llm",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +53,13 @@ pub struct Entry {
     #[serde(default)]
     pub desktop_only: bool,
     pub files: Vec<FileSpec>,
+}
+
+impl Entry {
+    #[must_use]
+    pub fn engine_kind(&self) -> Option<Engine> {
+        self.engine.parse().ok()
+    }
 }
 
 static CATALOG: LazyLock<Vec<Entry>> = LazyLock::new(default_catalog);

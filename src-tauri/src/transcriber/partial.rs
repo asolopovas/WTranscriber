@@ -13,65 +13,7 @@ pub struct Partial {
     #[serde(default)]
     pub last_done_sec: f64,
     #[serde(default)]
-    pub segments: Vec<SerSegment>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SerSegment {
-    pub text: String,
-    pub start_ms: u64,
-    pub end_ms: u64,
-    #[serde(default)]
-    pub tokens: Vec<SerToken>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SerToken {
-    pub text: String,
-    pub start_ms: u64,
-    pub end_ms: u64,
-    #[serde(default)]
-    pub confidence: f32,
-}
-
-impl From<&Segment> for SerSegment {
-    fn from(s: &Segment) -> Self {
-        Self {
-            text: s.text.clone(),
-            start_ms: s.start_ms,
-            end_ms: s.end_ms,
-            tokens: s
-                .tokens
-                .iter()
-                .map(|t| SerToken {
-                    text: t.text.clone(),
-                    start_ms: t.start_ms,
-                    end_ms: t.end_ms,
-                    confidence: t.confidence,
-                })
-                .collect(),
-        }
-    }
-}
-
-impl From<SerSegment> for Segment {
-    fn from(s: SerSegment) -> Self {
-        Self {
-            text: s.text,
-            start_ms: s.start_ms,
-            end_ms: s.end_ms,
-            tokens: s
-                .tokens
-                .into_iter()
-                .map(|t| crate::transcriber::transcript::Token {
-                    text: t.text,
-                    start_ms: t.start_ms,
-                    end_ms: t.end_ms,
-                    confidence: t.confidence,
-                })
-                .collect(),
-        }
-    }
+    pub segments: Vec<Segment>,
 }
 
 fn partial_path(key: &str) -> Result<PathBuf> {

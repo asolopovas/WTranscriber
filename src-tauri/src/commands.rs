@@ -109,10 +109,10 @@ pub fn save_config(mut config: Config) -> Result<()> {
 }
 
 fn sync_engine(config: &mut Config) {
-    if let Some(m) = models::by_id(&config.model)
-        && let Ok(e) = m.engine.parse::<crate::config::Engine>()
+    if let Some(model) = models::by_id(&config.model)
+        && let Some(engine) = model.engine_kind()
     {
-        config.engine = e;
+        config.engine = engine;
     }
 }
 

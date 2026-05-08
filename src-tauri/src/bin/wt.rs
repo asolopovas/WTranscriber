@@ -5,11 +5,9 @@ use std::{
     process::ExitCode,
 };
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use wtranscriber_lib::{
-    api::{
-        self, Config, Device, Engine, Family, FileProgress, Job, ModelStatus, Result, Transcript,
-    },
+    api::{self, Config, Device, Engine, FileProgress, Job, Result, Transcript},
     namer,
 };
 
@@ -42,10 +40,10 @@ struct Cli {
     no_diarize: bool,
 
     #[arg(long, value_enum)]
-    device: Option<DeviceArg>,
+    device: Option<Device>,
 
     #[arg(long, value_enum)]
-    engine: Option<EngineArg>,
+    engine: Option<Engine>,
 
     #[arg(long)]
     no_cache: bool,
@@ -67,42 +65,6 @@ enum ModelsAction {
     List,
     Install { id: String },
     Status { id: String },
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum DeviceArg {
-    Cpu,
-    Cuda,
-}
-
-impl From<DeviceArg> for Device {
-    fn from(d: DeviceArg) -> Self {
-        match d {
-            DeviceArg::Cpu => Self::Cpu,
-            DeviceArg::Cuda => Self::Cuda,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum EngineArg {
-    WhisperOnnx,
-    Zipformer,
-    Parakeet,
-    Canary,
-    NemoCtc,
-}
-
-impl From<EngineArg> for Engine {
-    fn from(e: EngineArg) -> Self {
-        match e {
-            EngineArg::WhisperOnnx => Self::WhisperOnnx,
-            EngineArg::Zipformer => Self::Zipformer,
-            EngineArg::Parakeet => Self::Parakeet,
-            EngineArg::Canary => Self::Canary,
-            EngineArg::NemoCtc => Self::NemoCtc,
-        }
-    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -146,16 +108,11 @@ async fn run_models(action: ModelsAction) -> Result<()> {
             let mut rows = mgr.list()?;
             rows.sort_by(|a, b| a.id.cmp(&b.id));
             for m in rows {
-                let family = match m.family {
-                    Family::Asr => "asr",
-                    Family::Diarizer => "diarizer",
-                    Family::Llm => "llm",
-                };
                 println!(
                     "{:<32} {:<10} {:<14} {:>8} MB  {}",
                     m.id,
-                    family,
-                    status_label(m.status),
+                    m.family.as_str(),
+                    m.status.as_str(),
                     m.size_bytes / 1_048_576,
                     m.display_name,
                 );
@@ -168,18 +125,10 @@ async fn run_models(action: ModelsAction) -> Result<()> {
         }
         ModelsAction::Status { id } => {
             let s = mgr.status(&id)?;
-            println!("{}", status_label(s));
+            println!("{}", s.as_str());
         }
     }
     Ok(())
-}
-
-const fn status_label(s: ModelStatus) -> &'static str {
-    match s {
-        ModelStatus::Installed => "installed",
-        ModelStatus::Downloading => "downloading",
-        ModelStatus::NotInstalled => "not_installed",
-    }
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -222,10 +171,10 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
         config.threads = t;
     }
     if let Some(d) = cli.device {
-        config.device = d.into();
+        config.device = d;
     }
     if let Some(e) = cli.engine {
-        config.engine = e.into();
+        config.engine = e;
     }
     if cli.no_diarize {
         config.diarize = false;

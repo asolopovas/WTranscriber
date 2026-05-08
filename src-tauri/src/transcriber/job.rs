@@ -212,9 +212,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             apply_dedup(&mut segs);
             slab_dropped += before.saturating_sub(segs.len());
             shift_segments(&mut segs, (region_start_sec * 1000.0) as u64);
-            for s in &segs {
-                state.segments.push(partial::SerSegment::from(s));
-            }
+            state.segments.extend(segs.iter().cloned());
             slab_segs_emitted += segs.len();
             state.last_done_sec = abs_end;
             if save_err.is_none() {
@@ -314,7 +312,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         pipeline_t0.elapsed().as_secs_f64(),
     ));
 
-    let mut segments: Vec<Segment> = state.segments.iter().cloned().map(Segment::from).collect();
+    let mut segments = state.segments.clone();
     apply_dedup(&mut segments);
 
     if detected_language.is_empty() {

@@ -52,19 +52,21 @@ pub struct Meta {
     pub device: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Token {
     pub text: String,
     pub start_ms: u64,
     pub end_ms: u64,
+    #[serde(default)]
     pub confidence: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Segment {
     pub text: String,
     pub start_ms: u64,
     pub end_ms: u64,
+    #[serde(default)]
     pub tokens: Vec<Token>,
 }
 

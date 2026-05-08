@@ -1,3 +1,4 @@
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -25,8 +26,9 @@ pub struct Config {
     pub use_persistent_models: bool,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
+#[value(rename_all = "kebab-case")]
 pub enum Engine {
     #[default]
     WhisperOnnx,
@@ -63,8 +65,9 @@ impl std::str::FromStr for Engine {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
+#[value(rename_all = "lowercase")]
 pub enum Device {
     Cpu,
     Cuda,
@@ -124,11 +127,10 @@ fn default_asr() -> (String, Engine) {
     if let Some(id) = default_id(Family::Asr)
         && let Some(entry) = by_id(id)
     {
-        let engine = entry
-            .engine
-            .parse::<Engine>()
-            .unwrap_or(Engine::WhisperOnnx);
-        return (id.to_string(), engine);
+        return (
+            id.to_string(),
+            entry.engine_kind().unwrap_or(Engine::WhisperOnnx),
+        );
     }
     ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
 }
@@ -157,8 +159,8 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
             crate::models::paths_for(target).is_ok_and(|paths| paths.iter().all(|p| p.exists()));
         if installed {
             cfg.model = target_id.to_string();
-            if let Ok(eng) = target.engine.parse::<Engine>() {
-                cfg.engine = eng;
+            if let Some(engine) = target.engine_kind() {
+                cfg.engine = engine;
             }
             dirty = true;
         }

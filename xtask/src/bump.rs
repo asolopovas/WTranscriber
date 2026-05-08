@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use std::fs;
 
-use crate::util::{capture, pkg_version, root, sh};
+use crate::util::{capture, pkg_version, root, set_json_string, sh};
 
 #[derive(ClapArgs)]
 #[command(about = "Bump version, commit, tag (no push, no build)")]
@@ -78,22 +78,16 @@ fn compute_next(cur: &str, level: &str) -> Result<String> {
         "minor" => format!("{x}.{}.0", y + 1),
         "major" => format!("{}.0.0", x + 1),
         explicit => {
-            let _ = parse_xyz(explicit)
-                .with_context(|| format!("invalid level {explicit:?} (expected patch|minor|major|X.Y.Z)"))?;
+            let _ = parse_xyz(explicit).with_context(|| {
+                format!("invalid level {explicit:?} (expected patch|minor|major|X.Y.Z)")
+            })?;
             explicit.to_string()
         }
     })
 }
 
 fn set_pkg_version(v: &str) -> Result<()> {
-    let p = root().join("package.json");
-    let raw = fs::read_to_string(&p)?;
-    let mut json: serde_json::Value = serde_json::from_str(&raw)?;
-    json["version"] = serde_json::Value::String(v.to_string());
-    let mut out = serde_json::to_string_pretty(&json)?;
-    out.push('\n');
-    fs::write(&p, out)?;
-    Ok(())
+    set_json_string(&root().join("package.json"), "version", v)
 }
 
 fn set_cargo_version(v: &str) -> Result<()> {
@@ -127,14 +121,11 @@ fn set_cargo_version(v: &str) -> Result<()> {
 }
 
 fn set_tauri_version(v: &str) -> Result<()> {
-    let p = root().join("src-tauri").join("tauri.conf.json");
-    let raw = fs::read_to_string(&p)?;
-    let mut json: serde_json::Value = serde_json::from_str(&raw)?;
-    json["version"] = serde_json::Value::String(v.to_string());
-    let mut out = serde_json::to_string_pretty(&json)?;
-    out.push('\n');
-    fs::write(&p, out)?;
-    Ok(())
+    set_json_string(
+        &root().join("src-tauri").join("tauri.conf.json"),
+        "version",
+        v,
+    )
 }
 
 fn sync_cargo_lock() -> Result<bool> {

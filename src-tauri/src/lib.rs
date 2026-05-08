@@ -29,8 +29,8 @@ use tracing_subscriber::EnvFilter;
 #[derive(Debug, Clone, Serialize)]
 struct RuntimeProgress {
     id: String,
-    downloaded: u64,
-    total: u64,
+    #[serde(flatten)]
+    progress: models::download::ByteProgress,
 }
 
 async fn ensure_runtimes(app: &tauri::AppHandle) {
@@ -125,8 +125,7 @@ fn progress_emitter(
             "runtime:progress",
             &RuntimeProgress {
                 id: id.clone(),
-                downloaded: p.downloaded,
-                total: p.total,
+                progress: p,
             },
         );
     }

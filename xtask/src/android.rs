@@ -160,16 +160,27 @@ fn ndk_bin(ndk: &Path) -> PathBuf {
     } else {
         "linux-x86_64"
     };
-    ndk.join("toolchains").join("llvm").join("prebuilt").join(host).join("bin")
+    ndk.join("toolchains")
+        .join("llvm")
+        .join("prebuilt")
+        .join(host)
+        .join("bin")
 }
 
 fn clang_ext() -> &'static str {
-    if cfg!(target_os = "windows") { ".cmd" } else { "" }
+    if cfg!(target_os = "windows") {
+        ".cmd"
+    } else {
+        ""
+    }
 }
 
 fn prebuilt_dir(target: &str) -> Result<PathBuf> {
     let abi = abi_for(target)?;
-    Ok(root().join(".android-prebuilt").join("jniLibs").join(abi.abi))
+    Ok(root()
+        .join(".android-prebuilt")
+        .join("jniLibs")
+        .join(abi.abi))
 }
 
 fn cmd_doctor(target: &str) -> Result<()> {
@@ -237,7 +248,9 @@ fn cmd_build(target: &str) -> Result<()> {
     let env = build_env(target)?;
     spawn_with_env(
         "bun",
-        &["run", "tauri", "android", "build", "--target", target, "--apk"],
+        &[
+            "run", "tauri", "android", "build", "--target", target, "--apk",
+        ],
         &env,
     )?;
     let abi = abi_for(target)?;
@@ -270,7 +283,9 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
     env.push(("WT_DEV_APK".to_string(), "1".to_string()));
     spawn_with_env(
         "bun",
-        &["run", "tauri", "android", "build", "--target", target, "--apk"],
+        &[
+            "run", "tauri", "android", "build", "--target", target, "--apk",
+        ],
         &env,
     )?;
     let apk_dir = root()
@@ -303,7 +318,11 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
         "\n✓ installed {:.1} MB in {:.1}s{}",
         mb,
         t0.elapsed().as_secs_f64(),
-        if fresh { " (fresh, models will re-download)" } else { " (data preserved)" }
+        if fresh {
+            " (fresh, models will re-download)"
+        } else {
+            " (data preserved)"
+        }
     );
     Ok(())
 }
@@ -428,11 +447,7 @@ fn cmd_cli_push() -> Result<()> {
     }
     sh(
         "adb",
-        &[
-            "push",
-            bin.to_string_lossy().as_ref(),
-            "/data/local/tmp/wt",
-        ],
+        &["push", bin.to_string_lossy().as_ref(), "/data/local/tmp/wt"],
     )?;
     sh("adb", &["shell", "chmod", "755", "/data/local/tmp/wt"])?;
     println!("pushed to /data/local/tmp/wt");
@@ -441,10 +456,7 @@ fn cmd_cli_push() -> Result<()> {
 
 fn cmd_cli_run(args: &[String]) -> Result<()> {
     let joined = args.join(" ");
-    sh(
-        "adb",
-        &["shell", &format!("/data/local/tmp/wt {joined}")],
-    )
+    sh("adb", &["shell", &format!("/data/local/tmp/wt {joined}")])
 }
 
 fn cmd_prebuilts(version: Option<String>) -> Result<()> {
@@ -463,7 +475,10 @@ fn cmd_prebuilts(version: Option<String>) -> Result<()> {
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/v{version}/{archive_name}"
     );
     let archive_path = dest.join(&archive_name);
-    let marker = dest.join("jniLibs").join("arm64-v8a").join("libsherpa-onnx-c-api.so");
+    let marker = dest
+        .join("jniLibs")
+        .join("arm64-v8a")
+        .join("libsherpa-onnx-c-api.so");
 
     if marker.exists() {
         println!("android prebuilts already present at {}", dest.display());
@@ -483,7 +498,10 @@ fn cmd_prebuilts(version: Option<String>) -> Result<()> {
     sh_in(
         &dest,
         "tar",
-        &["-xjf", archive_path.file_name().unwrap().to_string_lossy().as_ref()],
+        &[
+            "-xjf",
+            archive_path.file_name().unwrap().to_string_lossy().as_ref(),
+        ],
     )
     .context("tar -xjf failed (need a tar that handles bz2; available on Win10+, macOS, Linux)")?;
     fs::write(dest.join(".gitignore"), "*\n")?;
@@ -583,8 +601,9 @@ fn patch_manifest() -> Result<()> {
     Ok(())
 }
 
-const MAIN_ACTIVITY_KT: &str =
-    include_str!("../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/MainActivity.kt");
+const MAIN_ACTIVITY_KT: &str = include_str!(
+    "../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/MainActivity.kt"
+);
 const TRANSCRIPTION_SERVICE_KT: &str = include_str!(
     "../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/TranscriptionService.kt"
 );
@@ -601,10 +620,17 @@ fn apply_android_overlay() -> Result<()> {
     if !main.exists() {
         return Ok(());
     }
-    let java_dir = main.join("java").join("com").join("asolopovas").join("wtranscriber");
+    let java_dir = main
+        .join("java")
+        .join("com")
+        .join("asolopovas")
+        .join("wtranscriber");
     let res_dir = main.join("res").join("values");
     write_if_changed(&java_dir.join("MainActivity.kt"), MAIN_ACTIVITY_KT)?;
-    write_if_changed(&java_dir.join("TranscriptionService.kt"), TRANSCRIPTION_SERVICE_KT)?;
+    write_if_changed(
+        &java_dir.join("TranscriptionService.kt"),
+        TRANSCRIPTION_SERVICE_KT,
+    )?;
     write_if_changed(&res_dir.join("strings.xml"), STRINGS_XML)?;
     Ok(())
 }
@@ -646,7 +672,9 @@ pub fn sign_patch_inline() -> Result<i32> {
         .join("app")
         .join("build.gradle.kts");
     if !gradle.exists() {
-        println!("sign-patch: gen/android not found — run `xtask android prebuilts` + tauri android init first");
+        println!(
+            "sign-patch: gen/android not found — run `xtask android prebuilts` + tauri android init first"
+        );
         return Ok(0);
     }
     let marker = "// wtranscriber: keystore-signing-patch v1";
@@ -715,14 +743,13 @@ pub fn sign_patch_inline() -> Result<i32> {
     let shift = load_props.len();
     let release_idx = release_idx.map(|i| i + shift);
 
-    if let Some(rel_idx) = release_idx {
-        if let Some(end) = find_block_end(rel_idx) {
-            let _ = end;
-            let line = new_lines[rel_idx].clone();
-            if !line.contains("signingConfig") {
-                let inject = "            signingConfig = signingConfigs.getByName(\"release\")";
-                new_lines.insert(rel_idx + 1, inject.to_string());
-            }
+    if let Some(rel_idx) = release_idx
+        && find_block_end(rel_idx).is_some()
+    {
+        let line = new_lines[rel_idx].clone();
+        if !line.contains("signingConfig") {
+            let inject = "            signingConfig = signingConfigs.getByName(\"release\")";
+            new_lines.insert(rel_idx + 1, inject.to_string());
         }
     }
     let mut joined = new_lines.join("\n");

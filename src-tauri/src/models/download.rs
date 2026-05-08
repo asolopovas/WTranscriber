@@ -6,6 +6,7 @@ use std::{
 };
 
 use futures_util::StreamExt;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
@@ -15,11 +16,13 @@ const MAX_READ_RETRIES: u32 = 8;
 const MAX_DIAL_RETRIES: u32 = 30;
 const REPORT_INTERVAL: Duration = Duration::from_millis(250);
 
-#[derive(Debug, Clone, Copy)]
-pub struct Progress {
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ByteProgress {
     pub downloaded: u64,
     pub total: u64,
 }
+
+pub type Progress = ByteProgress;
 
 #[allow(clippy::too_many_lines)]
 pub async fn download_file(
