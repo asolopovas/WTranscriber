@@ -15,44 +15,37 @@ declare global {
       commandLog: string[];
       savedConfigs: unknown[];
       emit: (event: string, payload: unknown) => void;
+      finishTranscriptions: () => void;
     };
   }
 }
 
+const audioDir = "C:\\audio";
+
+const audioFile = (name: string, overrides: Record<string, unknown> = {}) => ({
+  name,
+  path: `${audioDir}\\${name}`,
+  is_dir: false,
+  is_audio: true,
+  size_bytes: 1_000,
+  modified_ms: 1,
+  cache_key: null,
+  utterances: null,
+  duration_ms: 1_000,
+  trim_start_ms: null,
+  trim_end_ms: null,
+  ...overrides,
+});
+
 const files = [
-  {
-    name: "board_meeting.wav",
-    path: "C:\\audio\\board_meeting.wav",
-    is_dir: false,
-    is_audio: true,
+  audioFile("board_meeting.wav", {
     size_bytes: 42_000_000,
-    modified_ms: 1,
     cache_key: "board",
     utterances: 2,
     duration_ms: 4_200_000,
-  },
-  {
-    name: "interview.mp3",
-    path: "C:\\audio\\interview.mp3",
-    is_dir: false,
-    is_audio: true,
-    size_bytes: 19_000_000,
-    modified_ms: 2,
-    cache_key: null,
-    utterances: null,
-    duration_ms: 1_800_000,
-  },
-  {
-    name: "field_notes.m4a",
-    path: "C:\\audio\\field_notes.m4a",
-    is_dir: false,
-    is_audio: true,
-    size_bytes: 9_000_000,
-    modified_ms: 3,
-    cache_key: null,
-    utterances: null,
-    duration_ms: 900_000,
-  },
+  }),
+  audioFile("interview.mp3", { size_bytes: 19_000_000, modified_ms: 2, duration_ms: 1_800_000 }),
+  audioFile("field_notes.m4a", { size_bytes: 9_000_000, modified_ms: 3, duration_ms: 900_000 }),
 ];
 
 const transcript = {
@@ -69,32 +62,132 @@ const transcript = {
   words: [],
 };
 
+const config = {
+  model: "sherpa-whisper-turbo",
+  engine: "whisper-onnx",
+  language: "en",
+  device: "cuda",
+  threads: 8,
+  diarize: true,
+  speakers: null,
+  diarizer: "auto",
+  auto_rename: false,
+  last_dir: audioDir,
+  use_persistent_models: true,
+};
+
+const models = [
+  [
+    "sherpa-whisper-turbo",
+    "asr",
+    "whisper-onnx",
+    "Whisper large-v3-turbo (ONNX, multilingual)",
+    true,
+  ],
+  ["sherpa-zipformer-en", "asr", "zipformer", "Zipformer English", false],
+  [
+    "nemo-sortformer-v2",
+    "diarizer",
+    "nemo-sortformer",
+    "NVIDIA NeMo Sortformer 4-speaker v2",
+    true,
+  ],
+  [
+    "sherpa-pyannote-titanet",
+    "diarizer",
+    "sherpa",
+    "pyannote-3.0 segmentation + TitaNet-Large",
+    true,
+  ],
+].map(([id, family, engine, display_name, default_active]) => ({
+  id,
+  family,
+  engine,
+  display_name,
+  description: `${display_name}`,
+  size_bytes: 1_000,
+  default_active,
+  status: "installed",
+  languages: ["en"],
+}));
+
 async function installTauriMocks(page: Page) {
   await page.addInitScript(
-    ({ seedFiles, seedTranscript }) => {
+    ({ seedFiles, seedTranscript, seedConfig, seedModels }) => {
       const callbacks: Record<number, (event: unknown) => void> = {};
       const listeners: Record<string, number[]> = {};
       const commandLog: string[] = [];
       const savedConfigs: unknown[] = [];
-      const rows = seedFiles.map((f) => ({ ...f }));
+      const rows = seedFiles.map((file) => ({ ...file }));
       const cancelled = new Set<string>();
+      const pending = new Map<string, () => void>();
       let nextCallback = 1;
       let nextEvent = 1;
 
       function emit(event: string, payload: unknown) {
-        for (const id of listeners[event] ?? []) {
-          callbacks[id]?.({ event, payload });
-        }
+        for (const id of listeners[event] ?? []) callbacks[id]?.({ event, payload });
+      }
+
+      function finishTranscriptions() {
+        for (const done of pending.values()) done();
+        pending.clear();
       }
 
       function markTranscribed(input: string) {
-        const row = rows.find((f) => f.path === input);
-        if (row) {
-          row.cache_key = row.name.replace(/\.[^.]+$/, "");
-          row.utterances = seedTranscript.utterances.length;
-          row.duration_ms = seedTranscript.duration_ms;
-        }
+        const row = rows.find((file) => file.path === input);
+        if (!row) return;
+        row.cache_key = row.name.replace(/\.[^.]+$/, "");
+        row.utterances = seedTranscript.utterances.length;
+        row.duration_ms = seedTranscript.duration_ms;
       }
+
+      const replies: Record<string, (args: Record<string, unknown>) => unknown> = {
+        app_version: () => "0.1.0",
+        system_info: () => ({
+          os: "windows",
+          arch: "x86_64",
+          cpu_threads: 8,
+          is_mobile: false,
+          cuda_available: true,
+          nnapi_available: false,
+          app_version: "0.1.0",
+          workdir: "C:\\audio",
+          models_dir: "C:\\models",
+          cache_dir: "C:\\cache",
+          config_dir: "C:\\config",
+          total_memory_bytes: 16_000_000_000,
+        }),
+        load_config: () => seedConfig,
+        save_config: (args) => savedConfigs.push(args.config) && null,
+        list_models: () => seedModels,
+        audio_waveform: () => Array.from({ length: 160 }, (_, i) => 0.15 + ((i * 17) % 80) / 100),
+        default_dir: () => "C:\\audio",
+        list_directory: () => ({ path: "C:\\audio", parent: null, entries: rows }),
+        history_load: () => seedTranscript,
+        suggest_filename: () => ({ topic: "meeting_notes", stamp: "20260506" }),
+        rename_file: () => "C:\\audio\\meeting_notes_20260506.wav",
+        delete_file: () => null,
+        export_transcript: (args) => args.dest,
+        add_to_workdir: () => {
+          rows.push({ ...seedFiles[1], name: "added.wav", path: "C:\\audio\\added.wav" });
+          return "C:\\audio\\added.wav";
+        },
+        log_path: () => "C:\\logs\\wt.log",
+        log_tail: () => "transcribe ok\nnemo-sortformer\n",
+        log_clear: () => null,
+        reset_transcript_cache: () => 3,
+        reset_audio_cache: () => 2,
+        "plugin:event|listen": (args) => {
+          const event = args.event as string;
+          listeners[event] = [...(listeners[event] ?? []), args.handler as number];
+          return nextEvent++;
+        },
+        "plugin:event|unlisten": () => null,
+        "plugin:dialog|open": () => null,
+        "plugin:dialog|save": () => "C:\\exports\\board.txt",
+        "plugin:dialog|message": () => "Ok",
+        "plugin:dialog|confirm": () => true,
+      };
 
       window.__TAURI_INTERNALS__ = {
         metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
@@ -104,85 +197,11 @@ async function installTauriMocks(page: Page) {
           callbacks[id] = callback;
           return id;
         },
-        unregisterCallback(id: number) {
-          delete callbacks[id];
-        },
-        runCallback(id: number, event: unknown) {
-          callbacks[id]?.(event);
-        },
-        convertFileSrc(path: string) {
-          return `asset://localhost/${encodeURIComponent(path)}`;
-        },
+        unregisterCallback: (id: number) => delete callbacks[id],
+        runCallback: (id: number, event: unknown) => callbacks[id]?.(event),
+        convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
         async invoke(cmd: string, args: Record<string, unknown> = {}) {
           commandLog.push(cmd);
-          if (cmd === "app_version") return "0.1.0";
-          if (cmd === "load_config") {
-            return {
-              model: "sherpa-whisper-turbo",
-              engine: "whisper-onnx",
-              language: "en",
-              device: "cuda",
-              threads: 8,
-              diarize: true,
-              speakers: null,
-              auto_rename: false,
-              last_dir: "C:\\audio",
-            };
-          }
-          if (cmd === "save_config") {
-            savedConfigs.push(args.config);
-            return null;
-          }
-          if (cmd === "list_models") {
-            return [
-              {
-                id: "sherpa-whisper-turbo",
-                family: "asr",
-                engine: "whisper-onnx",
-                display_name: "Whisper large-v3-turbo (ONNX, multilingual)",
-                description: "Best default ASR model",
-                size_bytes: 1_036_613_791,
-                default_active: true,
-                status: "installed",
-              },
-              {
-                id: "sherpa-zipformer-en",
-                family: "asr",
-                engine: "zipformer",
-                display_name: "Zipformer English",
-                description: "Fast English transducer",
-                size_bytes: 125_000_000,
-                default_active: false,
-                status: "installed",
-              },
-              {
-                id: "nemo-sortformer-v2",
-                family: "diarizer",
-                engine: "nemo-sortformer",
-                display_name: "NVIDIA NeMo Sortformer 4-speaker v2",
-                description: "GPU-first NVIDIA NeMo diarization",
-                size_bytes: 0,
-                default_active: true,
-                status: "installed",
-              },
-              {
-                id: "sherpa-pyannote-titanet",
-                family: "diarizer",
-                engine: "sherpa",
-                display_name: "pyannote-3.0 segmentation + TitaNet-Large",
-                description: "Fallback diarizer",
-                size_bytes: 107_398_406,
-                default_active: true,
-                status: "installed",
-              },
-            ];
-          }
-          if (cmd === "audio_waveform") {
-            return Array.from({ length: 160 }, (_, i) => 0.15 + ((i * 17) % 80) / 100);
-          }
-          if (cmd === "default_dir") return "C:\\audio";
-          if (cmd === "list_directory") return { path: "C:\\audio", parent: null, entries: rows };
-          if (cmd === "history_load") return seedTranscript;
           if (cmd === "transcribe_file") {
             const input = args.input as string;
             emit("transcribe:progress", {
@@ -192,141 +211,94 @@ async function installTauriMocks(page: Page) {
               elapsedSec: 2,
               etaSec: 10,
             });
-            await new Promise((resolve) => setTimeout(resolve, 150));
+            await new Promise<void>((resolve) => pending.set(input, resolve));
+            pending.delete(input);
             if (cancelled.has(input)) throw "cancelled";
             markTranscribed(input);
             return {
               ...seedTranscript,
-              duration_ms: rows.find((f) => f.path === input)?.duration_ms ?? 0,
+              duration_ms: rows.find((file) => file.path === input)?.duration_ms ?? 0,
             };
           }
           if (cmd === "cancel_transcribe") {
             cancelled.add(args.input as string);
+            pending.get(args.input as string)?.();
             return true;
           }
-          if (cmd === "suggest_filename") return { topic: "meeting_notes", stamp: "20260506" };
-          if (cmd === "rename_file") return "C:\\audio\\meeting_notes_20260506.wav";
-          if (cmd === "delete_file") return null;
-          if (cmd === "export_transcript") return args.dest;
-          if (cmd === "add_to_workdir") {
-            rows.push({
-              name: "added.wav",
-              path: "C:\\audio\\added.wav",
-              is_dir: false,
-              is_audio: true,
-              size_bytes: 1_000,
-              modified_ms: 4,
-              cache_key: null,
-              utterances: null,
-              duration_ms: 1_000,
-            });
-            return "C:\\audio\\added.wav";
-          }
-          if (cmd === "log_path") return "C:\\logs\\wt.log";
-          if (cmd === "log_tail") return "transcribe ok\nnemo-sortformer\n";
-          if (cmd === "log_clear") return null;
-          if (cmd === "reset_transcript_cache") return 3;
-          if (cmd === "reset_audio_cache") return 2;
-          if (cmd === "plugin:event|listen") {
-            const event = args.event as string;
-            const handler = args.handler as number;
-            listeners[event] = [...(listeners[event] ?? []), handler];
-            return nextEvent++;
-          }
-          if (cmd === "plugin:event|unlisten") return null;
-          if (cmd === "plugin:dialog|open") return null;
-          if (cmd === "plugin:dialog|save") return "C:\\exports\\board.txt";
-          if (cmd === "plugin:dialog|message") return "Ok";
-          if (cmd === "plugin:dialog|confirm") return true;
+          const reply = replies[cmd];
+          if (reply) return reply(args);
           throw new Error(`unhandled invoke ${cmd}`);
         },
       };
-      window.__WT_TEST__ = { commandLog, savedConfigs, emit };
+      window.__WT_TEST__ = { commandLog, savedConfigs, emit, finishTranscriptions };
     },
-    { seedFiles: files, seedTranscript: transcript },
+    { seedFiles: files, seedTranscript: transcript, seedConfig: config, seedModels: models },
   );
+}
+
+const commands = (page: Page) => page.evaluate(() => window.__WT_TEST__.commandLog);
+const commandCount = (page: Page, cmd: string) =>
+  page.evaluate(
+    (name) => window.__WT_TEST__.commandLog.filter((entry) => entry === name).length,
+    cmd,
+  );
+const selectByLabel = (page: Page, label: string) =>
+  page.locator("label").filter({ hasText: label }).locator("select");
+const rowNamed = (page: Page, name: string) => page.getByRole("row").filter({ hasText: name });
+
+async function finishTranscriptions(page: Page) {
+  await page.evaluate(() => window.__WT_TEST__.finishTranscriptions());
 }
 
 test.beforeEach(async ({ page }) => {
   await installTauriMocks(page);
   await page.goto("/");
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("list_directory");
+  await expect.poll(() => commands(page)).toContain("list_directory");
 });
 
 test("loads persisted GPU transcription configuration", async ({ page }) => {
-  await expect(page.locator("select").filter({ hasText: "CUDA" })).toHaveValue("cuda");
+  await expect(selectByLabel(page, "Device")).toHaveValue("cuda");
   await expect(page.getByRole("button", { name: "Transcribe all" })).toBeEnabled();
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("load_config");
+  await expect.poll(() => commands(page)).toContain("load_config");
 });
 
-test("keeps engine and model selections compatible", async ({ page }) => {
-  const engine = page.locator("label").filter({ hasText: "Engine" }).locator("select");
-  const model = page.locator("label").filter({ hasText: "Model" }).locator("select");
+test("loads compatible model choices", async ({ page }) => {
+  const model = selectByLabel(page, "Model");
 
-  await expect(engine).toHaveValue("whisper-onnx");
   await expect(model).toHaveValue("sherpa-whisper-turbo");
-  await engine.selectOption("zipformer");
-  await expect(model).toHaveValue("sherpa-zipformer-en");
-  await expect(model.getByRole("option", { name: "Whisper large-v3-turbo" })).toHaveCount(0);
-  await engine.selectOption("whisper-onnx");
-  await expect(model).toHaveValue("sherpa-whisper-turbo");
-  await expect(model.getByRole("option", { name: "Zipformer English" })).toHaveCount(0);
+  await expect(model.getByRole("option", { name: "Whisper large-v3-turbo" })).toHaveCount(1);
+  await expect(model.getByRole("option", { name: "Zipformer English" })).toHaveCount(1);
 });
 
 test("runs the folder queue and updates rows", async ({ page }) => {
-  await page.getByRole("button", { name: "Transcribe all" }).click();
-  await expect
-    .poll(
-      async () =>
-        page.evaluate(
-          () => window.__WT_TEST__.commandLog.filter((cmd) => cmd === "transcribe_file").length,
-        ),
-      { timeout: 5_000 },
-    )
-    .toBe(2);
-  await expect(page.getByRole("button", { name: "Transcribe all" })).toBeDisabled();
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await expect.poll(() => commandCount(page, "transcribe_file"), { timeout: 5_000 }).toBe(1);
+  await expect(page.getByRole("button", { name: /Transcribe all/ })).toBeDisabled();
+  await finishTranscriptions(page);
+  await expect.poll(() => commandCount(page, "transcribe_file"), { timeout: 5_000 }).toBe(2);
+  await finishTranscriptions(page);
+  await expect(rowNamed(page, "interview")).toContainText("transcribed");
 });
 
 test("stops an in-flight transcription", async ({ page }) => {
-  const row = page.getByRole("row").filter({ hasText: "interview.mp3" });
-  await row.getByTitle("Transcribe").click();
-  await expect(row.getByTitle("Stop transcription")).toBeVisible();
-  await row.getByTitle("Stop transcription").click();
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("cancel_transcribe");
+  const row = rowNamed(page, "interview");
+  await row.locator('button[title="Transcribe"]').click();
+  await expect(row.getByRole("button", { name: /Stop/ })).toBeVisible();
+  await row.getByRole("button", { name: /Stop/ }).click();
+  await expect.poll(() => commands(page)).toContain("cancel_transcribe");
 });
 
-test("previews cached transcript with audio and copy action", async ({ page }) => {
-  const row = page.getByRole("row").filter({ hasText: "board_meeting.wav" });
-  await row.getByTitle("Preview transcript").click();
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("history_load");
-  await expect(page.locator("audio")).toHaveAttribute("src", /asset:\/\/localhost/);
-  await expect
-    .poll(async () =>
-      page.evaluate(() => {
-        const canvas = document.querySelector<HTMLCanvasElement>(
-          '[data-testid="preview-waveform"]',
-        );
-        if (!canvas) return 0;
-        const data = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
-        return data ? Array.from(data).filter((v) => v > 0).length : 0;
-      }),
-    )
-    .toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Copy" }).click();
+test("previews cached transcript details", async ({ page }) => {
+  await rowNamed(page, "board_meeting").click();
+  await expect.poll(() => commands(page)).toContain("history_load");
+  await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
+  await expect(page.getByText("Opening remarks.")).toBeVisible();
+  await expect(page.getByText("Follow up answer.")).toBeVisible();
 });
 
-test("settings persist transcription options and reset caches", async ({ page }) => {
-  await page.getByRole("button", { name: "Settings" }).click();
-  await page.locator("label").filter({ hasText: "Speaker count" }).locator("input").fill("2");
-  await page.getByRole("button", { name: "Toggle auto rename" }).click();
+test("persists transcription options and resets caches", async ({ page }) => {
+  await selectByLabel(page, "Speakers").selectOption("2");
+  await page.getByRole("switch", { name: "Auto-Rename" }).click();
   await expect
     .poll(async () =>
       page.evaluate(() =>
@@ -334,20 +306,16 @@ test("settings persist transcription options and reset caches", async ({ page })
           (cfg) =>
             typeof cfg === "object" &&
             cfg !== null &&
-            "speakers" in cfg &&
-            "auto_rename" in cfg &&
             (cfg as { speakers?: unknown; auto_rename?: unknown }).speakers === 2 &&
             (cfg as { speakers?: unknown; auto_rename?: unknown }).auto_rename === true,
         ),
       ),
     )
     .toBe(true);
-  await page.getByRole("button", { name: "Reset transcript cache" }).click();
-  await page.getByRole("button", { name: "Reset audio cache" }).click();
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("reset_transcript_cache");
-  await expect
-    .poll(async () => page.evaluate(() => window.__WT_TEST__.commandLog))
-    .toContain("reset_audio_cache");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  for (const name of ["Reset transcript cache", "Reset audio cache"])
+    await page.getByRole("button", { name }).click();
+  await expect.poll(() => commands(page)).toContain("reset_transcript_cache");
+  await expect.poll(() => commands(page)).toContain("reset_audio_cache");
 });

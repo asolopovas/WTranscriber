@@ -549,7 +549,6 @@ mod tests {
     fn diarize_eta_decreases_as_pct_grows() {
         let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(20.0);
-        std::thread::sleep(std::time::Duration::from_millis(10));
         let (_, eta_low) = d.snapshot();
         d.report(80.0);
         let (_, eta_high) = d.snapshot();
