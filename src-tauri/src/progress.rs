@@ -16,11 +16,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{error::Result, paths};
 
-const RTF_WINDOW_SIZE: usize = 6;
+const RTF_WINDOW_SIZE: usize = 8;
 const RTF_PRIOR_WEIGHT: f64 = 0.7;
-const RTF_SAMPLE_ALPHA: f64 = 0.35;
+const RTF_SAMPLE_ALPHA: f64 = 0.20;
 const DISPLAY_MAX_ADVANCE: f64 = 0.10;
-const ETA_SMOOTH_ALPHA: f64 = 0.25;
+const ETA_CORRECTION_ALPHA: f64 = 0.30;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -49,7 +49,9 @@ pub struct Smoother {
     last_tick: Instant,
     start_time: Instant,
     display_shown: f64,
-    eta_shown: f64,
+    eta_anchor: Instant,
+    eta_at_anchor: f64,
+    have_eta: bool,
 }
 
 fn effective_rtf(rtf: f64, prior: f64) -> f64 {
@@ -82,7 +84,9 @@ impl Smoother {
             last_tick: now,
             start_time: now,
             display_shown: 0.0,
-            eta_shown: 0.0,
+            eta_anchor: now,
+            eta_at_anchor: 0.0,
+            have_eta: false,
         }
     }
 
@@ -132,6 +136,22 @@ impl Smoother {
         } else {
             self.rtf = (1.0 - RTF_SAMPLE_ALPHA) * self.rtf + RTF_SAMPLE_ALPHA * blended;
         }
+
+        let frac_remaining = ((100.0 - f64::from(pct)).max(0.0)) / 100.0;
+        let rtf = effective_rtf(self.rtf, self.prior_rtf);
+        let raw_eta = (self.audio_dur_sec * frac_remaining / rtf).max(0.0);
+        if self.have_eta {
+            let now2 = Instant::now();
+            let elapsed_since_anchor = now2.duration_since(self.eta_anchor).as_secs_f64();
+            let projected = (self.eta_at_anchor - elapsed_since_anchor).max(0.0);
+            self.eta_at_anchor =
+                (1.0 - ETA_CORRECTION_ALPHA) * projected + ETA_CORRECTION_ALPHA * raw_eta;
+            self.eta_anchor = now2;
+        } else {
+            self.eta_at_anchor = raw_eta;
+            self.eta_anchor = Instant::now();
+            self.have_eta = true;
+        }
     }
 
     pub fn snapshot(&mut self) -> (f64, f64) {
@@ -162,20 +182,14 @@ impl Smoother {
         }
         self.display_shown = display;
 
-        let mut remaining_audio = self.audio_dur_sec * (1.0 - display / 100.0);
-        if remaining_audio < 0.0 {
-            remaining_audio = 0.0;
-        }
-        let raw_eta = remaining_audio / rtf;
-        if self.eta_shown <= 0.0 {
-            self.eta_shown = raw_eta;
+        let eta = if self.have_eta {
+            let elapsed_since_anchor = Instant::now().duration_since(self.eta_anchor).as_secs_f64();
+            (self.eta_at_anchor - elapsed_since_anchor).max(0.0)
         } else {
-            self.eta_shown = (1.0 - ETA_SMOOTH_ALPHA) * self.eta_shown + ETA_SMOOTH_ALPHA * raw_eta;
-        }
-        if self.eta_shown < 0.0 {
-            self.eta_shown = 0.0;
-        }
-        (display, self.eta_shown)
+            let remaining_audio = (self.audio_dur_sec * (1.0 - display / 100.0)).max(0.0);
+            remaining_audio / rtf
+        };
+        (display, eta)
     }
 
     #[must_use]
