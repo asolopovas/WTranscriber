@@ -26,7 +26,7 @@ If the gate cannot pass without changes outside your scope (real logic fixes, de
 
 ## Output discipline
 
-On success: commit hash + one-line summary of what was pushed.
+On success: write `tmp/last-commit.json` with `{ hash, subject, branch, pushed_at }` (ISO-8601), then return the commit hash + one-line summary of what was pushed.
 
 On failure or stop:
 
