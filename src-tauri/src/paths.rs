@@ -15,6 +15,9 @@ struct Resolved {
 }
 
 static OVERRIDE: RwLock<Option<Resolved>> = RwLock::new(None);
+
+#[cfg(test)]
+pub static PATHS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static WORKDIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 static MODELS_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 static CONFIG_FILE_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);

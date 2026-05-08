@@ -57,11 +57,7 @@ pub fn clear(key: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
-
-    static FS_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_root() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -88,7 +84,9 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
         let p = sample("kpartial");
         save(&p).unwrap();
@@ -100,14 +98,18 @@ mod tests {
 
     #[test]
     fn load_returns_none_when_missing() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
         assert!(load("never-saved").is_none());
     }
 
     #[test]
     fn clear_removes_persisted_file() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
         let p = sample("kclear");
         save(&p).unwrap();
@@ -117,7 +119,9 @@ mod tests {
 
     #[test]
     fn clear_is_idempotent_on_missing_key() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
         clear("absent").unwrap();
     }

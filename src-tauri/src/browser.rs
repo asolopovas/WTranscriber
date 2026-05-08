@@ -152,15 +152,11 @@ pub fn home_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use chrono::Utc;
     use tempfile::TempDir;
 
     use super::*;
     use crate::transcriber::cache::{self as txc, Entry as CacheEntry};
-
-    static FS_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_root() -> TempDir {
         let tmp = tempfile::tempdir().unwrap();
@@ -204,7 +200,9 @@ mod tests {
 
     #[test]
     fn cache_key_survives_rename() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
 
         let workdir = tempfile::tempdir().unwrap();
@@ -228,7 +226,9 @@ mod tests {
 
     #[test]
     fn cache_key_is_null_without_rename_sync() {
-        let _g = FS_LOCK.lock().unwrap();
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _root = fresh_root();
 
         let workdir = tempfile::tempdir().unwrap();
