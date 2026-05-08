@@ -476,12 +476,16 @@ fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<
         println!("android dev: auto-detected TAURI_DEV_HOST={ip}");
         env.push(("TAURI_DEV_HOST".into(), ip));
     }
+    let dev_host_arg = std::env::var("TAURI_DEV_HOST").ok();
     let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev"];
     if open {
         tauri_args.push("--open");
     }
     if host {
         tauri_args.push("--host");
+    } else if let Some(ref value) = dev_host_arg {
+        tauri_args.push("--host");
+        tauri_args.push(value);
     }
     if !watch {
         tauri_args.push("--no-watch");
