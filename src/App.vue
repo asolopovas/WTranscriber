@@ -63,8 +63,9 @@ const configOpen = ref(
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
 );
 const CONFIG_HEIGHT_KEY = "wt.configHeightPx";
-const CONFIG_COLLAPSED_PX = 48;
-const CONFIG_OPEN_THRESHOLD_PX = 100;
+const CONFIG_HEADER_PX = 48;
+const CONFIG_COLLAPSED_PX = CONFIG_HEADER_PX;
+const CONFIG_OPEN_THRESHOLD_PX = CONFIG_HEADER_PX + 16;
 const configContentEl = ref<HTMLElement | null>(null);
 const configContentHeightPx = ref(0);
 const configHeightPx = ref(
@@ -123,18 +124,19 @@ function beginConfigResize(ev: PointerEvent) {
   window.addEventListener("pointercancel", up);
 }
 const configExpandedMobile = computed(() => configHeightPx.value > CONFIG_OPEN_THRESHOLD_PX);
-watch([configContentEl, configExpandedMobile], ([el, expanded]) => {
-  if (!el || typeof window === "undefined" || !expanded) return;
+watch(configContentEl, (el, _prev, onCleanup) => {
+  if (!el || typeof window === "undefined") return;
   const measure = () => {
-    configContentHeightPx.value = el.scrollHeight;
-    if (configHeightPx.value > CONFIG_COLLAPSED_PX) {
-      configHeightPx.value = Math.min(configHeightPx.value, configMaxPx.value);
+    const h = el.scrollHeight;
+    if (h > 0) {
+      configContentHeightPx.value = h;
+      if (configHeightPx.value > configMaxPx.value) configHeightPx.value = configMaxPx.value;
     }
   };
   const ro = new ResizeObserver(measure);
   ro.observe(el);
   measure();
-  onUnmounted(() => ro.disconnect());
+  onCleanup(() => ro.disconnect());
 });
 const isMobile = ref(
   typeof window !== "undefined" && !window.matchMedia("(min-width: 768px)").matches,
@@ -1708,317 +1710,330 @@ const fieldClass =
             height: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
           }"
         >
-          <span
-            v-if="isMobile"
-            class="md:hidden absolute top-1 left-1/2 -translate-x-1/2 w-12 h-1 rounded-full transition-colors pointer-events-none z-10"
-            :class="resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'"
-          ></span>
+          <Recorder
+            v-if="config && listing?.path"
+            ref="recorderRef"
+            :workdir="listing.path"
+            :headless="true"
+            @saved="onRecordingSaved"
+          />
           <div
             v-if="config"
-            ref="configContentEl"
-            class="px-md md:p-margin py-[6px] md:py-margin space-y-unit md:space-y-xl flex-1 min-h-0 overflow-y-auto scroll-thin"
+            class="shrink-0 h-12 w-full flex items-center justify-between relative select-none cursor-row-resize md:cursor-pointer touch-none md:touch-auto transition-colors"
+            :class="resizingConfig ? 'bg-primary/15' : 'active:bg-primary/10'"
+            role="button"
+            :aria-expanded="isMobile ? configExpandedMobile : configOpen"
+            :aria-label="
+              isMobile && configExpandedMobile
+                ? 'Drag or tap to collapse configuration'
+                : isMobile
+                  ? 'Drag or tap to expand configuration'
+                  : configOpen
+                    ? 'Collapse configuration'
+                    : 'Expand configuration'
+            "
+            @pointerdown="(e: PointerEvent) => isMobile && beginConfigResize(e)"
+            @click="
+              () => {
+                if (!isMobile) configOpen = !configOpen;
+              }
+            "
           >
-            <Recorder
-              v-if="listing?.path"
-              ref="recorderRef"
-              :workdir="listing.path"
-              :headless="true"
-              @saved="onRecordingSaved"
-            />
-            <details
-              :open="isMobile ? configExpandedMobile : configOpen"
-              @toggle="
-                (e: Event) => {
-                  if (!isMobile) configOpen = (e.target as HTMLDetailsElement).open;
-                }
+            <span
+              v-if="isMobile"
+              class="absolute top-1 left-1/2 -translate-x-1/2 w-12 h-1 rounded-full transition-colors pointer-events-none"
+              :class="
+                resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
               "
-            >
-              <summary
-                class="flex items-center justify-between list-none mb-unit md:mb-md gap-xs md:pointer-events-none touch-none md:touch-auto cursor-row-resize md:cursor-default"
-                :class="resizingConfig ? 'bg-primary/10' : ''"
-                :aria-label="
-                  isMobile && configExpandedMobile
-                    ? 'Drag or tap to collapse configuration'
-                    : isMobile
-                      ? 'Drag or tap to expand configuration'
-                      : undefined
-                "
-                @pointerdown="(e: PointerEvent) => isMobile && beginConfigResize(e)"
-                @click="(e: MouseEvent) => isMobile && e.preventDefault()"
+            ></span>
+            <h3 class="text-titleSmall text-on-surface flex items-center gap-unit pl-md">
+              <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
+              Configuration
+            </h3>
+            <div class="flex items-center gap-xs pr-md">
+              <button
+                v-if="recorderRef && !recorderRef.recording"
+                @pointerdown.stop
+                @click.stop.prevent="recorderRef?.start()"
+                class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
+                title="Record"
               >
-                <h3 class="text-titleSmall text-on-surface flex items-center gap-unit">
-                  <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
-                  Configuration
-                </h3>
-                <button
-                  v-if="recorderRef && !recorderRef.recording"
-                  @click.stop.prevent="recorderRef?.start()"
-                  class="pointer-events-auto min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
-                  title="Record"
-                >
-                  <span
-                    class="material-symbols-outlined text-[16px]"
-                    style="font-variation-settings: &quot;FILL&quot; 1"
-                    >fiber_manual_record</span
-                  >
-                  Rec
-                </button>
-                <button
-                  v-else-if="recorderRef"
-                  @click.stop.prevent="recorderRef?.stop()"
-                  class="pointer-events-auto min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
-                  :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
-                >
-                  <span
-                    class="material-symbols-outlined text-[16px]"
-                    style="font-variation-settings: &quot;FILL&quot; 1"
-                    >stop</span
-                  >
-                  {{ recorderRef?.elapsed }}
-                </button>
                 <span
-                  v-else
-                  class="font-mono text-labelSmall flex items-center gap-unit"
+                  class="material-symbols-outlined text-[16px]"
+                  style="font-variation-settings: &quot;FILL&quot; 1"
+                  >fiber_manual_record</span
+                >
+                Rec
+              </button>
+              <button
+                v-else-if="recorderRef"
+                @pointerdown.stop
+                @click.stop.prevent="recorderRef?.stop()"
+                class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
+                :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
+              >
+                <span
+                  class="material-symbols-outlined text-[16px]"
+                  style="font-variation-settings: &quot;FILL&quot; 1"
+                  >stop</span
+                >
+                {{ recorderRef?.elapsed }}
+              </button>
+              <span
+                v-else
+                class="font-mono text-labelSmall flex items-center gap-unit"
+                :class="
+                  saveState === 'saving'
+                    ? 'text-secondary'
+                    : saveState === 'saved'
+                      ? 'text-tertiary'
+                      : 'text-outline'
+                "
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full"
                   :class="
                     saveState === 'saving'
-                      ? 'text-secondary'
+                      ? 'bg-secondary animate-pulse'
                       : saveState === 'saved'
-                        ? 'text-tertiary'
-                        : 'text-outline'
+                        ? 'bg-tertiary'
+                        : 'bg-outline-variant'
                   "
-                >
-                  <span
-                    class="w-1.5 h-1.5 rounded-full"
-                    :class="
-                      saveState === 'saving'
-                        ? 'bg-secondary animate-pulse'
-                        : saveState === 'saved'
-                          ? 'bg-tertiary'
-                          : 'bg-outline-variant'
-                    "
-                  ></span>
-                  {{
-                    saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced"
-                  }}
-                </span>
-              </summary>
+                ></span>
+                {{ saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced" }}
+              </span>
+            </div>
+          </div>
 
-              <div class="space-y-md">
+          <div
+            v-if="config"
+            class="flex-1 min-h-0 overflow-hidden"
+            :style="{
+              maxHeight: isMobile
+                ? `${Math.max(0, configHeightPx - CONFIG_HEADER_PX)}px`
+                : configOpen
+                  ? 'none'
+                  : '0px',
+            }"
+          >
+            <div
+              ref="configContentEl"
+              class="px-md md:px-margin pt-md pb-md md:py-margin space-y-md overflow-y-auto scroll-thin"
+            >
+              <label class="block">
+                <span
+                  class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                  >Model</span
+                >
+                <select
+                  v-model="config.model"
+                  :class="[fieldClass, 'mt-unit']"
+                  @change="onModelChanged"
+                >
+                  <option v-for="m in allAsrModels" :key="m.id" :value="m.id">
+                    {{ m.display_name
+                    }}{{ m.status === "installed" ? "" : " \u2014 not installed" }}
+                  </option>
+                </select>
+              </label>
+
+              <div
+                v-if="selectedAsrModel && !selectedModelInstalled"
+                class="flex items-center gap-md p-md rounded-lg bg-error-container/40 border border-error/40"
+              >
+                <span class="material-symbols-outlined text-error">cloud_download</span>
+                <div class="flex-1 min-w-0">
+                  <div class="text-bodyMedium text-on-surface">Model not installed</div>
+                  <div class="text-labelSmall text-on-surface-variant truncate">
+                    {{ selectedAsrModel.display_name }} ·
+                    {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="px-md h-9 rounded-md bg-primary text-on-primary text-labelLarge inline-flex items-center gap-xs disabled:opacity-50"
+                  :disabled="installingSelected || selectedAsrModel.status === 'downloading'"
+                  @click="installSelectedModel"
+                >
+                  <Spinner
+                    v-if="installingSelected || selectedAsrModel.status === 'downloading'"
+                    :size="16"
+                  />
+                  <span v-else class="material-symbols-outlined text-[18px]">download</span>
+                  {{
+                    selectedAsrModel.status === "downloading"
+                      ? "Downloading…"
+                      : installingSelected
+                        ? "Starting…"
+                        : "Download"
+                  }}
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-md">
                 <label class="block">
                   <span
                     class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Model</span
+                    >Language</span
                   >
-                  <select
-                    v-model="config.model"
-                    :class="[fieldClass, 'mt-unit']"
-                    @change="onModelChanged"
-                  >
-                    <option v-for="m in allAsrModels" :key="m.id" :value="m.id">
-                      {{ m.display_name
-                      }}{{ m.status === "installed" ? "" : " \u2014 not installed" }}
+                  <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
+                    <option v-for="l in languageOptions" :key="l" :value="l">
+                      {{ l === "auto" ? "Auto" : l }}
                     </option>
                   </select>
                 </label>
+                <label class="block">
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Device</span
+                  >
+                  <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
+                    <option value="cpu">CPU</option>
+                    <option v-if="sys?.cuda_available" value="cuda">CUDA</option>
+                  </select>
+                </label>
+              </div>
 
-                <div
-                  v-if="selectedAsrModel && !selectedModelInstalled"
-                  class="flex items-center gap-md p-md rounded-lg bg-error-container/40 border border-error/40"
-                >
-                  <span class="material-symbols-outlined text-error">cloud_download</span>
-                  <div class="flex-1 min-w-0">
-                    <div class="text-bodyMedium text-on-surface">Model not installed</div>
-                    <div class="text-labelSmall text-on-surface-variant truncate">
-                      {{ selectedAsrModel.display_name }} ·
-                      {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
-                    </div>
-                  </div>
+              <div class="grid grid-cols-2 gap-md">
+                <label class="block">
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Diarizer</span
+                  >
+                  <select
+                    v-model="config.diarizer"
+                    :disabled="!config.diarize"
+                    :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+                  >
+                    <option value="auto">Auto</option>
+                    <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
+                    <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
+                    <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
+                  </select>
+                </label>
+                <label class="block">
+                  <span
+                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+                    >Speakers</span
+                  >
+                  <select
+                    :value="config.speakers ?? 0"
+                    :class="[fieldClass, 'mt-unit']"
+                    @change="
+                      (e) => {
+                        const n = Number((e.target as HTMLSelectElement).value);
+                        if (!config) return;
+                        config.speakers = n > 0 ? n : null;
+                        if (n > 0 && !config.diarize) config.diarize = true;
+                      }
+                    "
+                  >
+                    <option v-for="o in speakerOptions" :key="o.value" :value="o.value">
+                      {{ o.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="flex items-center justify-between gap-xl py-xs">
+                <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
+                  <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>
                   <button
                     type="button"
-                    class="px-md h-9 rounded-md bg-primary text-on-primary text-labelLarge inline-flex items-center gap-xs disabled:opacity-50"
-                    :disabled="installingSelected || selectedAsrModel.status === 'downloading'"
-                    @click="installSelectedModel"
+                    class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                    :class="
+                      config.diarize
+                        ? 'bg-primary'
+                        : 'bg-surface-container-highest border border-outline-variant'
+                    "
+                    @click="config.diarize = !config.diarize"
                   >
-                    <Spinner
-                      v-if="installingSelected || selectedAsrModel.status === 'downloading'"
-                      :size="16"
-                    />
-                    <span v-else class="material-symbols-outlined text-[18px]">download</span>
-                    {{
-                      selectedAsrModel.status === "downloading"
-                        ? "Downloading…"
-                        : installingSelected
-                          ? "Starting…"
-                          : "Download"
-                    }}
+                    <span
+                      class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                      :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                    ></span>
                   </button>
                 </div>
 
-                <div class="grid grid-cols-2 gap-md">
-                  <label class="block">
+                <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
+                  <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
+                  <button
+                    type="button"
+                    class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
+                    :class="
+                      config.auto_rename
+                        ? 'bg-primary'
+                        : 'bg-surface-container-highest border border-outline-variant'
+                    "
+                    @click="config.auto_rename = !config.auto_rename"
+                  >
                     <span
-                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                      >Language</span
-                    >
-                    <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
-                      <option v-for="l in languageOptions" :key="l" :value="l">
-                        {{ l === "auto" ? "Auto" : l }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="block">
-                    <span
-                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                      >Device</span
-                    >
-                    <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
-                      <option value="cpu">CPU</option>
-                      <option v-if="sys?.cuda_available" value="cuda">CUDA</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div class="grid grid-cols-2 gap-md">
-                  <label class="block">
-                    <span
-                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                      >Diarizer</span
-                    >
-                    <select
-                      v-model="config.diarizer"
-                      :disabled="!config.diarize"
-                      :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
-                    >
-                      <option value="auto">Auto</option>
-                      <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-                      <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
-                      <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
-                    </select>
-                  </label>
-                  <label class="block">
-                    <span
-                      class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                      >Speakers</span
-                    >
-                    <select
-                      :value="config.speakers ?? 0"
-                      :class="[fieldClass, 'mt-unit']"
-                      @change="
-                        (e) => {
-                          const n = Number((e.target as HTMLSelectElement).value);
-                          if (!config) return;
-                          config.speakers = n > 0 ? n : null;
-                          if (n > 0 && !config.diarize) config.diarize = true;
-                        }
-                      "
-                    >
-                      <option v-for="o in speakerOptions" :key="o.value" :value="o.value">
-                        {{ o.label }}
-                      </option>
-                    </select>
-                  </label>
-                </div>
-
-                <div class="flex items-center justify-between gap-xl py-xs">
-                  <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
-                    <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>
-                    <button
-                      type="button"
-                      class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                      :class="
-                        config.diarize
-                          ? 'bg-primary'
-                          : 'bg-surface-container-highest border border-outline-variant'
-                      "
-                      @click="config.diarize = !config.diarize"
-                    >
-                      <span
-                        class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                        :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                      ></span>
-                    </button>
-                  </div>
-
-                  <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
-                    <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
-                    <button
-                      type="button"
-                      class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                      :class="
-                        config.auto_rename
-                          ? 'bg-primary'
-                          : 'bg-surface-container-highest border border-outline-variant'
-                      "
-                      @click="config.auto_rename = !config.auto_rename"
-                    >
-                      <span
-                        class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                        :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                      ></span>
-                    </button>
-                  </div>
+                      class="absolute top-1 w-4 h-4 rounded-full transition-all"
+                      :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
+                    ></span>
+                  </button>
                 </div>
               </div>
-            </details>
+            </div>
+          </div>
 
-            <div class="hidden md:block">
-              <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
-              <div
-                class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium"
-              >
-                <div class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">File</span>
-                  <span
-                    class="text-on-surface truncate ml-md max-w-[180px]"
-                    :title="selectedEntry ? decodeName(selectedEntry.name) : ''"
-                  >
-                    {{ selectedEntry ? decodeName(selectedEntry.name) : "—" }}
-                  </span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">Status</span>
-                  <span
-                    :class="
-                      status === 'error'
-                        ? 'text-error'
-                        : status === 'idle'
-                          ? 'text-tertiary'
-                          : 'text-secondary'
+          <div class="hidden md:block">
+            <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
+            <div
+              class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium"
+            >
+              <div class="flex justify-between items-center">
+                <span class="text-on-surface-variant">File</span>
+                <span
+                  class="text-on-surface truncate ml-md max-w-[180px]"
+                  :title="selectedEntry ? decodeName(selectedEntry.name) : ''"
+                >
+                  {{ selectedEntry ? decodeName(selectedEntry.name) : "—" }}
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-on-surface-variant">Status</span>
+                <span
+                  :class="
+                    status === 'error'
+                      ? 'text-error'
+                      : status === 'idle'
+                        ? 'text-tertiary'
+                        : 'text-secondary'
+                  "
+                >
+                  <template
+                    v-if="
+                      selectedEntry && progressByPath[selectedEntry.path] && status === 'running'
                     "
                   >
-                    <template
+                    {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
+                    <span
                       v-if="
-                        selectedEntry && progressByPath[selectedEntry.path] && status === 'running'
+                        progressByPath[selectedEntry.path].phase === 'transcribing' ||
+                        progressByPath[selectedEntry.path].phase === 'diarizing'
                       "
                     >
-                      {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
-                      <span
-                        v-if="
-                          progressByPath[selectedEntry.path].phase === 'transcribing' ||
-                          progressByPath[selectedEntry.path].phase === 'diarizing'
-                        "
-                      >
-                        · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
-                      </span>
-                    </template>
-                    <template v-else>{{
-                      status === "idle" && transcript ? "ready" : status
-                    }}</template>
-                  </span>
-                </div>
-                <div class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">Duration</span>
-                  <span class="text-on-surface">{{
-                    transcript ? fmtLong(transcript.duration_ms) : "—"
-                  }}</span>
-                </div>
-                <div v-if="transcript" class="flex justify-between items-center">
-                  <span class="text-on-surface-variant">Utterances · Speakers</span>
-                  <span class="text-on-surface">
-                    {{ transcript.utterances.length }} ·
-                    <span class="text-primary">{{ transcript.speakers_detected }}</span>
-                  </span>
-                </div>
+                      · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
+                    </span>
+                  </template>
+                  <template v-else>{{
+                    status === "idle" && transcript ? "ready" : status
+                  }}</template>
+                </span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-on-surface-variant">Duration</span>
+                <span class="text-on-surface">{{
+                  transcript ? fmtLong(transcript.duration_ms) : "—"
+                }}</span>
+              </div>
+              <div v-if="transcript" class="flex justify-between items-center">
+                <span class="text-on-surface-variant">Utterances · Speakers</span>
+                <span class="text-on-surface">
+                  {{ transcript.utterances.length }} ·
+                  <span class="text-primary">{{ transcript.speakers_detected }}</span>
+                </span>
               </div>
             </div>
           </div>
