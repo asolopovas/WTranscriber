@@ -126,12 +126,13 @@ For chains in `.pi/chains/`, the same loop applies; patch the chain file when th
 
 Orchestrator-worker pattern. Main thread = orchestrator (design + code + synthesis). Specialists run in fresh context and return tight summaries.
 
-| Agent          | Role          | Trigger                                                                          |
-| -------------- | ------------- | -------------------------------------------------------------------------------- |
-| `wt-installer` | executor      | install/build artifact per platform (Win GUI + CLI, Android, WSL)                |
-| `wt-tester`    | executor      | 30-second-clip smoke + assertion across platforms                                |
-| `wt-committer` | gate-keeper   | stage, commit (pre-commit hook mandatory), push — **all** commits route here     |
-| `wt-triage`    | diagnostician | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions |
+| Agent          | Role           | Trigger                                                                          |
+| -------------- | -------------- | -------------------------------------------------------------------------------- |
+| `wt-installer` | executor       | install/build artifact per platform (Win GUI + CLI, Android, WSL)                |
+| `wt-tester`    | executor       | 30-second-clip smoke + assertion across platforms                                |
+| `wt-committer` | gate-keeper    | stage, commit (pre-commit hook mandatory), push — **all** commits route here     |
+| `wt-triage`    | diagnostician  | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions |
+| `wt-scout`     | reconnaissance | repo-wide code search; returns ranked `file:line` citations with annotations     |
 
 Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FIX` block — no raw log dumps.
 
