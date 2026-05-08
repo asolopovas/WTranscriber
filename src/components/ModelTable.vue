@@ -4,7 +4,7 @@ import type { FileProgress, ModelInfo } from "../types";
 import { fmtModelSize, progressPct } from "../composables/format";
 import Card from "./ui/Card.vue";
 import Icon from "./ui/Icon.vue";
-import PillButton from "./ui/PillButton.vue";
+import Button from "./ui/Button.vue";
 import StatusPill from "./ui/StatusPill.vue";
 
 const props = defineProps<{
@@ -79,22 +79,28 @@ function accPct(m: ModelInfo): number {
               </span>
             </div>
           </div>
-          <button
+          <Button
             v-if="progress[m.id]"
-            class="shrink-0 w-9 h-9 rounded-full bg-surface-container-high text-secondary flex items-center justify-center"
+            variant="neutral"
+            shape="circle"
+            size="sm"
+            icon="progress_activity"
+            :icon-size="20"
+            class="shrink-0 animate-pulse"
             disabled
             :title="`Downloading · ${progressPct(progress[m.id]).toFixed(0)}%`"
-          >
-            <Icon name="progress_activity" :size="20" class="animate-pulse" />
-          </button>
-          <button
+          />
+          <Button
             v-else-if="m.status === 'not_installed'"
-            class="shrink-0 w-10 h-10 rounded-full bg-primary-container text-on-primary-container hover:bg-primary transition-colors flex items-center justify-center"
+            variant="primary"
+            shape="circle"
+            size="md"
+            icon="download"
+            :icon-size="20"
+            class="shrink-0"
             title="Install"
             @click="$emit('install', m.id)"
-          >
-            <Icon name="download" :size="20" />
-          </button>
+          />
         </div>
         <div v-if="progress[m.id]" class="flex flex-col gap-unit">
           <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
@@ -183,14 +189,14 @@ function accPct(m: ModelInfo): number {
             <StatusPill v-else tone="muted">Not installed</StatusPill>
           </td>
           <td class="px-margin py-md text-right align-top">
-            <PillButton
+            <Button
               v-if="m.status === 'not_installed'"
               variant="primary"
               icon="download"
               @click="$emit('install', m.id)"
             >
               Install
-            </PillButton>
+            </Button>
             <Icon
               v-else-if="m.status === 'installed'"
               name="check"

@@ -6,6 +6,7 @@ import { fmtMs } from "../../composables/format";
 import Modal from "../ui/Modal.vue";
 import ErrorBanner from "../ui/ErrorBanner.vue";
 import Icon from "../ui/Icon.vue";
+import Button from "../ui/Button.vue";
 import Spinner from "../icons/Spinner.vue";
 import CancelIcon from "../icons/CancelIcon.vue";
 import SaveIcon from "../icons/SaveIcon.vue";
@@ -308,13 +309,14 @@ function close() {
           {{ target?.name ?? "—" }}
         </p>
       </div>
-      <button
-        class="p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
+      <Button
+        variant="ghost"
+        shape="icon"
+        icon="close"
+        :icon-size="20"
         title="Close"
         @click="close"
-      >
-        <Icon name="close" :size="20" />
-      </button>
+      />
     </template>
 
     <ErrorBanner v-if="localError">{{ localError }}</ErrorBanner>
@@ -368,38 +370,35 @@ function close() {
     </div>
 
     <template #footer>
-      <button
-        class="min-h-12 px-lg rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
+      <Button
+        variant="neutral"
+        size="lg"
+        icon="restart_alt"
+        :icon-size="18"
         title="Reset to full track"
         @click="reset"
       >
-        <Icon name="restart_alt" :size="18" />
         Full track
-      </button>
+      </Button>
       <div class="flex gap-xs">
-        <button
-          class="min-h-12 w-12 rounded-full border border-outline-variant text-primary hover:bg-surface-container-high transition-colors flex items-center justify-center"
+        <Button
+          variant="neutral"
+          shape="circle"
+          size="lg"
           :title="playing ? 'Stop' : 'Play selection'"
           :disabled="audioLoading || !target"
+          class="text-primary"
           @click="togglePlay"
         >
           <Spinner v-if="audioLoading" :size="20" />
           <Icon v-else :name="playing ? 'pause' : 'play_arrow'" :size="22" fill />
-        </button>
-        <button
-          class="min-h-12 w-12 rounded-full border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"
-          title="Cancel"
-          @click="close"
-        >
+        </Button>
+        <Button variant="neutral" shape="circle" size="lg" title="Cancel" @click="close">
           <CancelIcon :size="20" />
-        </button>
-        <button
-          class="min-h-12 w-12 rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors flex items-center justify-center"
-          title="Save"
-          @click="commit"
-        >
+        </Button>
+        <Button variant="primary" shape="circle" size="lg" title="Save" @click="commit">
           <SaveIcon :size="20" />
-        </button>
+        </Button>
       </div>
     </template>
   </Modal>

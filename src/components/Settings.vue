@@ -9,8 +9,7 @@ import { fieldClass } from "../styles/fields";
 import ModelTable from "./ModelTable.vue";
 import Card from "./ui/Card.vue";
 import DefRow from "./ui/DefRow.vue";
-import Icon from "./ui/Icon.vue";
-import PillButton from "./ui/PillButton.vue";
+import Button from "./ui/Button.vue";
 import SaveIndicator from "./ui/SaveIndicator.vue";
 
 const config = ref<Config | null>(null);
@@ -226,19 +225,15 @@ async function resetAudioCache() {
                   <span class="font-medium">All Files Access</span> in Android Settings.
                 </p>
               </div>
-              <button
-                type="button"
-                class="px-md py-xs rounded-full text-titleSmall transition-colors inline-flex items-center gap-xs w-fit"
-                :class="
-                  persistentEnabled
-                    ? 'bg-primary text-on-primary'
-                    : 'bg-surface-container-high text-on-surface border border-outline-variant'
-                "
+              <Button
+                :variant="persistentEnabled ? 'primary' : 'neutral'"
+                :icon="persistentEnabled ? 'check_circle' : 'shield'"
+                :icon-size="18"
+                class="w-fit"
                 @click="togglePersistent(!persistentEnabled)"
               >
-                <Icon :name="persistentEnabled ? 'check_circle' : 'shield'" :size="18" />
                 {{ persistentEnabled ? "Enabled" : "Grant access & enable" }}
-              </button>
+              </Button>
             </div>
             <p
               v-if="persistentMessage"
@@ -269,14 +264,14 @@ async function resetAudioCache() {
                   Clears saved transcript previews and cached transcription results.
                 </p>
               </div>
-              <PillButton
+              <Button
                 icon="delete_sweep"
                 :icon-size="18"
                 class="w-fit"
                 @click="resetTranscriptCache"
               >
                 Reset transcript cache
-              </PillButton>
+              </Button>
             </div>
             <div class="flex flex-col gap-md">
               <div>
@@ -285,14 +280,9 @@ async function resetAudioCache() {
                   Clears converted WAV files created for non-WAV audio inputs.
                 </p>
               </div>
-              <PillButton
-                icon="delete_sweep"
-                :icon-size="18"
-                class="w-fit"
-                @click="resetAudioCache"
-              >
+              <Button icon="delete_sweep" :icon-size="18" class="w-fit" @click="resetAudioCache">
                 Reset audio cache
-              </PillButton>
+              </Button>
             </div>
             <p v-if="maintenanceStatus" class="md:col-span-2 text-bodyMedium text-tertiary">
               {{ maintenanceStatus }}

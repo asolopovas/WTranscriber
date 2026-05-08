@@ -6,6 +6,7 @@ import { fmtMs, fmtBytes } from "@composables/format";
 import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
 import Spinner from "@components/icons/Spinner.vue";
 import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
 import MenuItem from "@components/ui/MenuItem.vue";
 
 const props = defineProps<{
@@ -74,30 +75,36 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               {{ pretty.display }}
             </div>
             <div class="flex items-center gap-unit shrink-0 -mr-xs" @click.stop>
-              <button
+              <Button
                 v-if="busy[entry.path]"
-                class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-error hover:bg-error-container/40 transition-colors"
+                variant="ghost-error"
+                shape="circle"
+                size="md"
+                icon="stop"
+                :icon-size="20"
                 title="Stop"
                 @click="emit('stop', entry)"
-              >
-                stop
-              </button>
-              <button
+              />
+              <Button
                 v-else
-                class="w-10 h-10 flex items-center justify-center rounded-full text-primary hover:bg-surface-container-highest transition-colors"
+                variant="ghost-primary"
+                shape="circle"
+                size="md"
                 title="Transcribe"
                 @click="emit('transcribe', entry)"
               >
                 <TranscribeIcon :size="20" />
-              </button>
+              </Button>
               <div class="relative">
-                <button
-                  class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"
+                <Button
+                  variant="ghost"
+                  shape="circle"
+                  size="md"
+                  icon="more_vert"
+                  :icon-size="20"
                   title="More"
                   @click="toggleMenu(entry.path)"
-                >
-                  more_vert
-                </button>
+                />
                 <div
                   v-if="openMenuPath === entry.path"
                   class="absolute right-0 top-full mt-unit z-30 min-w-[180px] bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
@@ -239,27 +246,30 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         </td>
         <td class="px-margin py-xs text-right">
           <div class="inline-flex gap-unit" @click.stop>
-            <button
+            <Button
               v-if="busy[entry.path]"
-              class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-error transition-colors"
+              variant="ghost-error"
+              shape="icon"
+              icon="stop"
+              :icon-size="18"
               title="Stop transcription"
               @click="emit('stop', entry)"
-            >
-              stop
-            </button>
-            <button
+            />
+            <Button
               v-else
-              class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
+              variant="ghost"
+              shape="icon"
               title="Transcribe"
               @click="emit('transcribe', entry)"
             >
               <TranscribeIcon :size="18" />
-            </button>
-            <button
-              class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant transition-colors"
-              :class="
-                entry.trim_start_ms || entry.trim_end_ms ? 'text-primary' : 'hover:text-primary'
-              "
+            </Button>
+            <Button
+              variant="ghost"
+              shape="icon"
+              icon="content_cut"
+              :icon-size="18"
+              :class="entry.trim_start_ms || entry.trim_end_ms ? 'text-primary' : ''"
               :title="
                 entry.trim_start_ms || entry.trim_end_ms
                   ? `Trim: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
@@ -268,41 +278,42 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
                   : 'Trim — select range to transcribe'
               "
               @click="emit('trim', entry)"
-            >
-              <Icon name="content_cut" :size="18" />
-            </button>
-            <button
-              class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
+            />
+            <Button
+              variant="ghost"
+              shape="icon"
               :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
               :disabled="autoRenamingPath === entry.path"
               @click="emit('auto-rename', entry)"
             >
               <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
               <Icon v-else name="auto_awesome" :size="18" />
-            </button>
-            <button
-              class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+            </Button>
+            <Button
+              variant="ghost"
+              shape="icon"
+              icon="drive_file_rename_outline"
+              :icon-size="18"
               title="Rename"
               @click="emit('rename', entry)"
-            >
-              drive_file_rename_outline
-            </button>
-            <button
-              class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+            />
+            <Button
+              variant="ghost"
+              shape="icon"
+              icon="download"
+              :icon-size="18"
               title="Export transcript"
               :disabled="!entry.cache_key"
-              :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
               @click="emit('export', entry)"
-            >
-              download
-            </button>
-            <button
-              class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error transition-colors"
+            />
+            <Button
+              variant="ghost-error"
+              shape="icon"
+              icon="delete"
+              :icon-size="18"
               title="Delete"
               @click="emit('delete', entry)"
-            >
-              delete
-            </button>
+            />
           </div>
         </td>
       </tr>

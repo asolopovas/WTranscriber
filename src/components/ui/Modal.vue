@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Icon from "./Icon.vue";
+import Button from "./Button.vue";
 
 withDefaults(
   defineProps<{
@@ -45,14 +45,15 @@ function onBackdrop() {
           <slot name="header">
             <h3 class="flex-1 text-titleSmall text-on-surface">{{ title }}</h3>
           </slot>
-          <button
+          <Button
             v-if="showClose"
-            class="p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
+            variant="ghost"
+            shape="icon"
+            icon="close"
+            :icon-size="20"
             title="Close"
             @click="emit('close')"
-          >
-            <Icon name="close" :size="20" />
-          </button>
+          />
         </header>
         <div class="px-margin py-md space-y-md">
           <slot></slot>

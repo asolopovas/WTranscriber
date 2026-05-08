@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import { api } from "../api";
-import Icon from "./ui/Icon.vue";
+import Button from "./ui/Button.vue";
 
 const props = defineProps<{ workdir: string; headless?: boolean }>();
 const emit = defineEmits<{ (e: "saved", path: string): void }>();
@@ -204,22 +204,31 @@ defineExpose({
       ></div>
     </div>
     <div v-if="!props.headless" class="flex gap-xs">
-      <button
+      <Button
         v-if="!recording"
+        variant="error"
+        size="lg"
+        block
+        icon="fiber_manual_record"
+        :icon-size="18"
+        icon-fill
         @click="start"
-        class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-error-container text-on-error-container py-md rounded-full font-titleSmall hover:opacity-90 transition-opacity"
       >
-        <Icon name="fiber_manual_record" :size="18" fill />
         Rec
-      </button>
-      <button
+      </Button>
+      <Button
         v-else
+        variant="primary"
+        size="lg"
+        block
+        bold
+        icon="stop"
+        :icon-size="18"
+        icon-fill
         @click="stop"
-        class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-primary text-on-primary py-md rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
       >
-        <Icon name="stop" :size="18" fill />
         Stop · {{ elapsed }}
-      </button>
+      </Button>
     </div>
     <p v-if="error" class="text-error font-mono text-labelSmall">{{ error }}</p>
   </section>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { TABS, type Tab } from "@components/nav-tabs";
 import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
 
 defineProps<{
   version: string;
@@ -34,24 +35,18 @@ const tab = defineModel<Tab>("tab", { required: true });
     <nav
       class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0"
     >
-      <button
-        v-for="t in TABS"
-        :key="t.id"
-        @click="tab = t.id"
-        class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors whitespace-nowrap shrink-0"
-        :class="
-          tab === t.id
-            ? 'border-primary text-on-surface'
-            : 'border-transparent text-on-surface-variant hover:text-on-surface'
-        "
-      >
+      <Button v-for="t in TABS" :key="t.id" shape="tab" :active="tab === t.id" @click="tab = t.id">
         {{ t.label }}
-      </button>
+      </Button>
     </nav>
     <div class="flex items-center gap-xs shrink-0">
-      <button
+      <Button
         v-if="showTranscribeActions && pendingCount > 0"
-        class="w-11 h-11 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        variant="ghost"
+        shape="circle"
+        size="md"
+        icon="playlist_play"
+        :icon-size="22"
         :disabled="queueActive"
         @click="emit('transcribe-all')"
         :title="
@@ -60,25 +55,22 @@ const tab = defineModel<Tab>("tab", { required: true });
             : `Transcribe all (${pendingCount})`
         "
         aria-label="Transcribe all untranscribed files"
-      >
-        <Icon name="playlist_play" :size="22" />
-      </button>
-      <button
+      />
+      <Button
         v-if="showTranscribeActions"
-        class="w-11 h-11 inline-flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors"
+        variant="primary"
+        shape="circle"
+        size="md"
+        icon="add"
+        :icon-size="22"
         @click="emit('pick-audio')"
         title="Add audio file(s) to working folder"
         aria-label="Add audio files"
-      >
-        <Icon name="add" :size="22" />
-      </button>
-      <button
-        class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs"
-        aria-label="More options"
-      >
+      />
+      <Button variant="ghost" shape="circle" size="md" class="-mr-xs" aria-label="More options">
         <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
         <Icon name="more_vert" :size="22" />
-      </button>
+      </Button>
     </div>
   </header>
 </template>

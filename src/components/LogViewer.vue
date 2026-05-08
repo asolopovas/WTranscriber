@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
 import ErrorBanner from "./ui/ErrorBanner.vue";
 import Icon from "./ui/Icon.vue";
-import PillButton from "./ui/PillButton.vue";
+import Button from "./ui/Button.vue";
 
 const tail = ref<string>("");
 const path = ref<string>("");
@@ -113,29 +113,23 @@ function levelClass(line: string): string {
               <option :value="20">Last 20 runs</option>
               <option :value="0">All</option>
             </select>
-            <button
-              @click="refresh"
-              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
-            >
-              <Icon name="refresh" :size="18" class="md:text-[16px]" />
-              Refresh
-            </button>
-            <PillButton variant="danger" mobile-tall icon="delete" @click="clear">
-              Clear
-            </PillButton>
+            <Button mobile-tall icon="refresh" :icon-size="18" @click="refresh"> Refresh </Button>
+            <Button variant="danger" mobile-tall icon="delete" @click="clear"> Clear </Button>
           </div>
         </div>
         <div class="flex items-center gap-xs text-on-surface-variant min-w-0">
           <Icon name="description" :size="16" class="shrink-0" />
           <code class="font-mono text-labelSmall truncate">{{ path || "—" }}</code>
-          <button
+          <Button
             v-if="path"
-            @click="copyPath"
-            class="ml-xs material-symbols-outlined text-[16px] hover:text-primary transition-colors"
+            variant="ghost"
+            shape="icon"
+            icon="content_copy"
+            :icon-size="16"
+            class="ml-xs"
             aria-label="Copy path"
-          >
-            content_copy
-          </button>
+            @click="copyPath"
+          />
         </div>
       </div>
 

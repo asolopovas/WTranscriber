@@ -17,6 +17,7 @@ import Toggle from "@components/ui/Toggle.vue";
 import SaveIndicator from "@components/ui/SaveIndicator.vue";
 import FormField from "@components/ui/FormField.vue";
 import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
 import Spinner from "@components/icons/Spinner.vue";
 import type { SaveState } from "@composables/useDebouncedSave";
 
@@ -236,26 +237,31 @@ const headerAriaLabel = computed(() => {
         Configuration
       </h3>
       <div class="flex items-center gap-xs pr-md">
-        <button
+        <Button
           v-if="!recording"
+          variant="error"
+          size="md"
+          icon="fiber_manual_record"
+          icon-fill
+          title="Record"
           @pointerdown.stop
           @click.stop.prevent="emit('rec-start')"
-          class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
-          title="Record"
         >
-          <Icon name="fiber_manual_record" :size="16" fill />
           Rec
-        </button>
-        <button
+        </Button>
+        <Button
           v-else
+          variant="primary"
+          size="md"
+          bold
+          icon="stop"
+          icon-fill
+          :title="`Stop recording \u00b7 ${recElapsed}`"
           @pointerdown.stop
           @click.stop.prevent="emit('rec-stop')"
-          class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
-          :title="`Stop recording \u00b7 ${recElapsed}`"
         >
-          <Icon name="stop" :size="16" fill />
           {{ recElapsed }}
-        </button>
+        </Button>
         <SaveIndicator :state="saveState" />
       </div>
     </div>
@@ -294,9 +300,10 @@ const headerAriaLabel = computed(() => {
               {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
             </div>
           </div>
-          <button
-            type="button"
-            class="px-md h-9 rounded-md bg-primary text-on-primary text-labelLarge inline-flex items-center gap-xs disabled:opacity-50"
+          <Button
+            variant="primary"
+            shape="square"
+            size="md"
             :disabled="installingSelected || selectedAsrModel.status === 'downloading'"
             @click="installSelectedModel"
           >
@@ -312,7 +319,7 @@ const headerAriaLabel = computed(() => {
                   ? "Starting…"
                   : "Download"
             }}
-          </button>
+          </Button>
         </div>
 
         <div class="grid grid-cols-2 gap-md">

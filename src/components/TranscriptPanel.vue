@@ -2,6 +2,7 @@
 import type { Transcript } from "@/types";
 import { fmtMs as fmt } from "@composables/format";
 import SlidingPanel from "@components/SlidingPanel.vue";
+import Button from "@components/ui/Button.vue";
 
 defineProps<{ transcript: Transcript }>();
 const emit = defineEmits<{ (e: "close"): void }>();
@@ -14,15 +15,18 @@ const emit = defineEmits<{ (e: "close"): void }>();
         <Icon name="subtitles" :size="18" class="text-primary" />
         Transcript
       </h3>
-      <button
-        @pointerdown.stop
-        @click.stop="emit('close')"
-        class="mr-md w-9 h-9 inline-flex items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+      <Button
+        variant="ghost"
+        shape="circle"
+        size="sm"
+        icon="close"
+        :icon-size="18"
+        class="mr-md"
         title="Close transcript"
         aria-label="Close transcript"
-      >
-        <Icon name="close" :size="18" />
-      </button>
+        @pointerdown.stop
+        @click.stop="emit('close')"
+      />
     </template>
     <article
       v-for="(u, i) in transcript.utterances"

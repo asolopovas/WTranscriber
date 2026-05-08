@@ -27,7 +27,7 @@ import TranscriptPanel from "@components/TranscriptPanel.vue";
 import ConfigPanel from "@components/ConfigPanel.vue";
 import Recorder from "@components/Recorder.vue";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
-import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
 import RenameDialog from "@components/dialogs/RenameDialog.vue";
 import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
@@ -542,19 +542,15 @@ const selectedProgress = computed(() =>
           <ErrorBanner v-if="error" icon="error" layout="inline" class="m-margin">
             <span class="break-words text-labelMedium">{{ error }}</span>
             <template #actions>
-              <button
-                class="text-titleSmall underline hover:opacity-80 shrink-0"
-                @click="tab = 'logs'"
-              >
-                View log
-              </button>
-              <button
-                class="shrink-0 hover:opacity-70"
+              <Button shape="link" @click="tab = 'logs'">View log</Button>
+              <Button
+                variant="ghost"
+                shape="icon"
+                icon="close"
+                :icon-size="18"
                 aria-label="Dismiss error"
                 @click="error = null"
-              >
-                <Icon name="close" :size="18" />
-              </button>
+              />
             </template>
           </ErrorBanner>
 
