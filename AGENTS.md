@@ -108,6 +108,7 @@ Between every user turn — and after every edit batch — the orchestrator:
 | `just check` / CI / regression forensics                              | `wt-triage` (parallel, observe-only)                                                                                                                  |
 | User asks to commit / ship                                            | `wt-committer` (never `git commit` from main thread)                                                                                                  |
 | User asks to release                                                  | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                                   |
+| Need external knowledge (Reddit/GitHub/SO) before deciding            | `wt-researcher`                                                                                                                                       |
 
 ### Self-repair (when an agent misbehaves)
 
@@ -137,13 +138,14 @@ For chains in `.pi/chains/`, the same loop applies; patch the chain file when th
 
 Orchestrator-worker pattern. Main thread = orchestrator (design + code + synthesis). Specialists run in fresh context and return tight summaries.
 
-| Agent          | Role           | Trigger                                                                          |
-| -------------- | -------------- | -------------------------------------------------------------------------------- |
-| `wt-installer` | executor       | install/build artifact per platform (Win GUI + CLI, Android, WSL)                |
-| `wt-tester`    | executor       | 30-second-clip smoke + assertion across platforms                                |
-| `wt-committer` | gate-keeper    | stage, commit (pre-commit hook mandatory), push — **all** commits route here     |
-| `wt-triage`    | diagnostician  | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions |
-| `wt-scout`     | reconnaissance | repo-wide code search; returns ranked `file:line` citations with annotations     |
+| Agent           | Role           | Trigger                                                                                      |
+| --------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| `wt-installer`  | executor       | install/build artifact per platform (Win GUI + CLI, Android, WSL)                            |
+| `wt-tester`     | executor       | 30-second-clip smoke + assertion across platforms                                            |
+| `wt-committer`  | gate-keeper    | stage, commit (pre-commit hook mandatory), push — **all** commits route here                 |
+| `wt-triage`     | diagnostician  | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions             |
+| `wt-researcher` | external scout | external research / library or workflow questions / unfamiliar API / community-known gotchas |
+| `wt-scout`      | reconnaissance | repo-wide code search; returns ranked `file:line` citations with annotations                 |
 
 Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FIX` block — no raw log dumps.
 
