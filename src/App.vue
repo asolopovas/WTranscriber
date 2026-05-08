@@ -361,6 +361,16 @@ const untranscribedEntries = computed<DirEntry[]>(() =>
   audioEntries.value.filter((e) => !e.cache_key && !busy.value[e.path]),
 );
 
+const transcribedCount = computed(() => audioEntries.value.filter((e) => !!e.cache_key).length);
+
+const todayLabel = computed(() =>
+  new Date().toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }),
+);
+
 async function reload() {
   config.value = await api.loadConfig();
   models.value = await api.listModels();
@@ -392,11 +402,6 @@ async function openDir(path: string) {
   } catch (e) {
     error.value = String(e);
   }
-}
-
-async function pickFolder() {
-  const selected = await withDialog(() => open({ directory: true, multiple: false }));
-  if (typeof selected === "string") void openDir(selected);
 }
 
 const audioExtensions = ["wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma"];
@@ -1152,21 +1157,42 @@ const fieldClass =
           {{ t.label }}
         </button>
       </nav>
-      <button
-        class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs"
-      >
-        <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
-        <span class="material-symbols-outlined text-[22px]">more_vert</span>
-      </button>
+      <div class="flex items-center gap-xs shrink-0">
+        <button
+          v-if="tab === 'transcribe' && untranscribedEntries.length > 0"
+          class="w-11 h-11 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          :disabled="queueActive"
+          @click="transcribeAll"
+          :title="
+            queueActive
+              ? `Transcribing ${queueDone + 1}/${queueTotal}`
+              : `Transcribe all (${untranscribedEntries.length})`
+          "
+          aria-label="Transcribe all untranscribed files"
+        >
+          <span class="material-symbols-outlined text-[22px]">playlist_play</span>
+        </button>
+        <button
+          v-if="tab === 'transcribe'"
+          class="w-11 h-11 inline-flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors"
+          @click="pickAudio"
+          title="Add audio file(s) to working folder"
+          aria-label="Add audio files"
+        >
+          <span class="material-symbols-outlined text-[22px]">add</span>
+        </button>
+        <button
+          class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs"
+          aria-label="More options"
+        >
+          <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
+          <span class="material-symbols-outlined text-[22px]">more_vert</span>
+        </button>
+      </div>
     </header>
 
     <div
-      v-if="
-        tab === 'transcribe' &&
-        (recorderRef?.recording ||
-          (selectedEntry && progressByPath[selectedEntry.path] && status === 'running') ||
-          transcript)
-      "
+      v-if="tab === 'transcribe'"
       class="shrink-0 border-b border-outline-variant/40 bg-surface-container-low px-margin py-xs flex items-center gap-xs font-mono text-labelSmall overflow-hidden"
     >
       <template v-if="recorderRef?.recording">
@@ -1207,6 +1233,29 @@ const fieldClass =
           {{ transcript.speakers_detected }} spk</span
         >
       </template>
+      <template v-else-if="selectedEntry">
+        <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0"
+          >graphic_eq</span
+        >
+        <span class="text-on-surface truncate min-w-0">{{
+          decodeName(prettyName(selectedEntry.name).display)
+        }}</span>
+        <span class="text-on-surface-variant shrink-0 ml-auto">
+          {{ selectedEntry.duration_ms ? fmt(selectedEntry.duration_ms) : "—" }} ·
+          {{ fmtBytes(selectedEntry.size_bytes) }}
+          <template v-if="selectedEntry.cache_key"> · transcribed </template>
+        </span>
+      </template>
+      <template v-else>
+        <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0"
+          >today</span
+        >
+        <span class="text-on-surface-variant shrink-0">{{ todayLabel }}</span>
+        <span class="text-on-surface-variant shrink-0 ml-auto">
+          {{ audioEntries.length }} {{ audioEntries.length === 1 ? "file" : "files" }}
+          <template v-if="transcribedCount > 0"> · {{ transcribedCount }} transcribed </template>
+        </span>
+      </template>
     </div>
 
     <main class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0" @click="closeMenus">
@@ -1216,60 +1265,11 @@ const fieldClass =
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
           <div
-            class="flex items-center gap-xs px-margin h-14 md:h-12 border-b border-outline-variant/40 shrink-0 overflow-x-auto md:overflow-visible scroll-thin"
+            v-if="queueActive"
+            class="flex items-center gap-xs px-margin py-unit border-b border-outline-variant/40 shrink-0 font-mono text-labelSmall text-secondary"
           >
-            <span
-              class="material-symbols-outlined text-on-surface-variant text-[20px] md:text-[18px] shrink-0"
-              >folder</span
-            >
-            <span
-              class="font-mono text-labelMedium text-on-surface truncate min-w-0 hidden sm:inline"
-              :title="listing?.path"
-            >
-              {{ listing?.path ?? "—" }}
-            </span>
-            <button
-              class="text-on-surface-variant hover:text-on-surface transition-colors w-11 h-11 md:w-auto md:h-auto flex items-center justify-center shrink-0"
-              @click="refreshListing"
-              title="Refresh"
-            >
-              <span class="material-symbols-outlined text-[22px] md:text-[18px]">refresh</span>
-            </button>
-            <div class="flex-1"></div>
-            <div
-              v-if="queueActive"
-              class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
-            >
-              <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
-              queue {{ queueDone + 1 }}/{{ queueTotal }}
-            </div>
-            <button
-              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
-              :disabled="queueActive || untranscribedEntries.length === 0"
-              @click="transcribeAll"
-              title="Transcribe every untranscribed audio file in this folder"
-            >
-              <span class="material-symbols-outlined text-[20px] md:text-[16px]"
-                >playlist_play</span
-              >
-              <span class="hidden sm:inline">Transcribe all</span>
-            </button>
-            <button
-              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full border border-outline-variant text-on-surface text-labelMedium hover:bg-surface-container-high transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap"
-              @click="pickFolder"
-              title="Change working folder"
-            >
-              <span class="material-symbols-outlined text-[20px] md:text-[16px]">folder_open</span>
-              <span class="hidden sm:inline">Change</span>
-            </button>
-            <button
-              class="min-w-11 h-11 md:h-auto px-md md:py-unit rounded-full bg-primary text-on-primary text-labelMedium hover:bg-primary-fixed-dim transition-colors flex items-center justify-center gap-unit shrink-0 whitespace-nowrap"
-              @click="pickAudio"
-              title="Add audio file(s) to working folder"
-            >
-              <span class="material-symbols-outlined text-[20px] md:text-[16px]">add</span>
-              <span class="hidden sm:inline">Add audio</span>
-            </button>
+            <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+            queue {{ queueDone + 1 }}/{{ queueTotal }}
           </div>
 
           <div
@@ -1319,16 +1319,16 @@ const fieldClass =
                 :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
                 @click="chooseEntry(entry)"
               >
-                <div class="flex items-start gap-xs">
+                <div class="flex items-center gap-xs">
                   <div class="flex-1 min-w-0">
-                    <div class="flex items-start gap-xs">
+                    <div class="flex items-center gap-xs">
                       <div
                         class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words"
                         :title="decodeName(entry.name)"
                       >
                         {{ prettyName(entry.name).display }}
                       </div>
-                      <div class="flex items-center gap-unit shrink-0 -mt-unit -mr-xs" @click.stop>
+                      <div class="flex items-center gap-unit shrink-0 -mr-xs" @click.stop>
                         <button
                           v-if="busy[entry.path]"
                           class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-error hover:bg-error-container/40 transition-colors"
@@ -1422,40 +1422,23 @@ const fieldClass =
                   </div>
                 </div>
                 <div
-                  class="flex items-center flex-wrap gap-xs mt-xs font-mono text-labelSmall text-on-surface-variant"
+                  v-if="busy[entry.path]"
+                  class="flex items-center gap-xs mt-xs font-mono text-labelSmall text-secondary"
                 >
-                  <span>{{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}</span>
-                  <span class="text-outline">·</span>
-                  <span>{{ fmtBytes(entry.size_bytes) }}</span>
-                  <template v-if="busy[entry.path]">
-                    <span class="text-outline">·</span>
-                    <span class="text-secondary flex items-center gap-unit">
-                      <span class="material-symbols-outlined text-[14px] animate-pulse"
-                        >graphic_eq</span
-                      >
-                      <template v-if="progressByPath[entry.path]">
-                        <span
-                          v-if="
-                            progressByPath[entry.path].phase === 'transcribing' ||
-                            progressByPath[entry.path].phase === 'diarizing'
-                          "
-                          >{{ progressByPath[entry.path].displayPct.toFixed(1) }}%</span
-                        >
-                        <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
-                      </template>
-                      <span v-else>transcribing</span>
-                    </span>
+                  <span class="material-symbols-outlined text-[14px] animate-pulse"
+                    >graphic_eq</span
+                  >
+                  <template v-if="progressByPath[entry.path]">
+                    <span
+                      v-if="
+                        progressByPath[entry.path].phase === 'transcribing' ||
+                        progressByPath[entry.path].phase === 'diarizing'
+                      "
+                      >{{ progressByPath[entry.path].displayPct.toFixed(1) }}%</span
+                    >
+                    <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
                   </template>
-                  <template v-else-if="entry.cache_key">
-                    <span class="text-outline">·</span>
-                    <span class="text-tertiary flex items-center gap-unit">
-                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                      transcribed
-                    </span>
-                  </template>
-                  <span v-if="prettyName(entry.name).timestamp" class="ml-auto text-secondary">{{
-                    prettyName(entry.name).timestamp
-                  }}</span>
+                  <span v-else>transcribing</span>
                 </div>
               </li>
             </ul>

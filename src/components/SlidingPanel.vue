@@ -71,28 +71,37 @@ watch(contentEl, (el, _prev, onCleanup) => {
   onCleanup(() => ro.disconnect());
 });
 
-function snap(px: number): number {
-  const stops = [collapsedPx.value, computedMaxPx.value];
-  return stops.reduce((best, s) => (Math.abs(s - px) < Math.abs(best - px) ? s : best), stops[0]);
-}
-
 function beginResize(ev: PointerEvent) {
   ev.preventDefault();
   resizing.value = true;
   const startY = ev.clientY;
   const startPx = heightPx.value;
   let dragged = false;
+  let lastY = startY;
+  let lastT = ev.timeStamp;
+  let velocity = 0;
   const move = (e: PointerEvent) => {
     const delta = startY - e.clientY;
     if (Math.abs(delta) > 3) dragged = true;
+    const dt = e.timeStamp - lastT;
+    if (dt > 0) velocity = (lastY - e.clientY) / dt;
+    lastY = e.clientY;
+    lastT = e.timeStamp;
     heightPx.value = Math.max(collapsedPx.value, Math.min(computedMaxPx.value, startPx + delta));
   };
   const up = () => {
     resizing.value = false;
-    if (dragged) {
-      heightPx.value = snap(heightPx.value);
-    } else {
+    const moved = heightPx.value - startPx;
+    if (!dragged) {
       heightPx.value = startPx > openThresholdPx.value ? collapsedPx.value : computedMaxPx.value;
+    } else if (Math.abs(velocity) > 0.3) {
+      heightPx.value = velocity > 0 ? computedMaxPx.value : collapsedPx.value;
+    } else if (moved > 0) {
+      heightPx.value = computedMaxPx.value;
+    } else if (moved < 0) {
+      heightPx.value = collapsedPx.value;
+    } else {
+      heightPx.value = startPx > openThresholdPx.value ? computedMaxPx.value : collapsedPx.value;
     }
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
