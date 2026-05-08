@@ -1708,22 +1708,11 @@ const fieldClass =
             height: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
           }"
         >
-          <button
-            type="button"
-            class="md:hidden absolute -top-1 left-0 right-0 h-2 cursor-row-resize touch-none flex items-center justify-center group z-10"
-            :class="resizingConfig ? 'bg-primary/20' : ''"
-            :aria-label="configExpandedMobile ? 'Collapse configuration' : 'Expand configuration'"
-            :aria-expanded="configExpandedMobile"
-            title="Drag to resize configuration"
-            @pointerdown="beginConfigResize"
-          >
-            <span
-              class="block w-12 h-1 rounded-full transition-colors"
-              :class="
-                resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
-              "
-            ></span>
-          </button>
+          <span
+            v-if="isMobile"
+            class="md:hidden absolute top-1 left-1/2 -translate-x-1/2 w-12 h-1 rounded-full transition-colors pointer-events-none z-10"
+            :class="resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'"
+          ></span>
           <div
             v-if="config"
             ref="configContentEl"
@@ -1745,7 +1734,17 @@ const fieldClass =
               "
             >
               <summary
-                class="flex items-center justify-between list-none mb-unit md:mb-md pointer-events-none gap-xs"
+                class="flex items-center justify-between list-none mb-unit md:mb-md gap-xs md:pointer-events-none touch-none md:touch-auto cursor-row-resize md:cursor-default"
+                :class="resizingConfig ? 'bg-primary/10' : ''"
+                :aria-label="
+                  isMobile && configExpandedMobile
+                    ? 'Drag or tap to collapse configuration'
+                    : isMobile
+                      ? 'Drag or tap to expand configuration'
+                      : undefined
+                "
+                @pointerdown="(e: PointerEvent) => isMobile && beginConfigResize(e)"
+                @click="(e: MouseEvent) => isMobile && e.preventDefault()"
               >
                 <h3 class="text-titleSmall text-on-surface flex items-center gap-unit">
                   <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
