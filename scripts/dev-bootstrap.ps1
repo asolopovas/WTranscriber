@@ -17,15 +17,17 @@ function Spawn($file, $argList, $stdoutLog, $stderrLog) {
 }
 
 function PortOwner($port) {
-  $line = (& netstat -ano | Select-String ":$port\s+.*LISTENING" | Select-Object -First 1).ToString()
+  $match = & netstat -ano | Select-String ":$port\s+.*LISTENING" | Select-Object -First 1
+  if (-not $match) { return $null }
+  $line = $match.ToString()
   if ($line -match '\s(\d+)\s*$') { return [int]$Matches[1] } else { return $null }
 }
 
 function Wait-ForPort($port, $timeoutSec = 90) {
   $deadline = (Get-Date).AddSeconds($timeoutSec)
   while ((Get-Date) -lt $deadline) {
-    $pid = PortOwner $port
-    if ($pid) { return $pid }
+    $ownerPid = PortOwner $port
+    if ($ownerPid) { return $ownerPid }
     Start-Sleep -Milliseconds 750
   }
   return $null
@@ -59,7 +61,7 @@ else {
 
   $cmdPath = "$Repo\tmp\_dev.cmd"
   if ($Platform -eq 'android-usb') {
-    "set TAURI_DEV_HOST=127.0.0.1 && just android-dev" | Set-Content -Path $cmdPath -NoNewline
+    'set "TAURI_DEV_HOST=127.0.0.1" && just android-dev' | Set-Content -Path $cmdPath -NoNewline
     & adb reverse tcp:1420 tcp:1420 | Out-Null
     & adb reverse tcp:1421 tcp:1421 | Out-Null
   } else {
@@ -72,7 +74,7 @@ else {
   $pids.dev_port_owner = $owner
 
   $hmrUp = Wait-ForLogLine "$Repo\tmp\android-dev.log" 'connecting to 127\.0\.0\.1:1420|connected to 127\.0\.0\.1:1420' 180
-  if (-not $hmrUp) { Write-Error "WebView never connected to Vite — check adb reverse / TAURI_DEV_HOST"; exit 1 }
+  if (-not $hmrUp) { Write-Error "WebView never connected to Vite - check adb reverse / TAURI_DEV_HOST"; exit 1 }
 
   & just android-debug-attach | Out-Null
 }
