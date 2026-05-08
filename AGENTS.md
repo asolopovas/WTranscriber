@@ -16,10 +16,7 @@ docs/                 android · agents · dev-loop · release · rust-build-spe
 
 ## Rules
 
-- No comments in code. Names carry intent.
-- No `sleep` in scripts. Wait on a real signal (process/file/log/polled condition + timeout).
-- Edition 2024 (`LazyLock`, `let-else`, …). Errors crossing the JS boundary use `error::Error` (`Serialize`).
-- `src/types.ts` mirrors Rust structs. TS/Vue imports use path aliases (`@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`) — no `./` or `../`.
+- Code-authoring rules live in `.pi/agents/wt-coder.md` (the only agent that edits source).
 - Two-tier quality gate. Never bypass.
   - **Pre-commit** (`.githooks/pre-commit`): scoped to staged files — `cargo fmt --check` + `clippy -D warnings`, `prettier --check` + `vue-tsc`, doc prettier.
   - **Pre-release** (`just check`): full suite — fmt, clippy (pedantic + nursery, `-D warnings`), vue-tsc, vue lint, tests, `cargo machete`, `cargo audit` + `bun audit`. `just release-stable` chains it.
@@ -100,6 +97,7 @@ Between every user turn — and after every edit batch — the orchestrator:
 | Signal                                                                | Action                                                                                                                                                |
 | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | New line in `tmp/error-monitor.log`                                   | `wt-triage` with excerpt                                                                                                                              |
+| Source edit needed (Rust / TS / Vue / xtask / gradle)                 | `wt-coder` (orchestrator never edits source from main thread)                                                                                         |
 | Source edits applied, gate not yet hit                                | `wt-committer` with summary                                                                                                                           |
 | Need a built artifact (Win GUI/CLI, Android, WSL)                     | `wt-installer`                                                                                                                                        |
 | Native edit (Rust / kotlin / res / manifest / gradle) during live dev | `just android-install` from main thread — **never** `wt-installer` or `just android-build` (replaces debug-dev APK with bundled-asset APK, kills HMR) |
@@ -133,19 +131,21 @@ For chains in `.pi/chains/`, the same loop applies; patch the chain file when th
 - `wt-installer` ships release artifacts only; never invoke it during a live `just dev`/`just android-dev` session.
 - No agent-to-agent calls — workers signal via files under `tmp/`.
 - No raw log dumps in responses to the user — relay `VERDICT / EVIDENCE / FIX` only.
+- No source edits from the main thread — delegate to `wt-coder`.
 
 ## Subagents (`.pi/agents/`)
 
 Orchestrator-worker pattern. Main thread = orchestrator (design + code + synthesis). Specialists run in fresh context and return tight summaries.
 
-| Agent           | Role           | Trigger                                                                                      |
-| --------------- | -------------- | -------------------------------------------------------------------------------------------- |
-| `wt-installer`  | executor       | install/build artifact per platform (Win GUI + CLI, Android, WSL)                            |
-| `wt-tester`     | executor       | 30-second-clip smoke + assertion across platforms                                            |
-| `wt-committer`  | gate-keeper    | stage, commit (pre-commit hook mandatory), push — **all** commits route here                 |
-| `wt-triage`     | diagnostician  | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions             |
-| `wt-researcher` | external scout | external research / library or workflow questions / unfamiliar API / community-known gotchas |
-| `wt-scout`      | reconnaissance | repo-wide code search; returns ranked `file:line` citations with annotations                 |
+| Agent           | Role           | Trigger                                                                                          |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------ |
+| `wt-installer`  | executor       | install/build artifact per platform (Win GUI + CLI, Android, WSL)                                |
+| `wt-coder`      | executor       | apply orchestrator-specified code change to source files; run scoped checks; return diff summary |
+| `wt-tester`     | executor       | 30-second-clip smoke + assertion across platforms                                                |
+| `wt-committer`  | gate-keeper    | stage, commit (pre-commit hook mandatory), push — **all** commits route here                     |
+| `wt-triage`     | diagnostician  | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions                 |
+| `wt-researcher` | external scout | external research / library or workflow questions / unfamiliar API / community-known gotchas     |
+| `wt-scout`      | reconnaissance | repo-wide code search; returns ranked `file:line` citations with annotations                     |
 
 Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FIX` block — no raw log dumps.
 
