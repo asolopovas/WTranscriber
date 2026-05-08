@@ -60,22 +60,22 @@ The main thread is the coordinator. It never edits without HMR, never greps logs
 
 1. Verify hook: `git config --get core.hooksPath` → must be `.githooks`. If not, set it.
 2. Ensure `tmp/` exists.
-3. Ask user platform if unknown: **desktop** or **android**. For android, also ask transport: **USB cable** or **Wi-Fi (no USB)**. Recipe follows transport and never changes mid-session:
-   - Desktop: user runs `just dev`.
-   - Android USB: user runs `just android-dev` (reverse-port over `tauri.localhost`).
-   - Android Wi-Fi: user runs `just android-dev-host` (HMR over `ws://<LAN>:1421`).
+3. Ask user platform if unknown: **desktop** or **android**. For android, also ask transport: **USB cable** or **Wi-Fi (no USB)**. If the user gives no transport, default to **USB**. Recipe follows transport and never changes mid-session:
+   - Desktop: `just dev`.
+   - Android USB: `just android-dev` (reverse-port over `tauri.localhost`).
+   - Android Wi-Fi: `just android-dev-host` (HMR over `ws://<LAN>:1421`).
    - Android: after WebView is up, orchestrator runs `just android-debug-attach` to forward CDP `:9222`, then **verifies HMR is live** (next step). Switching transport after a session has begun strands the WebView on a stale HMR endpoint — the orchestrator must reload the page via CDP (`node scripts/cdp.mjs "location.reload()"`) before claiming bootstrap done.
-4. Spawn the monitor as an async subagent (long-running, non-blocking):
-   ```js
-   subagent({
-     agent: "delegate",
-     task: "node scripts/error-monitor.mjs\n\nStream forever. Surface any error/warn line. Ignore inactivity warnings.",
-     async: true,
-     cwd: "C:/Users/asolo/src/WTranscriber",
-     control: { enabled: false },
-   });
+   - **Never instruct the user to run a dev command.** Orchestrator launches it. Only fall back to asking if the spawn itself fails.
+4. Spawn dev server + monitor as **detached Windows processes** (not `delegate async` — child agents propagate Ctrl-C on turn end and kill `just`/Vite/gradle with `STATUS_CONTROL_C_EXIT 0xC000013A`). Use PowerShell `Start-Process` so the child outlives the agent:
+   ```bash
+   powershell -Command "Start-Process -FilePath 'just' -ArgumentList 'android-dev' \
+     -RedirectStandardOutput 'C:\Users\asolo\src\WTranscriber\tmp\android-dev.log' \
+     -RedirectStandardError  'C:\Users\asolo\src\WTranscriber\tmp\android-dev.err.log' \
+     -WorkingDirectory       'C:\Users\asolo\src\WTranscriber' \
+     -WindowStyle Hidden -PassThru | Select-Object Id"
    ```
-5. Record the async run id.
+   Same pattern for `node scripts/error-monitor.mjs` → `tmp/error-monitor.log`. Reuse for `just dev` / `just android-dev-host`.
+5. Record the PIDs (`tasklist //FI "PID eq <id>"` to confirm liveness; `taskkill //F //PID <id>` on shutdown).
 6. **HMR sanity check** before declaring bootstrap done:
    - `curl -s http://localhost:9222/json` → ≥1 target whose URL is `http://tauri.localhost/` (USB) or `http://<LAN>:1420/` (Wi-Fi).
    - `tail -n 50 tmp/error-monitor.log` → no `WebSocket connection to 'ws://...:1421/' failed` lines in the last minute. If present, the WebView is on a stale HMR config; reload via CDP and re-check.
