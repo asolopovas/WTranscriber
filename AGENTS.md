@@ -7,154 +7,136 @@ Notes for agents working on this repo.
 - Tauri 2 (Rust, edition 2024, MSRV 1.85)
 - Vue 3 + TypeScript + Vite
 - Bun (JS runtime + package manager)
-- `just` (task runner)
+- `just` (task runner) → delegates to `cargo xtask` for non-trivial work
 
 ## Layout
 
 ```
-src/                Vue 3 frontend
-  api.ts            wrappers around Tauri commands
-  types.ts          TS types matching Rust structs
-  App.vue           root component
+src/                    Vue 3 frontend
+  api.ts                wrappers around Tauri commands
+  types.ts              TS types matching Rust structs
 src-tauri/
   src/
-    main.rs         Tauri desktop binary
-    bin/wt.rs       headless CLI (clap)
-    lib.rs          tauri::Builder, plugins, command registration
-    api.rs          re-exports for the CLI / external code
-    commands.rs     #[tauri::command] handlers (thin)
-    config.rs       persisted user config
-    models.rs       model registry / discovery
-    paths.rs        config / data paths (LazyLock)
-    error.rs        thiserror Error, serializable for IPC
-    transcriber/    transcription pipeline
-  capabilities/     Tauri permissions
+    main.rs             desktop binary
+    bin/wt.rs           headless CLI (clap)
+    lib.rs              tauri::Builder, plugin + command registration
+    commands.rs         #[tauri::command] handlers (thin)
+    config.rs           persisted user config
+    models.rs           model registry / discovery
+    paths.rs            config / data paths (LazyLock)
+    error.rs            thiserror Error, Serialize for IPC
+    transcriber/        transcription pipeline
+  capabilities/         Tauri permissions
   tauri.conf.json
-  rustfmt.toml
-xtask/              build / release orchestration (Rust binary)
-  src/
-    main.rs         clap dispatcher
-    util.rs         shared helpers (paths, git, streamed processes)
-    bump.rs         version sync across package.json / Cargo.toml / tauri.conf.json
-    release.rs      parallel host + Android + WSL builds, SHA256SUMS, manifest
-    publish.rs      gh CLI wrapper for dev / stable releases
-    android.rs      build / dev / cli / prebuilts / sign-patch
-.cargo/config.toml  cargo alias: `cargo xtask` -> xtask binary
-justfile            thin user-facing wrappers around `cargo xtask`
+xtask/src/              build / release orchestration (cargo xtask)
+  release.rs            parallel host + Android + WSL builds, manifest
+  bump.rs               version sync across package.json / Cargo.toml / tauri.conf.json
+  publish.rs            gh CLI wrapper (dev / stable releases)
+  android.rs            build / dev / install / cli / prebuilts / sign-patch
 scripts/
-  cdp.mjs           Chrome DevTools Protocol eval (debug only, needs Node)
-  diarize.py        speaker diarization sidecar (runtime resource)
-  install-*.ps1     Windows-only runtime deps (CUDA / cuDNN / NeMo)
-docs/release.md     release process + build-speed reference
+  cdp.mjs               Chrome DevTools Protocol eval (debug)
+  diarize.py            speaker diarization sidecar (runtime resource)
+  install-*.ps1         Windows-only runtime deps (CUDA / cuDNN / NeMo)
+docs/
+  android.md            Android build + live UI dev (HMR)
+  tauri-debug.md        WebView DevTools, CDP, logcat
+  release.md            release process + build-speed notes
+  rust-build-speed.md   compile-time tuning
 ```
 
 ## Rules
 
 - **No comments in code.** Names carry intent.
-- **No `sleep` in scripts.** Wait on a real signal: process exit, file appears,
-  log line, or poll with timeout. Applies to bash, `.mjs`, `.ps1`, `adb shell`.
-- **Use edition 2024** features (`LazyLock`, `let-else`, etc.).
+- **No `sleep` in scripts.** Wait on a real signal: process exit, file
+  appears, log line, or poll with timeout. Applies to bash, `.mjs`,
+  `.ps1`, `adb shell`.
+- **Edition 2024** features (`LazyLock`, `let-else`, …).
 - **Errors crossing Rust → JS** go through `error::Error` (impl `Serialize`).
 - **Frontend types** in `src/types.ts` must match the Rust structs.
 - **Lints**: `cargo clippy -- -D warnings`, pedantic + nursery on.
 - **Formatters**: `cargo fmt`, `prettier` (TS/Vue/MD/JSON/HTML).
 
-## Recipes
+## Recipes (`just --list` for the full set)
 
 ```
-just                list recipes
-just setup          install JS deps + git hooks
+# setup
+just setup              bun install + git hooks
+just android-init       rustup targets + sherpa prebuilts + tauri android init
 
 # develop
-just dev            run app (Vue HMR + tauri dev)
-just watch          cargo watch, rebuild on save
-just build-bin      raw cargo build, no Tauri post-process    (~6 s warm)
-just build-app      Tauri-patched exe, no installer           (~9 s warm)
-just build          NSIS installer                            (~28 s warm)
-just build-all      NSIS + MSI (legacy / enterprise)
-just build-cpu      build with sherpa-static (no CUDA)
-just build-cuda     build with --features cuda
-just build-cli      build the headless `wt` CLI
+just dev                desktop (Vue HMR + tauri dev)
+just watch              cargo watch, rebuild on save
+just android-dev        Android dev on USB device (HMR via adb reverse)
+just android-dev-host   Android dev over LAN (--host, sets TAURI_DEV_HOST)
+
+# build
+just build-bin          raw cargo build       (~6 s warm)
+just build-app          tauri exe, no bundle  (~9 s warm)
+just build              NSIS installer        (~28 s warm)
+just build-cuda         build with --features cuda
+just build-cli          headless `wt` CLI
+just android-build      APK (aarch64 default)
 
 # quality
-just fmt / fmt-check
-just lint           clippy + vue-tsc
-just test           cargo test --offline
-just check          fast gate: fmt-check + lint + test         (pre-commit)
-just check-all      check + cargo-machete + cargo-audit + bun audit
-just dep-check      unused crate deps
-just audit          vulnerability scan
+just check              fmt-check + lint + test            (pre-commit)
+just check-all          + cargo-machete + cargo-audit + bun audit
 
-# release (all delegate to `cargo xtask`)
+# release (delegate to cargo xtask)
 just release            dev build → rolling 'dev' prerelease
-just release-stable     check + bump + tag + build + publish stable
+just release-stable     check + bump + tag + build + publish
 just release-bump       bump + commit + tag only
-just release-build      build artifacts only (--dev flag for dev channel)
-just release-publish    upload existing artifacts to dev or vX.Y.Z
-                        direct: cargo xtask {release|bump|publish|android} --help
+just release-build      artifacts only (--dev for dev channel)
+just release-publish    upload existing artifacts
+                        cargo xtask {release|bump|publish|android} --help
                         full reference: docs/release.md
-
-# misc
-just clean          remove target + dist + node_modules
-just icons          regenerate icons from src-tauri/icons/icon.png
-just android-*      Android scaffold / build / debug
 ```
 
 ## Quality gates
 
-### `just check` (fast, no network) — runs pre-commit
+`just check` (fast, offline, runs pre-commit):
 
 1. `cargo fmt --check` + `prettier --check`
 2. `cargo clippy --all-targets --offline -- -D warnings`
 3. `bun run typecheck` (`vue-tsc`)
 4. `cargo test --offline`
 
-Warm cache: a few seconds.
-
-### `just check-all` (manual, pre-release)
-
-Adds:
-
-5. `cargo machete` — unused crate deps in `Cargo.toml`
-6. `cargo audit` + `bun audit` — vulnerability scan
-
+`just check-all` adds `cargo machete`, `cargo audit`, `bun audit`.
 Missing tools auto-install on first run.
 
 ## Git hooks (`.githooks/`)
 
 Only relevant work runs.
 
-**`pre-commit`** looks at staged paths:
-
-- Rust / `Cargo.toml` / `Cargo.lock` → `cargo fmt --check` + clippy
-- TS / Vue → `prettier --check` (changed files) + `vue-tsc`
-- Markdown / JSON / HTML → `prettier --check` (changed files)
-- Nothing relevant → skip
-
-**`pre-push`** runs `cargo test --offline` once. Test compilation isn't on the
-commit path so iteration stays fast.
+- **pre-commit** by staged paths:
+  - Rust / `Cargo.{toml,lock}` → `cargo fmt --check` + clippy
+  - TS / Vue → `prettier --check` + `vue-tsc`
+  - Markdown / JSON / HTML → `prettier --check`
+- **pre-push** → `cargo test --offline` once.
 
 `just setup` (or `just install-hooks`) sets `core.hooksPath = .githooks`.
 Bypass with `--no-verify` only in emergencies.
 
 ## Adding a Tauri command
 
-1. Write the function in `src-tauri/src/commands.rs` (or a domain module
-   that re-exports it).
-2. Register it in `lib.rs` `invoke_handler![…]`.
-3. Add a typed wrapper in `src/api.ts`.
-4. If it returns a domain type, add the type to `src/types.ts`.
+1. Function in `src-tauri/src/commands.rs` (or a domain module that
+   re-exports it).
+2. Register in `lib.rs` `invoke_handler![…]`.
+3. Typed wrapper in `src/api.ts`.
+4. Domain return type → add to `src/types.ts`.
 
-## Android debugging
+## Android
 
-Full guide: `docs/tauri-debug.md`. Quick reference:
+- Build / link / prebuilts: `docs/android.md`.
+- Live UI dev with HMR (no rebuild/reinstall on UI edits): same doc,
+  "Live UI dev" section.
+- WebView debugging (chrome://inspect, CDP, logcat, screenshots):
+  `docs/tauri-debug.md`.
 
-- `just android-debug-attach` — finds `webview_devtools_remote_<pid>`,
-  runs `adb forward tcp:9222 …`, prints the page list.
-  Open `chrome://inspect` to attach.
-- `node scripts/cdp.mjs "<expr>"` — evaluates JS in the live WebView via CDP.
-  Use it to read Vue state or dispatch DOM events.
-- Logcat tags: `chromium` / `Console` for JS, `RustStdoutStderr` for Rust
-  `println!` + `tauri-plugin-log` Stdout target.
-- Screenshot: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`.
-  `*.png` at the repo root is gitignored — keep captures under `tmp/`.
+Quick reference:
+
+- `just android-debug-attach` → forwards `tcp:9222` to the WebView
+  devtools socket; open `chrome://inspect`.
+- `node scripts/cdp.mjs "<expr>"` → eval JS in the live WebView.
+- Logcat tags: `chromium` / `Console` (JS), `RustStdoutStderr` (Rust).
+- Screenshots: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`
+  (`*.png` at repo root is gitignored — keep under `tmp/`).
