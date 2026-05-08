@@ -1,9 +1,6 @@
 # AGENTS.md
 
-## Stack
-
-Tauri 2 (Rust edition 2024, MSRV 1.85) · Vue 3 + TS + Vite · Bun · `just`
-(thin wrappers over `cargo xtask`).
+Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `just` (wraps `cargo xtask`).
 
 ## Layout
 
@@ -32,16 +29,15 @@ docs/
 
 ## Rules
 
-- **No comments in code.** Names carry intent.
-- **No `sleep` in scripts.** Wait on a real signal (process exit, file,
-  log line, polled condition with timeout).
-- **Edition 2024** (`LazyLock`, `let-else`, …).
-- **Errors crossing Rust → JS** go through `error::Error` (`Serialize`).
-- `src/types.ts` mirrors the Rust structs.
+- No comments in code. Names carry intent.
+- No `sleep` in scripts. Wait on a real signal (process exit, file, log line, polled condition with timeout).
+- Edition 2024. Use `LazyLock`, `let-else`, etc.
+- Errors returned from Rust to JS must use `error::Error` (implements `Serialize`).
+- `src/types.ts` mirrors Rust structs.
 - Lints: `cargo clippy -- -D warnings` (pedantic + nursery on).
-- `just check` must pass before commit; pre-commit hook enforces it.
+- `just check` must pass before commit (pre-commit hook enforces).
 
-## Daily recipes
+## Commands
 
 ```
 just dev                desktop (HMR)
@@ -51,8 +47,7 @@ just check              fmt + lint + typecheck + test (offline)
 just release-stable     check + bump + tag + build + publish
 ```
 
-`just --list` for everything else. Release / build-speed / Android
-specifics live in `docs/`.
+`just --list` for everything else. Details in `docs/`.
 
 ## Adding a Tauri command
 
@@ -62,9 +57,8 @@ specifics live in `docs/`.
 
 ## Android quick refs
 
-- HMR design loop → `docs/android.md` § "Live UI dev".
-- `just android-debug-attach` → forwards `tcp:9222` to the WebView; open
-  `chrome://inspect`.
-- `node scripts/cdp.mjs "<expr>"` → eval JS in the live WebView.
+- HMR design loop: see `docs/android.md` section "Live UI dev".
+- `just android-debug-attach` forwards `tcp:9222` to the WebView; then open `chrome://inspect`.
+- `node scripts/cdp.mjs "<expr>"` evaluates JS in the live WebView.
 - Logcat: `chromium` / `Console` (JS), `RustStdoutStderr` (Rust).
 - Screenshots under `tmp/` (root `*.png` is gitignored).
