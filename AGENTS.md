@@ -48,14 +48,28 @@ just release-stable     check + bump + tag + build + publish
 ## Workflows (see `docs/`)
 
 - **Android + HMR**: `docs/android.md`. Key: `android-dev` is `--no-watch`, frontend-only; Rust rebuild = `just android-install` in a second terminal; ABI auto-detected (no `--target`).
-- **Agent dev loop** (monitor + fixer + committer): `docs/agents.md`. Filesystem signaling via `tmp/error-monitor.log`; main thread never greps logs or runs `just check`.
+- **Agent dev loop** (monitor + fixer + committer): `docs/agents.md`. Filesystem signaling via `tmp/error-monitor.log`; main thread never greps logs or runs `just check` — that's `wt-triage`'s job.
 - **HMR + CDP + error monitor**: `docs/dev-loop.md`. Prefer CDP over screenshots for layout/style.
 - **Release**: `docs/release.md`. **Build speed**: `docs/rust-build-speed.md`.
 
 ## Subagents (`.pi/agents/`)
 
-- `doctor` — commits/pushes + forensics (tests, logs, CDP). Returns `VERDICT` / `EVIDENCE` / `FIX`. Use for **all** commits, `just check`, log triage, regressions.
-- `wt-installer` — install verification (Windows GUI + CLI, Android, WSL).
-- `wt-tester` — 30-second-clip smoke test across platforms.
+Orchestrator-worker pattern. Main thread = orchestrator (design + code + synthesis). Specialists run in fresh context and return tight summaries.
 
-Main thread: design + code. Verbose tooling output → `doctor`.
+| Agent          | Role          | Trigger                                                                          |
+| -------------- | ------------- | -------------------------------------------------------------------------------- |
+| `wt-installer` | executor      | install/build artifact per platform (Win GUI + CLI, Android, WSL)                |
+| `wt-tester`    | executor      | 30-second-clip smoke + assertion across platforms                                |
+| `wt-committer` | gate-keeper   | stage, commit (pre-commit hook mandatory), push — **all** commits route here     |
+| `wt-triage`    | diagnostician | forensics on failing tests, CDP/logcat noise, `just check` failures, regressions |
+
+Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FIX` block — no raw log dumps.
+
+### Coordination rules
+
+1. **No agent-to-agent calls.** Workers communicate only through the filesystem; the orchestrator is the only synthesizer.
+2. **File-signal contract** (under `tmp/`): `install-report.json` (installer → tester), `test-report.json` (tester output), `error-monitor.log` (monitor → triage), `triage-<topic>.md` (triage artifacts). Workers never read each other's stdout.
+3. **Chain when dependent, parallel when independent.** Installer → tester is a chain (tester reads installer's report). Triage runs in parallel with anything else — it only observes.
+4. **Fresh context per worker** (`defaultContext: fresh`). The orchestrator carries project state; workers re-derive what they need.
+5. **Orchestrator never** greps logs, runs `just check`, or commits directly. Delegate to `wt-triage` or `wt-committer`.
+6. **Chains** live in `.pi/chains/`. Current: `install-and-test` (installer → tester).
