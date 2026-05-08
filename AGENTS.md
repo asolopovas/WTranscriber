@@ -10,7 +10,7 @@ src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wt.rs (CLI), con
 xtask/src/            build / release / android orchestration
 scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1
 docs/                 android · agents · dev-loop · release · rust-build-speed
-.pi/agents/           coder · committer · installer · tester · triage · scout · researcher · docs-updater
+.pi/agents/           coder · committer · installer · tester · triage · observer · scout · researcher · docs-updater
 ```
 
 ## Commands
@@ -62,30 +62,32 @@ Diff `tmp/error-monitor.log` line count after every user turn and edit batch. Ne
 
 ### Decision table
 
-| Signal                                      | Action                                                                                                                             |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| New line in `tmp/error-monitor.log`         | `wt-triage` with excerpt                                                                                                           |
-| Source edit needed                          | `wt-coder`                                                                                                                         |
-| Edits applied, gate not hit                 | `wt-committer`                                                                                                                     |
-| Need to find where X lives in repo          | `wt-scout`                                                                                                                         |
-| Need a built artifact                       | `wt-installer`                                                                                                                     |
-| Native edit during live dev                 | `just android-install` from main thread (never `wt-installer` / `just android-build`; both replace the debug-dev APK and kill HMR) |
-| In-app misbehaviour or `just check` failure | `wt-triage`                                                                                                                        |
-| 30 s-clip smoke after install               | chain `install-and-test`                                                                                                           |
-| Commit / ship                               | `wt-committer`                                                                                                                     |
-| Release                                     | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                |
-| External knowledge needed                   | `wt-researcher`                                                                                                                    |
-| Recurring agent failure or workflow drift   | `wt-docs-updater` → `wt-committer` as `chore(agents): tighten <name>`                                                              |
+| Signal                                                       | Action                                                                                                                             |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| New line in `tmp/error-monitor.log`                          | `wt-triage` with excerpt                                                                                                           |
+| Source edit needed                                           | `wt-coder`                                                                                                                         |
+| Edits applied, gate not hit                                  | `wt-committer`                                                                                                                     |
+| Need to find where X lives in repo                           | `wt-scout`                                                                                                                         |
+| Need a built artifact                                        | `wt-installer`                                                                                                                     |
+| Native edit during live dev                                  | `just android-install` from main thread (never `wt-installer` / `just android-build`; both replace the debug-dev APK and kill HMR) |
+| Specific in-app misbehaviour or gate failure (single signal) | `wt-triage`                                                                                                                        |
+| Continuous live-signal watch needed                          | `wt-observer` (async; poll `tmp/observer-latest.json`)                                                                             |
+| 30 s-clip smoke after install                                | chain `install-and-test`                                                                                                           |
+| Commit / ship                                                | `wt-committer`                                                                                                                     |
+| Release                                                      | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                |
+| External knowledge needed                                    | `wt-researcher`                                                                                                                    |
+| Recurring agent failure or workflow drift                    | `wt-docs-updater` → `wt-committer` as `chore(agents): tighten <name>`                                                              |
 
 ### Coordination
 
 - **Fresh context per worker** (`defaultContext: fresh`). Orchestrator carries project state; workers re-derive.
 - **File-signal contract** under `tmp/`: every worker writes a JSON or `.md` artifact (`coder-report`, `last-commit`, `install-report`, `test-report`, `triage-<topic>`, `scout-<slug>`, `research-<slug>`, `docs-update`, `error-monitor.log`). Workers never read each other's stdout.
 - **Chain when dependent, parallel when independent.** Chains live in `.pi/chains/`. Current: `install-and-test`.
+- **`wt-observer` runs async** alongside other workers; appends to `tmp/observer-alerts.md`, overwrites `tmp/observer-latest.json`. Orchestrator and on-demand agents consult those files instead of probing logs.
 
 ### Hard prohibitions
 
-- No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread.
+- No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread; consult `tmp/observer-latest.json` first, else dispatch `wt-observer` or `wt-triage`.
 - `wt-installer` is release-only; never during a live dev session.
 - No agent-to-agent calls; signal via `tmp/` files.
 - No raw log dumps to the user; relay `VERDICT / EVIDENCE / FIX` only.
