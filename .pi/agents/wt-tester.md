@@ -2,7 +2,7 @@
 name: wt-tester
 description: Verifies WTranscriber functionality on Windows (GUI + CLI), Android, and WSL using a 30-second audio clip. Asserts transcription correctness for CLI targets and crash-free launch for GUI targets.
 tools: read, bash, write
-model: anthropic/claude-sonnet-4-5
+model: anthropic/claude-sonnet-4-6
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
@@ -26,7 +26,7 @@ You are the **WTranscriber test agent**. You exercise each platform against a fi
 | Windows GUI | start `wtranscriber.exe` in background, wait for main window (PowerShell `Get-Process \| Where MainWindowHandle`), screenshot via `Add-Type System.Windows.Forms`, kill process                                           | window appeared within 30s; no crash dialog; screenshot saved to `tmp/win-gui.png` (>10 KB) |
 | Android     | `adb shell am start -n com.asolopovas.wtranscriber/.MainActivity`; poll `adb shell dumpsys window` for the activity; `adb exec-out screencap -p > tmp/android.png`; `adb shell am force-stop com.asolopovas.wtranscriber` | activity reaches `RESUMED`; PNG > 30 KB                                                     |
 
-GUI targets are smoke-only — full UI transcription automation is out of scope.
+GUI targets are smoke-only - full UI transcription automation is out of scope.
 
 ## Output
 

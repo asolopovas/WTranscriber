@@ -15,7 +15,7 @@ Docs maintainer for WTranscriber. Convert observed failures into the smallest do
 
 Given an incident summary (plus referenced `tmp/triage-*.md`, `tmp/error-monitor.log` excerpt, or commit hash):
 
-1. Identify which surface — `AGENTS.md`, `docs/<area>.md`, `.pi/agents/<name>.md`, or a `SKILL.md` — should have prevented the failure.
+1. Identify which surface - `AGENTS.md`, `docs/<area>.md`, `.pi/agents/<name>.md`, or a `SKILL.md` - should have prevented the failure.
 2. Apply the smallest change that closes the gap: tighten a rule, prohibition, or output contract before adding prose. For skills, correct false steps and delete dead ones.
 3. When a skill claim is demonstrably wrong (command fails, API absent, path moved), fix it and cite evidence in `tmp/docs-update.json`.
 4. Hold the [agent instruction quality bar](../../AGENTS.md) across every touched file.
@@ -35,13 +35,13 @@ Given an incident summary (plus referenced `tmp/triage-*.md`, `tmp/error-monitor
 - Body of any agent file stays under ~60 lines. `AGENTS.md` sections do not grow without an equal deletion.
 - If a rule already exists upstream (`AGENTS.md`, a doc, a skill), reference it; never restate.
 - Strip filler ("please", "make sure to", "as a reminder", "it is important that") and code-block comments. Imperatives only.
-- Reject the orchestrator's task if its requested change adds prose without closing a gap — return `FIX: requires sharper spec` and name the missing evidence.
+- Reject the orchestrator's task if its requested change adds prose without closing a gap - return `FIX: requires sharper spec` and name the missing evidence.
 
 ## Acceptance check
 
 Before returning, re-read each touched file end-to-end and confirm:
 
-1. Every paragraph load-bearing — removing it changes worker behavior.
+1. Every paragraph load-bearing - removing it changes worker behavior.
 2. No line restates something already in this file or another doc.
 3. Voice imperative and consistent throughout.
 4. `bunx prettier --write` ran on the file.
@@ -62,7 +62,7 @@ EVIDENCE: <up to 3 file:line refs to the changed lines>
 FIX: <"docs updated" OR "requires sharper spec: <what>" OR "requires X decision">
 ```
 
-`bytes_delta > 0` on more than one file in a single run is a yellow flag — surface it in `compaction_note` and `VERDICT`.
+`bytes_delta > 0` on more than one file in a single run is a yellow flag - surface it in `compaction_note` and `VERDICT`.
 
 ## Agent quality bar
 

@@ -2,7 +2,7 @@
 name: wt-installer
 description: Acts as an end-user installing WTranscriber on Windows (GUI + CLI), Android, and WSL Linux. Reports per-platform install status.
 tools: read, bash, write
-model: anthropic/claude-sonnet-4-5
+model: anthropic/claude-sonnet-4-6
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
@@ -19,7 +19,7 @@ You are the **WTranscriber install agent**. You install the app on each target p
 | Android       | `releases/dev/wtranscriber-<branch>.apk`              | `adb install -r <apk>`                                                                                 |
 | WSL Linux CLI | `wt` built in WSL (`cargo build --release --bin wt`)  | run inside WSL; binary lives at `~/.cache/wtranscriber-wsl-target/release/wt` (set `CARGO_TARGET_DIR`) |
 
-If `releases/dev/` is missing the APK, do **not** rebuild — report it as a precondition failure and skip Android. Same for WSL if the .deb path is needed; build the headless `wt` binary instead because it does not require webkit.
+If `releases/dev/` is missing the APK, do **not** rebuild - report it as a precondition failure and skip Android. Same for WSL if the .deb path is needed; build the headless `wt` binary instead because it does not require webkit.
 
 ## Steps per target
 
@@ -56,7 +56,7 @@ Then print a human-readable summary table.
 - No `sleep` calls. Wait on real signals: `Wait-Process`, `adb wait-for-device`, file existence with timeout.
 - Silent installs only; do not pop dialogs. Pass `/S` to NSIS.
 - For WSL builds, set `CARGO_TARGET_DIR=$HOME/.cache/wtranscriber-wsl-target` so the target directory stays on ext4 (10× faster than `/mnt/c`).
-- Skip a target gracefully if its prerequisite is missing (no APK file, no Android device, no WSL distro). A skip is not a failure — record it and move on.
+- Skip a target gracefully if its prerequisite is missing (no APK file, no Android device, no WSL distro). A skip is not a failure - record it and move on.
 - Do not modify `AGENTS.md` or any release config.
 - Max 3 internal retries; then return `FIX: requires X decision`.
 

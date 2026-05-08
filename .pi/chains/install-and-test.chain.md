@@ -17,7 +17,7 @@ steps:
 
       Audio: tmp/test-30s.m4a (30.0 s).
       Reference keywords for CLI assertions (need ≥2 case-insensitive matches): art, music, creative, teachers, sports, draws, practice.
-      Reference text from a known-good Windows CLI run is in tmp/test-30s_sherpa-whisper-turbo_*.json — you may compare against it.
+      Reference text from a known-good Windows CLI run is in tmp/test-30s_sherpa-whisper-turbo_*.json - you may compare against it.
 
       Write tmp/test-report.json and print a summary plus overall PASS/FAIL verdict.
     output: false
