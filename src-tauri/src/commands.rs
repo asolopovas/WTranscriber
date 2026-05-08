@@ -380,7 +380,10 @@ impl TranscribeSink {
     }
 
     fn start_ticker(&self) {
-        let mut handle_lock = self.ticker_handle.lock().unwrap();
+        let mut handle_lock = self
+            .ticker_handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if handle_lock.is_some() {
             return;
         }
@@ -434,7 +437,11 @@ impl TranscribeSink {
 
     fn stop_ticker(&self) {
         self.ticker_cancel.store(true, Ordering::SeqCst);
-        let taken = self.ticker_handle.lock().unwrap().take();
+        let taken = self
+            .ticker_handle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
         if let Some(h) = taken {
             h.abort();
         }
@@ -791,6 +798,11 @@ pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
             }
         }
     }
+    if dst.exists() {
+        return Err(Error::Config(format!(
+            "too many copies of {file_name:?} in workdir"
+        )));
+    }
     std::fs::copy(&source, &dst)?;
     logfile::info(&format!(
         "add_to_workdir {} -> {}",
@@ -839,6 +851,11 @@ pub fn save_recording(workdir: PathBuf, filename: String, bytes: Vec<u8>) -> Res
                 break;
             }
         }
+    }
+    if dst.exists() {
+        return Err(Error::Config(format!(
+            "too many copies of {safe:?} in workdir"
+        )));
     }
     std::fs::write(&dst, &bytes)?;
     logfile::info(&format!(

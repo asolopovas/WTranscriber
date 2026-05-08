@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
+};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,6 +12,8 @@ use crate::{
     paths,
     transcriber::Transcript,
 };
+
+static INDEX_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
@@ -144,6 +149,9 @@ pub fn store(mut entry: Entry, transcript: &Transcript) -> Result<PathBuf> {
     entry.size_bytes = raw.len() as u64;
     std::fs::write(&path, &raw)?;
 
+    let _g = INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut entries: Vec<Entry> = load_index()
         .into_iter()
         .filter(|e| e.key != entry.key)
@@ -167,6 +175,9 @@ pub fn rename_source(old_path: &Path, new_path: &Path) -> Result<()> {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let _g = INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut entries = load_index();
     let mut changed = false;
     for e in &mut entries {
@@ -189,6 +200,9 @@ pub fn invalidate(key: &str) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
+    let _g = INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let entries: Vec<Entry> = load_index().into_iter().filter(|e| e.key != key).collect();
     save_index(&entries)?;
     Ok(())

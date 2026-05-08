@@ -152,8 +152,14 @@ function addPathsToWorkdir(paths: string[]) {
     } catch (e) {
       eRaw = e;
     }
+    if (!sys.value?.is_mobile) {
+      throw eRaw instanceof Error ? eRaw : new Error(String(eRaw));
+    }
     try {
       const bytes = await readFile(p);
+      if (bytes.byteLength > 100 * 1024 * 1024) {
+        throw new Error("file too large for in-process copy fallback");
+      }
       return await api.saveRecording(dir, basenameOf(p), bytes);
     } catch (e2) {
       throw new Error(`${eRaw} / ${e2}`);
@@ -161,6 +167,10 @@ function addPathsToWorkdir(paths: string[]) {
   };
 
   const audioPaths = paths.filter(hasAudioExt).filter((p) => !entries.some((e) => e.path === p));
+  if (audioPaths.length > 200) {
+    audioPaths.splice(200);
+    error.value = "only the first 200 files were queued";
+  }
 
   for (const p of audioPaths) {
     entries.push({
@@ -179,22 +189,36 @@ function addPathsToWorkdir(paths: string[]) {
   }
 
   void (async () => {
-    let lastDest: string | null = null;
-    for (const p of audioPaths) {
+    const copyResults: PromiseSettledResult<string>[] = [];
+    for (let i = 0; i < audioPaths.length; i += 3) {
       await yieldToUI();
-      try {
-        const destPath = await tryAdd(p);
-        if (!listing.value) return;
-        const stub = listing.value.entries.find((e) => e.path === p);
-        if (stub) {
-          stub.name = basenameOf(destPath);
-          stub.path = destPath;
-        }
-        lastDest = destPath;
-      } catch (e) {
-        error.value = String(e);
+      const chunk = await Promise.allSettled(
+        audioPaths.slice(i, i + 3).map(async (p) => {
+          const destPath = await tryAdd(p);
+          if (listing.value) {
+            const stub = listing.value.entries.find((e) => e.path === p);
+            if (stub) {
+              stub.name = basenameOf(destPath);
+              stub.path = destPath;
+            }
+          }
+          return destPath;
+        }),
+      );
+      copyResults.push(...chunk);
+    }
+
+    let lastDest: string | null = null;
+    const addedPaths = new Set<string>();
+    for (let i = 0; i < copyResults.length; i++) {
+      const r = copyResults[i];
+      if (r.status === "fulfilled" && r.value != null) {
+        lastDest = r.value;
+        addedPaths.add(r.value);
+      } else if (r.status === "rejected") {
+        error.value = String(r.reason);
         if (listing.value) {
-          const idx = listing.value.entries.findIndex((e) => e.path === p);
+          const idx = listing.value.entries.findIndex((e) => e.path === audioPaths[i]);
           if (idx !== -1) listing.value.entries.splice(idx, 1);
         }
       }
@@ -204,11 +228,13 @@ function addPathsToWorkdir(paths: string[]) {
     if (lastDest !== null) selectedPath.value = lastDest;
 
     if (!listing.value) return;
-    const toProbe = listing.value.entries.filter((e) => e.is_audio && e.duration_ms === null);
-    for (let i = 0; i < toProbe.length; i += 2) {
+    const toProbe = listing.value.entries.filter(
+      (e) => e.is_audio && e.duration_ms === null && addedPaths.has(e.path),
+    );
+    for (let i = 0; i < toProbe.length; i += 10) {
       await yieldToUI();
       await Promise.allSettled(
-        toProbe.slice(i, i + 2).map((e) =>
+        toProbe.slice(i, i + 10).map((e) =>
           api.probeDuration(e.path).then((ms) => {
             e.duration_ms = ms ?? null;
           }),

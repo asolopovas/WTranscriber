@@ -70,7 +70,12 @@ impl Manager {
     }
 
     pub fn status(&self, id: &str) -> Result<ModelStatus> {
-        if self.in_flight.lock().unwrap().contains(id) {
+        if self
+            .in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(id)
+        {
             return Ok(ModelStatus::Downloading);
         }
         let Some(entry) = catalog::by_id(id) else {
@@ -106,9 +111,15 @@ impl Manager {
         let entry = catalog::by_id(id)
             .ok_or_else(|| crate::error::Error::Config(format!("unknown model id {id}")))?;
 
-        self.in_flight.lock().unwrap().insert(id.to_owned());
+        self.in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.to_owned());
         let result = self.install_inner(entry, on_progress).await;
-        self.in_flight.lock().unwrap().remove(id);
+        self.in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(id);
         result
     }
 
