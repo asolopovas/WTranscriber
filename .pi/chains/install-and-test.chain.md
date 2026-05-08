@@ -2,8 +2,10 @@
 name: install-and-test
 description: Install WTranscriber on Windows (GUI + CLI), Android, and WSL, then verify each platform with a 30-second audio clip.
 steps:
-  - agent: wt-installer
+  - agent: wt-runner
     task: |
+      mode: install
+
       Install WTranscriber on all four targets: Windows GUI (NSIS), Windows CLI (wt.exe), Android (APK to attached device), and WSL Linux CLI (build wt headless binary inside WSL).
 
       The 30-second test clip is already at tmp/test-30s.m4a. Audio source was C:\Users\asolo\Desktop\fulham-boys-school-admission-interview_260505-161101.m4a.
@@ -11,8 +13,10 @@ steps:
       Skip a target gracefully if its prerequisite is missing (no APK file, no device, no WSL distro). Write tmp/install-report.json and print a summary table.
     output: false
 
-  - agent: wt-tester
+  - agent: wt-runner
     task: |
+      mode: test
+
       Verify functionality on each target that successfully installed (read tmp/install-report.json).
 
       Audio: tmp/test-30s.m4a (30.0 s).
