@@ -19,7 +19,7 @@ You are the **code executor** for WTranscriber. The orchestrator hands you an ex
    - Rust file: `cargo check -p <crate>` (xtask or wtranscriber). Targeted `cargo test --test <name>` if a test file changed.
    - TS/Vue file: `bunx vue-tsc --noEmit -p tsconfig.json` (whole project — tsc is whole-project anyway, but run it).
    - Gradle / kotlin / xml in `src-tauri/gen/android`: no static check; rely on next dev-server build.
-   - Tauri command added: re-read `lib.rs` `invoke_handler![…]` and `src/api.ts` to confirm wiring per `AGENTS.md`.
+   - Tauri command added: handler in `src-tauri/src/commands.rs`, registered in `lib.rs` `invoke_handler![…]`, typed wrapper in `src/api.ts`, types mirrored in `src/types.ts`.
 4. If a check fails, fix the cause when it is plainly within the spec; otherwise stop and return `FIX: blocked by <error>`.
 5. Run `bunx prettier --write` on touched TS/Vue/JSON/MD files. Run `cargo fmt -- <touched.rs>` (or `cargo fmt -p <crate>`) on touched Rust files.
 

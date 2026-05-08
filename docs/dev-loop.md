@@ -13,6 +13,20 @@ Frontend-only watcher (`--no-watch`). Vue/TS/CSS push live; Rust edits ignored. 
 
 Run in the user's own terminal. Spawning through a subagent on Windows pops an empty conhost (`CREATE_NEW_PROCESS_GROUP` quirk).
 
+### Detached spawn (orchestrator)
+
+When the orchestrator launches `just dev` / `just android-dev[-host]` or `node scripts/error-monitor.mjs`, use PowerShell `Start-Process` so the child outlives the agent turn:
+
+```bash
+powershell -Command "Start-Process -FilePath 'just' -ArgumentList 'android-dev' \
+  -RedirectStandardOutput 'C:\Users\asolo\src\WTranscriber\tmp\android-dev.log' \
+  -RedirectStandardError  'C:\Users\asolo\src\WTranscriber\tmp\android-dev.err.log' \
+  -WorkingDirectory       'C:\Users\asolo\src\WTranscriber' \
+  -WindowStyle Hidden -PassThru | Select-Object Id"
+```
+
+Confirm liveness with `tasklist //FI "PID eq <id>"`; shut down with `taskkill //F //PID <id>`. Same pattern for the error monitor (`tmp/error-monitor.log`).
+
 ## 2. CDP attach — once, after launch
 
 ```

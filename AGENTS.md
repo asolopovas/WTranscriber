@@ -32,12 +32,6 @@ just release-stable     check + bump + tag + build + publish
 
 `just --list` for the rest. Domain details in `docs/`.
 
-## Adding a Tauri command
-
-1. Handler in `src-tauri/src/commands.rs`.
-2. Register in `lib.rs` `invoke_handler![…]`.
-3. Typed wrapper in `src/api.ts`; types in `src/types.ts`.
-
 ## Skills
 
 - **`tauri-debugging`** (global) — canonical reference for Tauri 2 inspection on desktop / Android / iOS: build modes, WebView inspector, CDP, logcat tags, `tauri-plugin-log`, CrabNebula DevTools, IPC/capability errors, env vars, anti-patterns. Load before any debugging session.
@@ -63,34 +57,17 @@ The main thread is the coordinator. It never edits without HMR, never greps logs
    - Android Wi-Fi: `just android-dev-host` (HMR over `ws://<LAN>:1421`).
    - Android: after WebView is up, orchestrator runs `just android-debug-attach` to forward CDP `:9222`, then **verifies HMR is live** (next step). Switching transport after a session has begun strands the WebView on a stale HMR endpoint — the orchestrator must reload the page via CDP (`node scripts/cdp.mjs "location.reload()"`) before claiming bootstrap done.
    - **Never instruct the user to run a dev command.** Orchestrator launches it. Only fall back to asking if the spawn itself fails.
-4. Spawn dev server + monitor as **detached Windows processes** (not `delegate async` — child agents propagate Ctrl-C on turn end and kill `just`/Vite/gradle with `STATUS_CONTROL_C_EXIT 0xC000013A`). Use PowerShell `Start-Process` so the child outlives the agent:
-   ```bash
-   powershell -Command "Start-Process -FilePath 'just' -ArgumentList 'android-dev' \
-     -RedirectStandardOutput 'C:\Users\asolo\src\WTranscriber\tmp\android-dev.log' \
-     -RedirectStandardError  'C:\Users\asolo\src\WTranscriber\tmp\android-dev.err.log' \
-     -WorkingDirectory       'C:\Users\asolo\src\WTranscriber' \
-     -WindowStyle Hidden -PassThru | Select-Object Id"
-   ```
-   Same pattern for `node scripts/error-monitor.mjs` → `tmp/error-monitor.log`. Reuse for `just dev` / `just android-dev-host`.
-5. Record the PIDs (`tasklist //FI "PID eq <id>"` to confirm liveness; `taskkill //F //PID <id>` on shutdown).
-6. **HMR sanity check** before declaring bootstrap done (delegate probes to `wt-triage` — never `curl`/`tail`/`adb` from main thread):
+4. Spawn dev server + monitor as **detached Windows processes** — `delegate async` propagates Ctrl-C on turn end and kills `just`/Vite/gradle with `STATUS_CONTROL_C_EXIT 0xC000013A`. Use PowerShell `Start-Process` per `docs/dev-loop.md`. Record PIDs for shutdown.
+5. **HMR sanity check** before declaring bootstrap done (delegate probes to `wt-triage` — never `curl`/`tail`/`adb` from main thread):
    - CDP target list shows `http://tauri.localhost/` (USB) or `http://<LAN>:1420/` (Wi-Fi).
    - No `ws://...:1421/ failed` in the last minute of `tmp/error-monitor.log` (stale HMR → reload via CDP).
    - Touch `src/main.ts`; confirm `[vite] hot updated` on device. Silent → **bootstrap failure**, surface to user.
    - Before relaunching `just android-dev` after a prior session: ports 1420/1421 must be free (orphaned Vite outlives a killed `just` parent).
-7. Report bootstrap status to the user as a checklist.
+6. Report bootstrap status to the user as a checklist.
 
 ### Per-turn protocol
 
-Between every user turn — and after every edit batch — the orchestrator:
-
-1. Reads `tmp/error-monitor.log` line count; compares against last seen.
-2. **New lines → spawn `wt-triage`** with the _excerpt only_ (never the whole log):
-   `"Error: <excerpt>. Diagnose and fix. Do not commit."`
-   Triage returns `VERDICT / EVIDENCE / FIX`.
-3. **Fix applied and green → spawn `wt-committer`** with a one-line change summary. Committer runs the pre-commit gate, writes a conventional message, pushes, returns the hash.
-4. **Install / smoke needed → chain `install-and-test`** (`.pi/chains/`). Never call tester directly without installer.
-5. **`just check` failure or regression → `wt-triage`** in parallel; it owns the multi-minute output.
+After every user turn and every edit batch, diff `tmp/error-monitor.log` line count; new lines → `wt-triage` with the _excerpt only_. Then consult the Decision table.
 
 ### Decision table
 
@@ -108,30 +85,16 @@ Between every user turn — and after every edit batch — the orchestrator:
 | User asks to release                                                  | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                                   |
 | Need external knowledge (Reddit/GitHub/SO) before deciding            | `wt-researcher`                                                                                                                                       |
 
-### Self-repair (when an agent misbehaves)
+### Self-repair
 
-Agents fail in two distinct ways. Treat them differently.
-
-- **Code failure** (the work product is wrong: tests red, gate red, fix breaks build) → re-delegate to the same agent with a sharper task; the agent prompt is fine.
-- **Agent failure** (the agent itself misbehaves: no `VERDICT/EVIDENCE/FIX` block, returns scratchpad, hangs, ignores file-signal contract, dumps raw logs, bypasses the gate, calls another agent, edits outside its scope, or repeatedly returns "completed without making edits" while the work was in fact done) → **repair the agent definition.**
-
-#### Repair loop
-
-1. **Detect.** Per-turn checks: did the worker return the contract block? Did the expected `tmp/*.json` / `tmp/*.md` artifact land? Did `git log` / build output reflect the claimed action? Two consecutive deviations from the same agent = repair trigger.
-2. **Diagnose.** Read `.pi/agents/<name>.md`. Identify the missing or ambiguous instruction that allowed the deviation. Cross-check against the [agent instruction quality bar](#agent-instruction-quality-bar).
-3. **Patch.** Edit `.pi/agents/<name>.md` with the **smallest** change that closes the gap — prefer tightening the output contract or adding one explicit prohibition over rewriting prose. Never grow the file just to add safety belts.
-4. **Verify.** Re-run the same task. If the agent now conforms, route the patch through `wt-committer` as `chore(agents): tighten <name> <one-line reason>`. If it still deviates, escalate to the user with a one-paragraph diagnosis — do **not** loop more than twice.
-5. **Record.** Every repair is its own commit so the history shows when and why an agent's prompt drifted.
-
-For chains in `.pi/chains/`, the same loop applies; patch the chain file when the bug is in step wiring, not in a single agent.
+Work-product wrong (tests red, build broken) → re-delegate with a sharper spec; the agent prompt is fine. **Agent misbehaves** (missing contract block, raw-log dump, gate bypass, agent-to-agent call, scope creep, or two consecutive deviations) → delegate to `wt-docs-updater` with the smallest closing change to `.pi/agents/<name>.md` (or `.pi/chains/*` if step wiring is at fault), then `wt-committer` as `chore(agents): tighten <name> <reason>`. After two failed repair attempts, escalate to the user.
 
 ### Hard prohibitions (orchestrator)
 
-- No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb logcat`/`adb shell`/`curl /json`/`tasklist`) from the main thread — route to `wt-triage`.
-- `wt-installer` ships release artifacts only; never invoke it during a live `just dev`/`just android-dev` session.
+- No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb logcat`/`adb shell`/`curl /json`/`tasklist`) from the main thread.
+- `wt-installer` is release-only; never during a live `just dev`/`just android-dev` session.
 - No agent-to-agent calls — workers signal via files under `tmp/`.
-- No raw log dumps in responses to the user — relay `VERDICT / EVIDENCE / FIX` only.
-- No source edits from the main thread — delegate to `wt-coder`.
+- No raw log dumps to the user — relay `VERDICT / EVIDENCE / FIX` only.
 
 ## Subagents (`.pi/agents/`)
 
@@ -151,25 +114,11 @@ Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FI
 
 ### Coordination rules
 
-1. **No agent-to-agent calls.** Workers communicate only through the filesystem; the orchestrator is the only synthesizer.
-2. **File-signal contract** (under `tmp/`): `install-report.json` (installer → tester), `test-report.json` (tester output), `error-monitor.log` (monitor → triage), `triage-<topic>.md` (triage artifacts). Workers never read each other's stdout.
-3. **Chain when dependent, parallel when independent.** Installer → tester is a chain (tester reads installer's report). Triage runs in parallel with anything else — it only observes.
-4. **Fresh context per worker** (`defaultContext: fresh`). The orchestrator carries project state; workers re-derive what they need.
-5. **Orchestrator never** greps logs, runs `just check`, or commits directly. Delegate to `wt-triage` or `wt-committer`.
-6. **Chains** live in `.pi/chains/`. Current: `install-and-test` (installer → tester).
+1. **File-signal contract** (under `tmp/`): `install-report.json` (installer → tester), `test-report.json` (tester output), `error-monitor.log` (monitor → triage), `triage-<topic>.md` (triage artifacts). Workers never read each other's stdout.
+2. **Chain when dependent, parallel when independent.** Installer → tester is a chain. Triage runs in parallel — it only observes.
+3. **Fresh context per worker** (`defaultContext: fresh`). The orchestrator carries project state; workers re-derive what they need.
+4. **Chains** live in `.pi/chains/`. Current: `install-and-test` (installer → tester).
 
-### Agent instruction quality bar
+### Agent quality bar
 
-Every `.pi/agents/*.md` file must hold this bar. The orchestrator enforces it during self-repair.
-
-- **One job per agent.** The first sentence of the description names the single responsibility. If you cannot, the agent is misfactored — split it.
-- **Frontmatter is load-bearing.** `name`, `description`, `tools`, `systemPromptMode: replace`, `inheritProjectContext: true`, `inheritSkills: false`, `defaultContext: fresh`. Tools list is minimal — grant nothing the job doesn't need.
-- **Output contract first.** State the exact return shape (`VERDICT / EVIDENCE / FIX`, a JSON path, a commit hash) before describing the work. Workers regress to chatty prose without this anchor.
-- **Inputs are files, not stdout.** Name the `tmp/*` artifacts the agent reads and writes. No "the previous agent told you" phrasing.
-- **Prohibitions are explicit and short.** One bullet per prohibition (`Never bypass with --no-verify.`, `Never call another agent.`). Imperative, present tense, no hedging.
-- **No project lore.** Reference `AGENTS.md` and `docs/` rather than restating rules — `inheritProjectContext: true` already pulls them in. Restating creates drift.
-- **Compactness target.** Body under ~60 lines. If it grows, the agent is doing too much or repeating context.
-- **Terse voice.** Skip preamble, no "Sure, I can help", no apologies, no meta-commentary on the task. Names carry intent.
-- **No comments in code blocks** inside agent prompts — same rule as production code.
-
-When editing an agent file: read it, change the smallest unique span, never reorder unrelated sections, run `bunx prettier --write` on the file, then route through `wt-committer`.
+See `.pi/agents/wt-docs-updater.md` — owned and enforced by the docs maintainer.

@@ -64,6 +64,19 @@ FIX: <"docs updated" OR "requires sharper spec: <what>" OR "requires X decision"
 
 `bytes_delta > 0` on more than one file in a single run is a yellow flag — surface it in `compaction_note` and `VERDICT`.
 
+## Agent quality bar
+
+Enforce on every `.pi/agents/*.md` file you touch (compactness and "don't restate upstream rules" already covered in Compaction principle):
+
+- **One job per agent.** First sentence of the description names the single responsibility. If you cannot, split it.
+- **Frontmatter is load-bearing.** `name`, `description`, `tools`, `systemPromptMode: replace`, `inheritProjectContext: true`, `inheritSkills: false`, `defaultContext: fresh`. Tools list minimal.
+- **Output contract first.** State the exact return shape (`VERDICT / EVIDENCE / FIX`, JSON path, commit hash) before describing the work.
+- **Inputs are files, not stdout.** Name the `tmp/*` artifacts the agent reads and writes. No "the previous agent told you" phrasing.
+- **Prohibitions explicit and short.** One bullet each, imperative, no hedging.
+- **Terse voice.** No preamble, apologies, or meta-commentary. Names carry intent. No comments in code blocks.
+
+For chains in `.pi/chains/`, same bar applies; patch the chain file when the bug is in step wiring.
+
 ## Prohibitions
 
 - Never edit source code, tests, or build scripts. Docs, agent prompts, and skill files only.
