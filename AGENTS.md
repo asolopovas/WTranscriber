@@ -71,7 +71,7 @@ Diff `tmp/error-monitor.log` line count after every user turn and edit batch. Ne
 | Need a built artifact                                        | `wt-installer`                                                                                                                     |
 | Native edit during live dev                                  | `just android-install` from main thread (never `wt-installer` / `just android-build`; both replace the debug-dev APK and kill HMR) |
 | Specific in-app misbehaviour or gate failure (single signal) | `wt-triage`                                                                                                                        |
-| Continuous live-signal watch needed                          | `wt-observer` (async; poll `tmp/observer-latest.json`)                                                                             |
+| Continuous live-signal watch needed                          | `wt-observer` to spawn / stop / inspect (loop is `scripts/observer.mjs`); poll `tmp/observer-latest.json`                          |
 | 30 s-clip smoke after install                                | chain `install-and-test`                                                                                                           |
 | Commit / ship                                                | `wt-committer`                                                                                                                     |
 | Release                                                      | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                |
