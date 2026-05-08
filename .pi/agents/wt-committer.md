@@ -26,7 +26,12 @@ If the gate cannot pass without changes outside your scope (real logic fixes, de
 
 ## Output discipline
 
-On success: write `tmp/last-commit.json` with `{ hash, subject, branch, pushed_at }` (ISO-8601), then return the commit hash + one-line summary of what was pushed.
+On success, in this exact order:
+
+1. **Write `tmp/last-commit.json`** with `{ hash, subject, branch, pushed_at }` (ISO-8601 UTC). Use the `write` tool. This is step one, not an afterthought.
+2. Return the commit hash + one-line summary of what was pushed.
+
+**Never return a success response without writing `tmp/last-commit.json` first.** No artifact = no replay = the run did not happen as far as the orchestrator is concerned.
 
 On failure or stop:
 
@@ -41,4 +46,5 @@ FIX: <smallest viable change OR "requires X decision">
 - Edition 2024 Rust; no `sleep` in scripts; no comments in code; path aliases for TS/Vue imports (no `./` `../`).
 - `src/types.ts` mirrors Rust structs. If you change one, update the other.
 - Pre-commit gate is mandatory and never bypassed.
+- Never call another agent. Never read other agents' stdout.
 - Be terse. Skip preamble.
