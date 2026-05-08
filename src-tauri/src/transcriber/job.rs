@@ -451,6 +451,7 @@ fn run_diarize_streaming(
     let wav = audio::ensure_cached_wav(input)?;
     let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
     let backend_name = backend.name();
+    sink.set_diarize_backend(&backend_name);
     let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
     let cancelled = || sink.is_cancelled();
     match backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress) {
@@ -465,6 +466,7 @@ fn run_diarize_streaming(
             let fallback =
                 diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Eres2net)?;
             let fallback_name = fallback.name();
+            sink.set_diarize_backend(&fallback_name);
             let mut fb_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
             let fb_cancelled = || sink.is_cancelled();
             let segs = fallback.diarize(

@@ -201,10 +201,84 @@ struct ProgressEvent {
     eta_sec: f64,
 }
 
+#[derive(Clone, Copy)]
+struct OverallInputs {
+    phase: Phase,
+    audio_dur_sec: f64,
+    expect_diarize: bool,
+    diarize_prior_rtf: f64,
+}
+
+fn compute_overall_static(
+    inputs: OverallInputs,
+    smoother: &Mutex<Smoother>,
+    diarize: &Mutex<Option<DiarizeSmoother>>,
+) -> (f64, f64) {
+    let rank = match inputs.phase {
+        Phase::CacheCheck => 0,
+        Phase::LoadingAudio => 1,
+        Phase::Transcribing => 2,
+        Phase::Diarizing => 3,
+        Phase::Writing => 4,
+        Phase::Done => 5,
+    };
+    let transcribe_done = rank > 2;
+
+    let (t_total, t_pct, t_remaining) = smoother.lock().map_or_else(
+        |_| {
+            let dur = inputs.audio_dur_sec.max(1.0);
+            (dur, 0.0, dur)
+        },
+        |mut s| {
+            let total = s.total_wall_sec().max(0.001);
+            if transcribe_done {
+                (total, 100.0, 0.0)
+            } else if matches!(inputs.phase, Phase::Transcribing) {
+                let (pct, _) = s.snapshot();
+                (total, pct, s.remaining_wall_sec())
+            } else {
+                (total, 0.0, total)
+            }
+        },
+    );
+
+    let (d_total, d_pct, d_remaining) = if inputs.expect_diarize {
+        let diarize_done = rank > 3;
+        let prior_total = (inputs.audio_dur_sec / inputs.diarize_prior_rtf).max(0.001);
+        if diarize_done {
+            (prior_total, 100.0, 0.0)
+        } else {
+            diarize
+                .lock()
+                .map_or((prior_total, 0.0, prior_total), |mut g| {
+                    g.as_mut().map_or((prior_total, 0.0, prior_total), |d| {
+                        let total = d.total_wall_sec().max(0.001);
+                        let (pct, _) = d.snapshot();
+                        (total, pct, d.remaining_wall_sec())
+                    })
+                })
+        }
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+
+    let total_wall = t_total + d_total;
+    if total_wall <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let combined_pct = t_total.mul_add(t_pct, d_total * d_pct) / total_wall;
+    let combined_eta = (t_remaining + d_remaining).max(0.0);
+    (combined_pct.clamp(0.0, 99.5), combined_eta)
+}
+
 struct TranscribeSink {
     app: AppHandle,
     handle: Handle,
     file_path: String,
+    audio_dur_sec: f64,
+    expect_diarize: bool,
+    diarize_prior_rtf: f64,
+    diarize_backend: Mutex<String>,
     smoother: Arc<Mutex<Smoother>>,
     diarize: Arc<Mutex<Option<DiarizeSmoother>>>,
     current_phase: Arc<Mutex<Phase>>,
@@ -214,18 +288,26 @@ struct TranscribeSink {
 }
 
 impl TranscribeSink {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         app: AppHandle,
         handle: Handle,
         file_path: String,
         audio_dur_sec: f64,
         initial_rtf: f64,
+        expect_diarize: bool,
+        diarize_backend: String,
+        diarize_prior_rtf: f64,
         cancel: Arc<AtomicBool>,
     ) -> Self {
         Self {
             app,
             handle,
             file_path,
+            audio_dur_sec,
+            expect_diarize,
+            diarize_prior_rtf,
+            diarize_backend: Mutex::new(diarize_backend),
             smoother: Arc::new(Mutex::new(Smoother::new(audio_dur_sec, initial_rtf))),
             diarize: Arc::new(Mutex::new(None)),
             current_phase: Arc::new(Mutex::new(Phase::CacheCheck)),
@@ -235,11 +317,56 @@ impl TranscribeSink {
         }
     }
 
+    fn compute_overall(&self, phase: Phase) -> (f64, f64) {
+        compute_overall_static(
+            OverallInputs {
+                phase,
+                audio_dur_sec: self.audio_dur_sec,
+                expect_diarize: self.expect_diarize,
+                diarize_prior_rtf: self.diarize_prior_rtf,
+            },
+            &self.smoother,
+            &self.diarize,
+        )
+    }
+
+    fn save_diarize_rtf(&self) {
+        let backend = self
+            .diarize_backend
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        if backend.is_empty() {
+            return;
+        }
+        let observed = self
+            .diarize
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(DiarizeSmoother::observed_rtf))
+            .unwrap_or(0.0);
+        if observed > 0.0 {
+            progress::save_diarize_rtf(&backend, observed);
+        }
+    }
+
+    fn update_diarize_backend(&self, name: &str) {
+        if let Ok(mut g) = self.diarize_backend.lock() {
+            *g = name.to_string();
+        }
+    }
+
     fn emit(&self, phase: Phase, display_pct: f64, eta_sec: f64) {
         let elapsed_sec = self
             .smoother
             .lock()
             .map_or(0.0, |s| s.elapsed().as_secs_f64());
+        let (display_pct, eta_sec) = match phase {
+            Phase::Done => (100.0, 0.0),
+            Phase::Transcribing | Phase::Diarizing => self.compute_overall(phase),
+            _ => (display_pct, eta_sec),
+        };
         let _ = self.app.emit(
             "transcribe:progress",
             &ProgressEvent {
@@ -264,6 +391,9 @@ impl TranscribeSink {
         let diarize = self.diarize.clone();
         let phase_lock = self.current_phase.clone();
         let cancel = self.ticker_cancel.clone();
+        let audio_dur_sec = self.audio_dur_sec;
+        let expect_diarize = self.expect_diarize;
+        let diarize_prior_rtf = self.diarize_prior_rtf;
         let join = self.handle.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -273,18 +403,20 @@ impl TranscribeSink {
                     break;
                 }
                 let phase = phase_lock.lock().ok().map_or(Phase::Transcribing, |g| *g);
-                let elapsed_sec = smoother.lock().map_or(0.0, |s| s.elapsed().as_secs_f64());
-                let snap = match phase {
-                    Phase::Transcribing => smoother.lock().ok().map(|mut s| s.snapshot()),
-                    Phase::Diarizing => diarize
-                        .lock()
-                        .ok()
-                        .and_then(|mut g| g.as_mut().map(DiarizeSmoother::snapshot)),
-                    _ => None,
-                };
-                let Some((display_pct, eta_sec)) = snap else {
+                if !matches!(phase, Phase::Transcribing | Phase::Diarizing) {
                     continue;
-                };
+                }
+                let (display_pct, eta_sec) = compute_overall_static(
+                    OverallInputs {
+                        phase,
+                        audio_dur_sec,
+                        expect_diarize,
+                        diarize_prior_rtf,
+                    },
+                    &smoother,
+                    &diarize,
+                );
+                let elapsed_sec = smoother.lock().map_or(0.0, |s| s.elapsed().as_secs_f64());
                 let _ = app.emit(
                     "transcribe:progress",
                     &ProgressEvent {
@@ -326,7 +458,13 @@ impl Sink for TranscribeSink {
             && let Ok(mut g) = self.diarize.lock()
             && g.is_none()
         {
-            *g = Some(DiarizeSmoother::new());
+            *g = Some(DiarizeSmoother::new(
+                self.audio_dur_sec,
+                self.diarize_prior_rtf,
+            ));
+        }
+        if matches!(phase, Phase::Done) {
+            self.save_diarize_rtf();
         }
         match phase {
             Phase::Transcribing | Phase::Diarizing => self.start_ticker(),
@@ -354,7 +492,10 @@ impl Sink for TranscribeSink {
             Phase::Diarizing => {
                 if let Ok(mut g) = self.diarize.lock() {
                     if g.is_none() {
-                        *g = Some(DiarizeSmoother::new());
+                        *g = Some(DiarizeSmoother::new(
+                            self.audio_dur_sec,
+                            self.diarize_prior_rtf,
+                        ));
                     }
                     if let Some(d) = g.as_mut() {
                         d.report(pct);
@@ -367,6 +508,10 @@ impl Sink for TranscribeSink {
 
     fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::SeqCst)
+    }
+
+    fn set_diarize_backend(&self, name: &str) {
+        self.update_diarize_backend(name);
     }
 }
 
@@ -395,6 +540,17 @@ pub async fn transcribe_file(
     };
     let device_label = format!("{:?}", config.device).to_lowercase();
     let initial_rtf = progress::load_rtf(&config.model, &device_label);
+    let expect_diarize = config.diarize;
+    let diarize_backend_hint = if expect_diarize {
+        config.diarizer.as_str().to_string()
+    } else {
+        String::new()
+    };
+    let diarize_prior_rtf = if expect_diarize {
+        progress::load_diarize_rtf(&diarize_backend_hint)
+    } else {
+        progress::DIARIZE_DEFAULT_RTF
+    };
     let input_key = input.to_string_lossy().into_owned();
     let cancel = Arc::new(AtomicBool::new(false));
     if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
@@ -406,6 +562,9 @@ pub async fn transcribe_file(
         input_key.clone(),
         audio_dur_sec,
         initial_rtf,
+        expect_diarize,
+        diarize_backend_hint,
+        diarize_prior_rtf,
         cancel,
     ));
     let job = Job { input, config };

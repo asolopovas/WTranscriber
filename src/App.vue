@@ -1428,17 +1428,11 @@ const fieldClass =
                   <span class="material-symbols-outlined text-[14px] animate-pulse"
                     >graphic_eq</span
                   >
-                  <template v-if="progressByPath[entry.path]">
-                    <span
-                      v-if="
-                        progressByPath[entry.path].phase === 'transcribing' ||
-                        progressByPath[entry.path].phase === 'diarizing'
-                      "
-                      >{{ progressByPath[entry.path].displayPct.toFixed(1) }}%</span
-                    >
-                    <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
-                  </template>
-                  <span v-else>transcribing</span>
+                  <span>{{
+                    progressByPath[entry.path]
+                      ? phaseLabel(progressByPath[entry.path].phase)
+                      : "transcribing"
+                  }}</span>
                 </div>
               </li>
             </ul>
@@ -1495,18 +1489,11 @@ const fieldClass =
                           <span class="material-symbols-outlined text-[14px] animate-pulse"
                             >graphic_eq</span
                           >
-                          <template v-if="progressByPath[entry.path]">
-                            <span
-                              v-if="
-                                progressByPath[entry.path].phase === 'transcribing' ||
-                                progressByPath[entry.path].phase === 'diarizing'
-                              "
-                            >
-                              {{ progressByPath[entry.path].displayPct.toFixed(1) }}%
-                            </span>
-                            <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
-                          </template>
-                          <span v-else>transcribing</span>
+                          <span>{{
+                            progressByPath[entry.path]
+                              ? phaseLabel(progressByPath[entry.path].phase)
+                              : "transcribing"
+                          }}</span>
                         </span>
                       </div>
                     </template>

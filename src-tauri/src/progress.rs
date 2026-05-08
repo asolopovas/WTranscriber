@@ -52,6 +52,16 @@ pub struct Smoother {
     eta_shown: f64,
 }
 
+fn effective_rtf(rtf: f64, prior: f64) -> f64 {
+    if rtf > 0.0 {
+        rtf
+    } else if prior > 0.0 {
+        prior
+    } else {
+        1.0
+    }
+}
+
 impl Smoother {
     #[must_use]
     pub fn new(audio_dur_sec: f64, initial_rtf: f64) -> Self {
@@ -177,16 +187,28 @@ impl Smoother {
     pub const fn observed_rtf(&self) -> f64 {
         self.rtf
     }
+
+    #[must_use]
+    pub fn total_wall_sec(&self) -> f64 {
+        self.audio_dur_sec / effective_rtf(self.rtf, self.prior_rtf)
+    }
+
+    #[must_use]
+    pub fn remaining_wall_sec(&self) -> f64 {
+        let frac = (100.0 - f64::from(self.last_pct)).max(0.0) / 100.0;
+        self.audio_dur_sec * frac / effective_rtf(self.rtf, self.prior_rtf)
+    }
 }
 
-const DIARIZE_PRIOR_SEC: f64 = 30.0;
-const DIARIZE_PRIOR_RATE: f64 = 100.0 / DIARIZE_PRIOR_SEC;
 const DIARIZE_RATE_ALPHA: f64 = 0.4;
 const DIARIZE_ETA_ALPHA: f64 = 0.30;
 const DIARIZE_PREDICT_DAMP: f64 = 0.5;
+pub const DIARIZE_DEFAULT_RTF: f64 = 6.0;
 
 pub struct DiarizeSmoother {
     start: Instant,
+    audio_dur_sec: f64,
+    prior_rate: f64,
     last_pct: f64,
     last_pct_at: Instant,
     rate: f64,
@@ -198,16 +220,29 @@ pub struct DiarizeSmoother {
 
 impl Default for DiarizeSmoother {
     fn default() -> Self {
-        Self::new()
+        Self::new(1.0, DIARIZE_DEFAULT_RTF)
     }
 }
 
 impl DiarizeSmoother {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(audio_dur_sec: f64, prior_rtf: f64) -> Self {
         let now = Instant::now();
+        let dur = if audio_dur_sec > 0.0 {
+            audio_dur_sec
+        } else {
+            1.0
+        };
+        let rtf = if prior_rtf > 0.0 {
+            prior_rtf
+        } else {
+            DIARIZE_DEFAULT_RTF
+        };
+        let prior_rate = (rtf * 100.0 / dur).max(0.05);
         Self {
             start: now,
+            audio_dur_sec: dur,
+            prior_rate,
             last_pct: 0.0,
             last_pct_at: now,
             rate: 0.0,
@@ -215,6 +250,33 @@ impl DiarizeSmoother {
             display_shown: 0.0,
             eta_shown: 0.0,
             have_eta: false,
+        }
+    }
+
+    fn current_rate(&self) -> f64 {
+        if self.rate_init && self.rate > 0.0 {
+            self.rate
+        } else {
+            self.prior_rate
+        }
+    }
+
+    #[must_use]
+    pub fn total_wall_sec(&self) -> f64 {
+        100.0 / self.current_rate()
+    }
+
+    #[must_use]
+    pub fn remaining_wall_sec(&self) -> f64 {
+        ((100.0 - self.last_pct).max(0.0)) / self.current_rate()
+    }
+
+    #[must_use]
+    pub fn observed_rtf(&self) -> f64 {
+        if self.rate_init && self.rate > 0.0 {
+            self.rate * self.audio_dur_sec / 100.0
+        } else {
+            0.0
         }
     }
 
@@ -241,11 +303,7 @@ impl DiarizeSmoother {
 
     pub fn snapshot(&mut self) -> (f64, f64) {
         let now = Instant::now();
-        let rate = if self.rate_init {
-            self.rate
-        } else {
-            DIARIZE_PRIOR_RATE
-        };
+        let rate = self.current_rate();
         let since_last = now.duration_since(self.last_pct_at).as_secs_f64();
         let predicted = rate * since_last * DIARIZE_PREDICT_DAMP;
         let mut display = self.last_pct + predicted;
@@ -311,6 +369,57 @@ pub fn default_rtf(model: &str, device: &str) -> f64 {
 
 static RTF_LOCK: Mutex<()> = Mutex::new(());
 
+#[must_use]
+pub const fn default_diarize_rtf(_backend: &str) -> f64 {
+    DIARIZE_DEFAULT_RTF
+}
+
+fn diarize_key(backend: &str) -> String {
+    format!("diarize|{}", backend.to_lowercase())
+}
+
+#[must_use]
+pub fn load_diarize_rtf(backend: &str) -> f64 {
+    let _guard = RTF_LOCK.lock().ok();
+    let Ok(path) = rtf_path() else {
+        return default_diarize_rtf(backend);
+    };
+    let Ok(data) = std::fs::read_to_string(&path) else {
+        return default_diarize_rtf(backend);
+    };
+    let Ok(map) = serde_json::from_str::<HashMap<String, f64>>(&data) else {
+        return default_diarize_rtf(backend);
+    };
+    map.get(&diarize_key(backend))
+        .copied()
+        .filter(|v| *v > 0.0)
+        .unwrap_or_else(|| default_diarize_rtf(backend))
+}
+
+pub fn save_diarize_rtf(backend: &str, observed: f64) {
+    if observed <= 0.0 {
+        return;
+    }
+    let _guard = RTF_LOCK.lock().ok();
+    let Ok(path) = rtf_path() else { return };
+    let mut map: HashMap<String, f64> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|d| serde_json::from_str(&d).ok())
+        .unwrap_or_default();
+    let key = diarize_key(backend);
+    let blended = match map.get(&key).copied() {
+        Some(prev) if prev > 0.0 => 0.5 * prev + 0.5 * observed,
+        _ => observed,
+    };
+    map.insert(key, blended);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(data) = serde_json::to_string_pretty(&map) {
+        let _ = std::fs::write(&path, data);
+    }
+}
+
 fn rtf_path() -> Result<std::path::PathBuf> {
     Ok(paths::config_dir()?.join("rtf.json"))
 }
@@ -367,6 +476,7 @@ pub trait Sink: Send + Sync {
     fn is_cancelled(&self) -> bool {
         false
     }
+    fn set_diarize_backend(&self, _name: &str) {}
 }
 
 pub struct NoopSink;
@@ -396,16 +506,30 @@ mod tests {
 
     #[test]
     fn diarize_initial_snapshot_uses_prior_rate() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         let (pct, eta) = d.snapshot();
         assert!(pct < 1e-6);
         assert!(eta > 0.0, "prior ETA should be positive, got {eta}");
-        assert!(eta <= DIARIZE_PRIOR_SEC + 0.1);
+        let expected_total = 60.0 / DIARIZE_DEFAULT_RTF;
+        assert!(
+            eta <= expected_total + 0.5,
+            "eta {eta} should be near total {expected_total}"
+        );
+    }
+
+    #[test]
+    fn diarize_prior_scales_with_audio_duration() {
+        let short = DiarizeSmoother::new(30.0, DIARIZE_DEFAULT_RTF).total_wall_sec();
+        let long = DiarizeSmoother::new(600.0, DIARIZE_DEFAULT_RTF).total_wall_sec();
+        assert!(
+            long > short * 5.0,
+            "long={long} should scale beyond short={short}"
+        );
     }
 
     #[test]
     fn diarize_pct_advances_after_report() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(25.0);
         let (pct, _) = d.snapshot();
         assert!(pct >= 25.0);
@@ -414,7 +538,7 @@ mod tests {
 
     #[test]
     fn diarize_pct_is_monotonic() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(30.0);
         let (a, _) = d.snapshot();
         let (b, _) = d.snapshot();
@@ -423,7 +547,7 @@ mod tests {
 
     #[test]
     fn diarize_eta_decreases_as_pct_grows() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(20.0);
         std::thread::sleep(std::time::Duration::from_millis(10));
         let (_, eta_low) = d.snapshot();
@@ -437,7 +561,7 @@ mod tests {
 
     #[test]
     fn diarize_ignores_backwards_reports() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(50.0);
         d.report(20.0);
         let (pct, _) = d.snapshot();
@@ -446,7 +570,7 @@ mod tests {
 
     #[test]
     fn diarize_clamps_below_100() {
-        let mut d = DiarizeSmoother::new();
+        let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         d.report(99.5);
         let (pct, _) = d.snapshot();
         assert!(pct <= 99.0 + 1e-9);
