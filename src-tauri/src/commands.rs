@@ -356,6 +356,12 @@ pub async fn transcribe_file(
     let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
     log_preflight(&input, &config);
+    let display_name = input
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio")
+        .to_string();
+    crate::android_start_transcription_service(&format!("Transcribing {display_name}"));
     let audio_dur_ms = audio::probe_duration_ms(&input).unwrap_or(0);
     let audio_dur_sec = if audio_dur_ms > 0 {
         audio_dur_ms as f64 / 1000.0
@@ -391,6 +397,11 @@ pub async fn transcribe_file(
                 ),
             );
             sink.emit(Phase::Done, 100.0, 0.0);
+            crate::android_notify_transcription_done(
+                "Transcription finished",
+                &format!("{display_name}: {} utterances", t.utterances.len()),
+                true,
+            );
             Ok(t)
         }
         Err(Error::Cancelled) => {
@@ -400,9 +411,15 @@ pub async fn transcribe_file(
         Err(e) => {
             logfile::error(&format!("{label}: {e}"));
             logfile::process_end(&label, "failed", &e.to_string());
+            crate::android_notify_transcription_done(
+                "Transcription failed",
+                &format!("{display_name}: {e}"),
+                false,
+            );
             Err(e)
         }
     };
+    crate::android_stop_transcription_service();
     if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
         cancels.remove(&input_key);
     }

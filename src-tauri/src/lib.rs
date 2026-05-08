@@ -205,6 +205,52 @@ fn android_request_all_files_access() {
 }
 
 #[cfg(target_os = "android")]
+pub fn android_start_transcription_service(title: &str) {
+    android_jni::with_activity((), |env, activity| {
+        let s = env.new_string(title)?;
+        env.call_method(
+            activity,
+            "startTranscriptionService",
+            "(Ljava/lang/String;)V",
+            &[(&s).into()],
+        )?;
+        Ok(())
+    });
+}
+
+#[cfg(target_os = "android")]
+pub fn android_stop_transcription_service() {
+    android_jni::with_activity((), |env, activity| {
+        env.call_method(activity, "stopTranscriptionService", "()V", &[])?;
+        Ok(())
+    });
+}
+
+#[cfg(target_os = "android")]
+pub fn android_notify_transcription_done(title: &str, text: &str, success: bool) {
+    android_jni::with_activity((), |env, activity| {
+        let t = env.new_string(title)?;
+        let b = env.new_string(text)?;
+        env.call_method(
+            activity,
+            "notifyTranscriptionDone",
+            "(Ljava/lang/String;Ljava/lang/String;Z)V",
+            &[(&t).into(), (&b).into(), success.into()],
+        )?;
+        Ok(())
+    });
+}
+
+#[cfg(not(target_os = "android"))]
+pub const fn android_start_transcription_service(_title: &str) {}
+
+#[cfg(not(target_os = "android"))]
+pub const fn android_stop_transcription_service() {}
+
+#[cfg(not(target_os = "android"))]
+pub const fn android_notify_transcription_done(_title: &str, _text: &str, _success: bool) {}
+
+#[cfg(target_os = "android")]
 fn restore_models_from_persistent(internal: &std::path::Path) {
     let public = std::path::Path::new(PERSISTENT_MODELS_DIR);
     if !public.exists() {

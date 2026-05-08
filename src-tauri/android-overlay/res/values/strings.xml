@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">WTranscriber</string>
+    <string name="main_activity_title">WTranscriber</string>
+    <string name="transcription_channel">Transcription</string>
+    <string name="transcription_channel_desc">Transcription progress and results</string>
+    <string name="transcription_running">Transcribing\u2026</string>
+    <string name="transcription_running_text">Keeping transcription running in the background</string>
+</resources>

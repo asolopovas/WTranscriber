@@ -533,28 +533,86 @@ fn copy_llama_jni(target: &str) -> Result<()> {
 }
 
 fn patch_manifest() -> Result<()> {
-    let p = root()
+    apply_android_overlay()?;
+    let main = root()
         .join("src-tauri")
         .join("gen")
         .join("android")
         .join("app")
         .join("src")
-        .join("main")
-        .join("AndroidManifest.xml");
+        .join("main");
+    let p = main.join("AndroidManifest.xml");
     if !p.exists() {
         return Ok(());
     }
-    let raw = fs::read_to_string(&p)?;
-    if raw.contains("android:extractNativeLibs") {
+    let mut raw = fs::read_to_string(&p)?;
+    if !raw.contains("android:extractNativeLibs") {
+        raw = raw.replace(
+            "<application",
+            "<application\n        android:extractNativeLibs=\"true\"",
+        );
+    }
+    if !raw.contains("android.permission.WAKE_LOCK") {
+        let perms = concat!(
+            "    <uses-permission android:name=\"android.permission.WAKE_LOCK\" />\n",
+            "    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\" />\n",
+            "    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_DATA_SYNC\" />\n",
+            "    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n",
+            "    <uses-permission android:name=\"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS\" />\n",
+            "    <uses-feature",
+        );
+        raw = raw.replacen("    <uses-feature", perms, 1);
+    }
+    if !raw.contains(".TranscriptionService") {
+        let service = concat!(
+            "        <service\n",
+            "            android:name=\".TranscriptionService\"\n",
+            "            android:exported=\"false\"\n",
+            "            android:foregroundServiceType=\"dataSync\" />\n\n",
+            "        <provider",
+        );
+        raw = raw.replacen("        <provider", service, 1);
+    }
+    fs::write(&p, raw)?;
+    Ok(())
+}
+
+const MAIN_ACTIVITY_KT: &str =
+    include_str!("../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/MainActivity.kt");
+const TRANSCRIPTION_SERVICE_KT: &str = include_str!(
+    "../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/TranscriptionService.kt"
+);
+const STRINGS_XML: &str = include_str!("../../src-tauri/android-overlay/res/values/strings.xml");
+
+fn apply_android_overlay() -> Result<()> {
+    let main = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("app")
+        .join("src")
+        .join("main");
+    if !main.exists() {
         return Ok(());
     }
-    let patched = raw.replace(
-        "<application",
-        "<application\n        android:extractNativeLibs=\"true\"",
-    );
-    if patched != raw {
-        fs::write(&p, patched)?;
+    let java_dir = main.join("java").join("com").join("asolopovas").join("wtranscriber");
+    let res_dir = main.join("res").join("values");
+    write_if_changed(&java_dir.join("MainActivity.kt"), MAIN_ACTIVITY_KT)?;
+    write_if_changed(&java_dir.join("TranscriptionService.kt"), TRANSCRIPTION_SERVICE_KT)?;
+    write_if_changed(&res_dir.join("strings.xml"), STRINGS_XML)?;
+    Ok(())
+}
+
+fn write_if_changed(path: &Path, content: &str) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
     }
+    if let Ok(existing) = fs::read_to_string(path)
+        && existing == content
+    {
+        return Ok(());
+    }
+    fs::write(path, content)?;
     Ok(())
 }
 
