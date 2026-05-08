@@ -179,6 +179,108 @@ impl Smoother {
     }
 }
 
+const DIARIZE_PRIOR_SEC: f64 = 30.0;
+const DIARIZE_PRIOR_RATE: f64 = 100.0 / DIARIZE_PRIOR_SEC;
+const DIARIZE_RATE_ALPHA: f64 = 0.4;
+const DIARIZE_ETA_ALPHA: f64 = 0.30;
+const DIARIZE_PREDICT_DAMP: f64 = 0.5;
+
+pub struct DiarizeSmoother {
+    start: Instant,
+    last_pct: f64,
+    last_pct_at: Instant,
+    rate: f64,
+    rate_init: bool,
+    display_shown: f64,
+    eta_shown: f64,
+    have_eta: bool,
+}
+
+impl Default for DiarizeSmoother {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DiarizeSmoother {
+    #[must_use]
+    pub fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            start: now,
+            last_pct: 0.0,
+            last_pct_at: now,
+            rate: 0.0,
+            rate_init: false,
+            display_shown: 0.0,
+            eta_shown: 0.0,
+            have_eta: false,
+        }
+    }
+
+    pub fn report(&mut self, pct: f64) {
+        let clamped = pct.clamp(0.0, 100.0);
+        if clamped <= self.last_pct {
+            return;
+        }
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_pct_at).as_secs_f64();
+        let dpct = clamped - self.last_pct;
+        if dt >= 0.005 && dpct > 0.0 {
+            let observed = dpct / dt;
+            self.rate = if self.rate_init {
+                (1.0 - DIARIZE_RATE_ALPHA) * self.rate + DIARIZE_RATE_ALPHA * observed
+            } else {
+                observed
+            };
+            self.rate_init = true;
+        }
+        self.last_pct = clamped;
+        self.last_pct_at = now;
+    }
+
+    pub fn snapshot(&mut self) -> (f64, f64) {
+        let now = Instant::now();
+        let rate = if self.rate_init {
+            self.rate
+        } else {
+            DIARIZE_PRIOR_RATE
+        };
+        let since_last = now.duration_since(self.last_pct_at).as_secs_f64();
+        let predicted = rate * since_last * DIARIZE_PREDICT_DAMP;
+        let mut display = self.last_pct + predicted;
+        if display > 99.0 {
+            display = 99.0;
+        }
+        if display < self.display_shown {
+            display = self.display_shown;
+        }
+        self.display_shown = display;
+
+        let raw_eta = if rate > 0.0 {
+            ((100.0 - display) / rate).max(0.0)
+        } else {
+            0.0
+        };
+        if self.have_eta {
+            self.eta_shown =
+                (1.0 - DIARIZE_ETA_ALPHA) * self.eta_shown + DIARIZE_ETA_ALPHA * raw_eta;
+        } else {
+            self.eta_shown = raw_eta;
+            self.have_eta = true;
+        }
+        if self.eta_shown < 0.0 {
+            self.eta_shown = 0.0;
+        }
+        (display, self.eta_shown)
+    }
+
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        Instant::now().duration_since(self.start)
+    }
+}
+
 #[must_use]
 pub fn default_rtf(model: &str, device: &str) -> f64 {
     let m = model.to_lowercase();
@@ -290,5 +392,63 @@ mod tests {
         let cpu = default_rtf("large-v3-turbo", "cpu");
         let gpu = default_rtf("large-v3-turbo", "cuda");
         assert!(cpu < gpu);
+    }
+
+    #[test]
+    fn diarize_initial_snapshot_uses_prior_rate() {
+        let mut d = DiarizeSmoother::new();
+        let (pct, eta) = d.snapshot();
+        assert!(pct < 1e-6);
+        assert!(eta > 0.0, "prior ETA should be positive, got {eta}");
+        assert!(eta <= DIARIZE_PRIOR_SEC + 0.1);
+    }
+
+    #[test]
+    fn diarize_pct_advances_after_report() {
+        let mut d = DiarizeSmoother::new();
+        d.report(25.0);
+        let (pct, _) = d.snapshot();
+        assert!(pct >= 25.0);
+        assert!(pct < 100.0);
+    }
+
+    #[test]
+    fn diarize_pct_is_monotonic() {
+        let mut d = DiarizeSmoother::new();
+        d.report(30.0);
+        let (a, _) = d.snapshot();
+        let (b, _) = d.snapshot();
+        assert!(b >= a);
+    }
+
+    #[test]
+    fn diarize_eta_decreases_as_pct_grows() {
+        let mut d = DiarizeSmoother::new();
+        d.report(20.0);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let (_, eta_low) = d.snapshot();
+        d.report(80.0);
+        let (_, eta_high) = d.snapshot();
+        assert!(
+            eta_high < eta_low,
+            "eta should drop: {eta_low} -> {eta_high}"
+        );
+    }
+
+    #[test]
+    fn diarize_ignores_backwards_reports() {
+        let mut d = DiarizeSmoother::new();
+        d.report(50.0);
+        d.report(20.0);
+        let (pct, _) = d.snapshot();
+        assert!(pct >= 50.0);
+    }
+
+    #[test]
+    fn diarize_clamps_below_100() {
+        let mut d = DiarizeSmoother::new();
+        d.report(99.5);
+        let (pct, _) = d.snapshot();
+        assert!(pct <= 99.0 + 1e-9);
     }
 }

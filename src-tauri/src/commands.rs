@@ -28,7 +28,7 @@ use crate::{
     models::{self, Family, FileProgress, ModelInfo, ModelStatus},
     namer::{self, Suggestion},
     paths,
-    progress::{self, Phase, Sink, Smoother},
+    progress::{self, DiarizeSmoother, Phase, Sink, Smoother},
     transcriber::{self, Job, Transcript, export::Format as ExportFormat},
 };
 
@@ -206,7 +206,8 @@ struct TranscribeSink {
     handle: Handle,
     file_path: String,
     smoother: Arc<Mutex<Smoother>>,
-    current_phase: Mutex<Phase>,
+    diarize: Arc<Mutex<Option<DiarizeSmoother>>>,
+    current_phase: Arc<Mutex<Phase>>,
     ticker_cancel: Arc<AtomicBool>,
     cancel: Arc<AtomicBool>,
     ticker_handle: Mutex<Option<JoinHandle<()>>>,
@@ -226,7 +227,8 @@ impl TranscribeSink {
             handle,
             file_path,
             smoother: Arc::new(Mutex::new(Smoother::new(audio_dur_sec, initial_rtf))),
-            current_phase: Mutex::new(Phase::CacheCheck),
+            diarize: Arc::new(Mutex::new(None)),
+            current_phase: Arc::new(Mutex::new(Phase::CacheCheck)),
             ticker_cancel: Arc::new(AtomicBool::new(false)),
             cancel,
             ticker_handle: Mutex::new(None),
@@ -259,6 +261,8 @@ impl TranscribeSink {
         let app = self.app.clone();
         let path = self.file_path.clone();
         let smoother = self.smoother.clone();
+        let diarize = self.diarize.clone();
+        let phase_lock = self.current_phase.clone();
         let cancel = self.ticker_cancel.clone();
         let join = self.handle.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -268,16 +272,24 @@ impl TranscribeSink {
                 if cancel.load(Ordering::SeqCst) {
                     break;
                 }
-                let (display_pct, eta_sec, elapsed_sec) = {
-                    let Ok(mut s) = smoother.lock() else { break };
-                    let (d, e) = s.snapshot();
-                    (d, e, s.elapsed().as_secs_f64())
+                let phase = phase_lock.lock().ok().map_or(Phase::Transcribing, |g| *g);
+                let elapsed_sec = smoother.lock().map_or(0.0, |s| s.elapsed().as_secs_f64());
+                let snap = match phase {
+                    Phase::Transcribing => smoother.lock().ok().map(|mut s| s.snapshot()),
+                    Phase::Diarizing => diarize
+                        .lock()
+                        .ok()
+                        .and_then(|mut g| g.as_mut().map(DiarizeSmoother::snapshot)),
+                    _ => None,
+                };
+                let Some((display_pct, eta_sec)) = snap else {
+                    continue;
                 };
                 let _ = app.emit(
                     "transcribe:progress",
                     &ProgressEvent {
                         path: path.clone(),
-                        phase: Phase::Transcribing,
+                        phase,
                         display_pct,
                         elapsed_sec,
                         eta_sec,
@@ -310,8 +322,14 @@ impl Sink for TranscribeSink {
             .lock()
             .ok()
             .map(|mut g| std::mem::replace(&mut *g, phase));
+        if matches!(phase, Phase::Diarizing)
+            && let Ok(mut g) = self.diarize.lock()
+            && g.is_none()
+        {
+            *g = Some(DiarizeSmoother::new());
+        }
         match phase {
-            Phase::Transcribing => self.start_ticker(),
+            Phase::Transcribing | Phase::Diarizing => self.start_ticker(),
             _ => self.stop_ticker(),
         }
         if prev.is_some_and(|p| p == phase) {
@@ -334,7 +352,14 @@ impl Sink for TranscribeSink {
                 }
             }
             Phase::Diarizing => {
-                self.emit(phase, pct, 0.0);
+                if let Ok(mut g) = self.diarize.lock() {
+                    if g.is_none() {
+                        *g = Some(DiarizeSmoother::new());
+                    }
+                    if let Some(d) = g.as_mut() {
+                        d.report(pct);
+                    }
+                }
             }
             _ => {}
         }

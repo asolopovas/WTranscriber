@@ -71,8 +71,17 @@ function closeMenus() {
   openMenuPath.value = null;
 }
 
+function decodeName(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+}
+
 function prettyName(name: string): { display: string; timestamp: string | null } {
-  const noExt = name.replace(/\.[^.]+$/, "");
+  const decoded = decodeName(name);
+  const noExt = decoded.replace(/\.[^.]+$/, "");
   const patterns: { re: RegExp; full4: boolean }[] = [
     { re: /[-_](\d{4})-(\d{2})-(\d{2})[-_T](\d{2})-(\d{2})-(\d{2})$/, full4: true },
     { re: /[-_](\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: true },
@@ -794,9 +803,7 @@ const MIN_TRIM_GAP_MS = 3_000;
 const trimPlaying = ref(false);
 const trimPlayheadMs = ref(0);
 const trimPlayheadFrac = computed(() =>
-  trimDuration.value > 0
-    ? Math.max(0, Math.min(1, trimPlayheadMs.value / trimDuration.value))
-    : 0,
+  trimDuration.value > 0 ? Math.max(0, Math.min(1, trimPlayheadMs.value / trimDuration.value)) : 0,
 );
 let trimPlayheadRaf: number | null = null;
 function stopPlayheadLoop() {
@@ -1050,7 +1057,8 @@ function fmtBytes(n: number): string {
 }
 
 function basename(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path;
+  const raw = path.split(/[\\/]/).pop() ?? path;
+  return decodeName(raw);
 }
 
 const fieldClass =
@@ -1100,6 +1108,55 @@ const fieldClass =
         <span class="material-symbols-outlined text-[22px]">more_vert</span>
       </button>
     </header>
+
+    <div
+      v-if="
+        tab === 'transcribe' &&
+        (recorderRef?.recording ||
+          (selectedEntry && progressByPath[selectedEntry.path] && status === 'running') ||
+          transcript)
+      "
+      class="shrink-0 border-b border-outline-variant/40 bg-surface-container-low px-margin py-xs flex items-center gap-xs font-mono text-labelSmall overflow-hidden"
+    >
+      <template v-if="recorderRef?.recording">
+        <span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0"></span>
+        <span class="text-error uppercase tracking-wide">REC</span>
+        <span class="text-on-surface ml-auto">{{ recorderRef?.elapsed }}</span>
+      </template>
+      <template
+        v-else-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
+        <span class="text-on-surface-variant shrink-0">{{
+          phaseLabel(progressByPath[selectedEntry.path].phase)
+        }}</span>
+        <span class="text-secondary shrink-0 ml-auto">
+          <template
+            v-if="
+              progressByPath[selectedEntry.path].phase === 'transcribing' ||
+              progressByPath[selectedEntry.path].phase === 'diarizing'
+            "
+          >
+            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% ·
+            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }} / ETA
+            {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
+          </template>
+          <template v-else>
+            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}
+          </template>
+        </span>
+      </template>
+      <template v-else-if="transcript">
+        <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0"
+          >check_circle</span
+        >
+        <span class="text-on-surface-variant shrink-0">ready</span>
+        <span class="text-on-surface-variant shrink-0 ml-auto"
+          >{{ fmtLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
+          {{ transcript.speakers_detected }} spk</span
+        >
+      </template>
+    </div>
 
     <main class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0" @click="closeMenus">
       <template v-if="tab === 'transcribe'">
@@ -1216,7 +1273,7 @@ const fieldClass =
                     <div class="flex items-start gap-xs">
                       <div
                         class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words"
-                        :title="entry.name"
+                        :title="decodeName(entry.name)"
                       >
                         {{ prettyName(entry.name).display }}
                       </div>
@@ -1267,20 +1324,11 @@ const fieldClass =
                                 autoRename(entry);
                               "
                             >
-                              <Spinner
-                                v-if="autoRenamingPath === entry.path"
-                                :size="18"
-                              />
-                              <span
-                                v-else
-                                class="material-symbols-outlined text-[18px]"
+                              <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
+                              <span v-else class="material-symbols-outlined text-[18px]"
                                 >auto_awesome</span
                               >
-                              {{
-                                autoRenamingPath === entry.path
-                                  ? "Renaming…"
-                                  : "Auto-rename"
-                              }}
+                              {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
                             </button>
                             <button
                               class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
@@ -1335,7 +1383,11 @@ const fieldClass =
                         >graphic_eq</span
                       >
                       <template v-if="progressByPath[entry.path]">
-                        <span v-if="progressByPath[entry.path].phase === 'transcribing'"
+                        <span
+                          v-if="
+                            progressByPath[entry.path].phase === 'transcribing' ||
+                            progressByPath[entry.path].phase === 'diarizing'
+                          "
                           >{{ progressByPath[entry.path].displayPct.toFixed(1) }}%</span
                         >
                         <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
@@ -1385,7 +1437,7 @@ const fieldClass =
                     >
                   </td>
                   <td class="px-xs py-xs truncate max-w-0">
-                    <span class="text-on-surface" :title="entry.name">{{
+                    <span class="text-on-surface" :title="decodeName(entry.name)">{{
                       prettyName(entry.name).display
                     }}</span>
                     <span
@@ -1410,7 +1462,12 @@ const fieldClass =
                             >graphic_eq</span
                           >
                           <template v-if="progressByPath[entry.path]">
-                            <span v-if="progressByPath[entry.path].phase === 'transcribing'">
+                            <span
+                              v-if="
+                                progressByPath[entry.path].phase === 'transcribing' ||
+                                progressByPath[entry.path].phase === 'diarizing'
+                              "
+                            >
                               {{ progressByPath[entry.path].displayPct.toFixed(1) }}%
                             </span>
                             <span v-else>{{ phaseLabel(progressByPath[entry.path].phase) }}</span>
@@ -1470,18 +1527,12 @@ const fieldClass =
                       </button>
                       <button
                         class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
-                        :title="
-                          autoRenamingPath === entry.path
-                            ? 'Renaming…'
-                            : 'Auto-rename (AI)'
-                        "
+                        :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
                         :disabled="autoRenamingPath === entry.path"
                         @click="autoRename(entry)"
                       >
                         <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-                        <span
-                          v-else
-                          class="material-symbols-outlined text-[18px]"
+                        <span v-else class="material-symbols-outlined text-[18px]"
                           >auto_awesome</span
                         >
                       </button>
@@ -1528,44 +1579,48 @@ const fieldClass =
             >
               <div
                 class="w-12 h-1 rounded-full transition-colors"
-                :class="resizingTranscript ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'"
+                :class="
+                  resizingTranscript ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
+                "
               ></div>
             </div>
             <div class="flex-1 overflow-y-auto scroll-thin p-margin">
-            <div class="flex items-center justify-between mb-md">
-              <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
-                <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
-                Transcript
-                <span v-if="selectedPath" class="font-mono text-labelSmall text-on-surface-variant"
-                  >— {{ basename(selectedPath) }}</span
+              <div class="flex items-center justify-between mb-md">
+                <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
+                  <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
+                  Transcript
+                  <span
+                    v-if="selectedPath"
+                    class="font-mono text-labelSmall text-on-surface-variant"
+                    >— {{ basename(selectedPath) }}</span
+                  >
+                </h3>
+                <button
+                  class="text-on-surface-variant hover:text-on-surface text-titleSmall"
+                  @click="closeTranscript"
                 >
-              </h3>
-              <button
-                class="text-on-surface-variant hover:text-on-surface text-titleSmall"
-                @click="closeTranscript"
-              >
-                <span class="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </div>
-            <article
-              v-for="(u, i) in transcript.utterances"
-              :key="i"
-              class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
-            >
-              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
-                fmt(u.start_ms)
-              }}</span>
-              <div class="flex-1 min-w-0">
-                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
-                  {{ u.speaker }}
-                </div>
-                <p
-                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
-                >
-                  {{ u.text }}
-                </p>
+                  <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
               </div>
-            </article>
+              <article
+                v-for="(u, i) in transcript.utterances"
+                :key="i"
+                class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
+              >
+                <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
+                  fmt(u.start_ms)
+                }}</span>
+                <div class="flex-1 min-w-0">
+                  <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
+                    {{ u.speaker }}
+                  </div>
+                  <p
+                    class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
+                  >
+                    {{ u.text }}
+                  </p>
+                </div>
+              </article>
             </div>
           </div>
         </section>
@@ -1812,9 +1867,9 @@ const fieldClass =
                   <span class="text-on-surface-variant">File</span>
                   <span
                     class="text-on-surface truncate ml-md max-w-[180px]"
-                    :title="selectedEntry?.name"
+                    :title="selectedEntry ? decodeName(selectedEntry.name) : ''"
                   >
-                    {{ selectedEntry?.name ?? "—" }}
+                    {{ selectedEntry ? decodeName(selectedEntry.name) : "—" }}
                   </span>
                 </div>
                 <div class="flex justify-between items-center">
@@ -1834,7 +1889,12 @@ const fieldClass =
                       "
                     >
                       {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
-                      <span v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
+                      <span
+                        v-if="
+                          progressByPath[selectedEntry.path].phase === 'transcribing' ||
+                          progressByPath[selectedEntry.path].phase === 'diarizing'
+                        "
+                      >
                         · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
                       </span>
                     </template>
@@ -1865,53 +1925,6 @@ const fieldClass =
       <Settings v-else-if="tab === 'settings'" />
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
-
-    <div
-      v-if="
-        tab === 'transcribe' &&
-        (recorderRef?.recording ||
-          (selectedEntry && progressByPath[selectedEntry.path] && status === 'running') ||
-          transcript)
-      "
-      class="md:hidden shrink-0 border-t border-outline-variant/40 bg-surface-container-low px-margin py-xs flex items-center gap-xs font-mono text-labelSmall overflow-hidden"
-    >
-      <template v-if="recorderRef?.recording">
-        <span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0"></span>
-        <span class="text-error uppercase tracking-wide">REC</span>
-        <span class="text-on-surface ml-auto">{{ recorderRef?.elapsed }}</span>
-      </template>
-      <template
-        v-else-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'"
-      >
-        <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
-        <span class="text-on-surface truncate min-w-0 flex-1" :title="selectedEntry.name">{{
-          selectedEntry.name
-        }}</span>
-        <span class="text-secondary shrink-0">
-          <template v-if="progressByPath[selectedEntry.path].phase === 'transcribing'">
-            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% ·
-            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }} / ETA
-            {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
-          </template>
-          <template v-else>
-            {{ phaseLabel(progressByPath[selectedEntry.path].phase) }} ·
-            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}
-          </template>
-        </span>
-      </template>
-      <template v-else-if="transcript">
-        <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0"
-          >check_circle</span
-        >
-        <span class="text-on-surface truncate min-w-0 flex-1" :title="selectedEntry?.name">{{
-          selectedEntry?.name ?? "—"
-        }}</span>
-        <span class="text-on-surface-variant shrink-0"
-          >{{ fmtLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
-          {{ transcript.speakers_detected }} spk</span
-        >
-      </template>
-    </div>
 
     <nav
       class="md:hidden flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface"
