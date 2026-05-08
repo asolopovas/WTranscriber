@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { FileProgress, ModelInfo } from "@/types";
+import { fmtModelSize, MB } from "@composables/format";
 import DownloadCircle from "@components/DownloadCircle.vue";
 
 interface Props {
@@ -50,8 +51,8 @@ const rows = computed<Row[]>(() => {
       sizeBytes: m?.size_bytes ?? 0,
       status,
       percent,
-      downloadedMb: p ? p.downloaded / 1_048_576 : 0,
-      totalMb: m?.size_bytes ? m.size_bytes / 1_048_576 : 0,
+      downloadedMb: p ? p.downloaded / MB : 0,
+      totalMb: m?.size_bytes ? m.size_bytes / MB : 0,
     };
   });
 });
@@ -66,16 +67,10 @@ const totalBytes = computed(() => rows.value.reduce((s, r) => s + r.sizeBytes, 0
 const downloadedBytes = computed(() =>
   rows.value.reduce((s, r) => {
     if (r.status === "installed") return s + r.sizeBytes;
-    if (r.status === "downloading") return s + r.downloadedMb * 1_048_576;
+    if (r.status === "downloading") return s + r.downloadedMb * MB;
     return s;
   }, 0),
 );
-
-function fmtSize(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(0)} MB`;
-  return `${(bytes / 1024).toFixed(0)} KB`;
-}
 
 function familyLabel(f: string): string {
   if (f === "asr") return "Speech recognition";
@@ -94,7 +89,7 @@ function familyLabel(f: string): string {
         <DownloadCircle :percent="overall" :size="96" />
         <h1 class="text-headlineSmall text-on-surface text-center">Setting up WTranscriber</h1>
         <p class="text-bodyMedium text-on-surface-variant text-center font-mono">
-          {{ fmtSize(downloadedBytes) }} / {{ fmtSize(totalBytes) }}
+          {{ fmtModelSize(downloadedBytes) }} / {{ fmtModelSize(totalBytes) }}
         </p>
       </div>
 
@@ -117,7 +112,9 @@ function familyLabel(f: string): string {
             <div class="text-labelSmall text-on-surface-variant font-mono">
               {{ familyLabel(r.family) }}
               <span v-if="r.status === 'installed'"> · ready</span>
-              <span v-else-if="r.status === 'queued'"> · queued · {{ fmtSize(r.sizeBytes) }}</span>
+              <span v-else-if="r.status === 'queued'">
+                · queued · {{ fmtModelSize(r.sizeBytes) }}</span
+              >
               <span v-else-if="r.status === 'downloading'">
                 · {{ r.downloadedMb.toFixed(0) }} / {{ r.totalMb.toFixed(0) }} MB
               </span>

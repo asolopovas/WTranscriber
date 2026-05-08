@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import { api } from "@/api";
+import { fmtClock } from "@composables/format";
 import Button from "@components/ui/Button.vue";
 
 const props = defineProps<{ workdir: string; headless?: boolean }>();
@@ -22,15 +23,7 @@ let rafId: number | null = null;
 let timerId: ReturnType<typeof setInterval> | null = null;
 let startedAt = 0;
 
-const elapsed = computed(() => {
-  const ms = elapsedMs.value;
-  const total = Math.floor(ms / 1000);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-});
+const elapsed = computed(() => fmtClock(elapsedMs.value / 1000));
 
 function pickMime(): string {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];

@@ -1,5 +1,9 @@
 import type { FileProgress } from "@/types";
 
+export const KB = 1024;
+export const MB = 1024 * 1024;
+export const GB = 1024 * 1024 * 1024;
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 export function fmtClock(secs: number): string {
@@ -7,7 +11,7 @@ export function fmtClock(secs: number): string {
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${m}:${pad2(s)}`;
+  return h > 0 ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
 }
 
 export function fmtMs(ms: number): string {
@@ -21,16 +25,16 @@ export function fmtMsLong(ms: number): string {
 }
 
 export function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  if (n < KB) return `${n} B`;
+  if (n < MB) return `${(n / KB).toFixed(0)} KB`;
+  if (n < GB) return `${(n / MB).toFixed(1)} MB`;
+  return `${(n / GB).toFixed(2)} GB`;
 }
 
 export function fmtModelSize(bytes: number): string {
   if (!bytes) return "—";
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
-  return `${(bytes / 1_048_576).toFixed(0)} MB`;
+  if (bytes >= GB) return `${(bytes / GB).toFixed(2)} GB`;
+  return `${(bytes / MB).toFixed(0)} MB`;
 }
 
 export function progressPct(p?: FileProgress): number {

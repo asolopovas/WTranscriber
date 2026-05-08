@@ -5,6 +5,7 @@ import { api, events } from "@/api";
 import type { Config, FileProgress, ModelInfo, SystemInfo } from "@/types";
 import { fmtBytes } from "@composables/format";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
+import { recordOmit, recordSet } from "@composables/records";
 import { fieldClass } from "@styles/fields";
 import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
@@ -87,7 +88,7 @@ async function installModel(id: string) {
   try {
     await api.installModel(id);
   } finally {
-    delete modelProgress.value[id];
+    recordOmit(modelProgress, id);
     await refreshModels();
   }
 }
@@ -100,9 +101,7 @@ onMounted(async () => {
   }
   await refreshModels();
   unlisten.push(
-    await events.onModelProgress((p) => {
-      modelProgress.value = { ...modelProgress.value, [p.id]: p };
-    }),
+    await events.onModelProgress((p) => recordSet(modelProgress, p.id, p)),
     await events.onModelDone(refreshModels),
     await events.onModelError(refreshModels),
   );

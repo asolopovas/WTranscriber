@@ -10,9 +10,10 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { fmtMsLong } from "@composables/format";
+import { fmtMsLong, MB } from "@composables/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
+import { usePanelResize } from "@composables/usePanelResize";
 import Toggle from "@components/ui/Toggle.vue";
 import SaveIndicator from "@components/ui/SaveIndicator.vue";
 import FormField from "@components/ui/FormField.vue";
@@ -123,78 +124,26 @@ function onModelChanged() {
 const isDesktop = useMediaQuery("(min-width: 768px)");
 const isMobile = computed(() => !isDesktop.value);
 
-const CONFIG_HEIGHT_KEY = "wt.configHeightPx";
 const CONFIG_HEADER_PX = 56;
-const CONFIG_OPEN_THRESHOLD_PX = CONFIG_HEADER_PX + 16;
 
 const configOpen = ref(isDesktop.value);
 const configContentEl = ref<HTMLElement | null>(null);
-const configContentHeightPx = ref(0);
-const configHeightPx = ref(
-  (() => {
-    if (typeof window === "undefined") return CONFIG_HEADER_PX;
-    const v = Number(localStorage.getItem(CONFIG_HEIGHT_KEY) ?? "");
-    return Number.isFinite(v) && v >= CONFIG_HEADER_PX ? v : CONFIG_HEADER_PX;
-  })(),
-);
-const configMaxPx = computed(() => CONFIG_HEADER_PX + configContentHeightPx.value);
-const configExpandedMobile = computed(() => configHeightPx.value > CONFIG_OPEN_THRESHOLD_PX);
-const resizingConfig = ref(false);
 
-watch(configHeightPx, (v) => {
-  if (typeof window !== "undefined") localStorage.setItem(CONFIG_HEIGHT_KEY, String(Math.round(v)));
+const {
+  heightPx: configHeightPx,
+  expanded: configExpandedMobile,
+  resizing: resizingConfig,
+  observeContent,
+  beginResize: beginConfigResize,
+} = usePanelResize({
+  storageKey: "wt.configHeightPx",
+  headerHeight: CONFIG_HEADER_PX,
+  minHeight: CONFIG_HEADER_PX,
 });
 
 watch(configContentEl, (el, _prev, onCleanup) => {
-  if (!el || typeof window === "undefined") return;
-  const measure = () => {
-    const h = el.scrollHeight;
-    if (h > 0) {
-      configContentHeightPx.value = h;
-      if (configHeightPx.value > configMaxPx.value) configHeightPx.value = configMaxPx.value;
-    }
-  };
-  const ro = new ResizeObserver(measure);
-  ro.observe(el);
-  measure();
-  onCleanup(() => ro.disconnect());
+  onCleanup(observeContent(el));
 });
-
-function snapConfig(px: number): number {
-  const stops = [CONFIG_HEADER_PX, configMaxPx.value];
-  return stops.reduce((best, s) => (Math.abs(s - px) < Math.abs(best - px) ? s : best));
-}
-
-function beginConfigResize(ev: PointerEvent) {
-  ev.preventDefault();
-  resizingConfig.value = true;
-  const startY = ev.clientY;
-  const startPx = configHeightPx.value;
-  let dragged = false;
-  const move = (e: PointerEvent) => {
-    const deltaPx = startY - e.clientY;
-    if (Math.abs(deltaPx) > 3) dragged = true;
-    configHeightPx.value = Math.max(
-      CONFIG_HEADER_PX,
-      Math.min(configMaxPx.value, startPx + deltaPx),
-    );
-  };
-  const up = () => {
-    resizingConfig.value = false;
-    if (dragged) {
-      configHeightPx.value = snapConfig(configHeightPx.value);
-    } else {
-      configHeightPx.value =
-        startPx > CONFIG_OPEN_THRESHOLD_PX ? CONFIG_HEADER_PX : configMaxPx.value;
-    }
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", up);
-  };
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-  window.addEventListener("pointercancel", up);
-}
 
 const headerAriaLabel = computed(() => {
   if (isMobile.value)
@@ -297,7 +246,7 @@ const headerAriaLabel = computed(() => {
             <div class="text-bodyMedium text-on-surface">Model not installed</div>
             <div class="text-labelSmall text-on-surface-variant truncate">
               {{ selectedAsrModel.display_name }} ·
-              {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
+              {{ (selectedAsrModel.size_bytes / MB).toFixed(0) }} MB
             </div>
           </div>
           <Button

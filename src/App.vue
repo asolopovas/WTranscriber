@@ -33,6 +33,7 @@ import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
 import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
+import { recordOmit, recordSet } from "@composables/records";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -188,12 +189,7 @@ async function loadCached(key: string) {
   }
 }
 
-let unlistenDrop: (() => void) | null = null;
-let unlistenProgress: (() => void) | null = null;
-let unlistenModelDone: (() => void) | null = null;
-let unlistenModelError: (() => void) | null = null;
-let unlistenModelProgress: (() => void) | null = null;
-let unlistenEssentialsDone: (() => void) | null = null;
+const unlisten: (() => void)[] = [];
 
 onMounted(async () => {
   version.value = await api.appVersion();
@@ -208,9 +204,6 @@ onMounted(async () => {
   if (config.value && (config.value.diarizer as string) === "sherpa") {
     config.value.diarizer = "eres2net";
   }
-  unlistenProgress = await events.onTranscribeProgress((p) => {
-    progressByPath.value = { ...progressByPath.value, [p.path]: p };
-  });
   try {
     essentialIds.value = await api.essentialModels();
   } catch {
@@ -222,46 +215,38 @@ onMounted(async () => {
       error.value = null;
     }
   };
-  unlistenModelProgress = await events.onModelProgress((p) => {
-    if (essentialIds.value.includes(p.id)) {
-      essentialProgress.value = { ...essentialProgress.value, [p.id]: p };
-    }
-  });
-  unlistenModelDone = await events.onModelDone((id) => {
-    if (id) {
-      const next = { ...essentialErrors.value };
-      delete next[id];
-      essentialErrors.value = next;
-    }
-    void refreshModels(id);
-  });
-  unlistenModelError = await events.onModelError((id) => {
-    if (id) essentialErrors.value = { ...essentialErrors.value, [id]: true };
-    void refreshModels();
-  });
-  unlistenEssentialsDone = await events.onEssentialsDone(() => {
-    essentialsForceReady.value = true;
-    void refreshModels();
-  });
-  unlistenDrop = await getCurrentWebview().onDragDropEvent((event) => {
-    if (tab.value !== "transcribe") return;
-    if (event.payload.type === "over") dragOver.value = true;
-    else if (event.payload.type === "leave") dragOver.value = false;
-    else if (event.payload.type === "drop") {
-      dragOver.value = false;
-      const paths = event.payload.paths ?? [];
-      if (paths.length) void addPathsToWorkdir(paths);
-    }
-  });
+  unlisten.push(
+    await events.onTranscribeProgress((p) => recordSet(progressByPath, p.path, p)),
+    await events.onModelProgress((p) => {
+      if (essentialIds.value.includes(p.id)) recordSet(essentialProgress, p.id, p);
+    }),
+    await events.onModelDone((id) => {
+      if (id) recordOmit(essentialErrors, id);
+      void refreshModels(id);
+    }),
+    await events.onModelError((id) => {
+      if (id) recordSet(essentialErrors, id, true);
+      void refreshModels();
+    }),
+    await events.onEssentialsDone(() => {
+      essentialsForceReady.value = true;
+      void refreshModels();
+    }),
+    await getCurrentWebview().onDragDropEvent((event) => {
+      if (tab.value !== "transcribe") return;
+      if (event.payload.type === "over") dragOver.value = true;
+      else if (event.payload.type === "leave") dragOver.value = false;
+      else if (event.payload.type === "drop") {
+        dragOver.value = false;
+        const paths = event.payload.paths ?? [];
+        if (paths.length) void addPathsToWorkdir(paths);
+      }
+    }),
+  );
 });
 
 onUnmounted(() => {
-  unlistenDrop?.();
-  unlistenProgress?.();
-  unlistenModelDone?.();
-  unlistenModelError?.();
-  unlistenModelProgress?.();
-  unlistenEssentialsDone?.();
+  unlisten.forEach((u) => u());
 });
 
 watch(tab, (t) => {
@@ -286,7 +271,7 @@ async function runTranscribe(entry?: DirEntry) {
   selectedPath.value = target.path;
   status.value = "running";
   error.value = null;
-  busy.value = { ...busy.value, [target.path]: true };
+  recordSet(busy, target.path, true);
   try {
     transcript.value = await api.transcribeFile(target.path, config.value);
     status.value = "idle";
@@ -300,12 +285,8 @@ async function runTranscribe(entry?: DirEntry) {
       status.value = "error";
     }
   } finally {
-    const next = { ...busy.value };
-    delete next[target.path];
-    busy.value = next;
-    const np = { ...progressByPath.value };
-    delete np[target.path];
-    progressByPath.value = np;
+    recordOmit(busy, target.path);
+    recordOmit(progressByPath, target.path);
   }
 }
 
