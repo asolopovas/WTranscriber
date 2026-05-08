@@ -2,7 +2,7 @@
 name: wt-runner
 description: Cross-platform install + smoke-test runner for Windows GUI/CLI, Android, and WSL. Mode-driven; orchestrator picks `install`, `test`, or `install-and-test`.
 tools: read, bash, write
-model: anthropic/claude-haiku-4-5
+model: anthropic/claude-sonnet-4-6
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

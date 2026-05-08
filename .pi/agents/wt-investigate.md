@@ -2,7 +2,7 @@
 name: wt-investigate
 description: Read-only answerer. Maps where code lives, diagnoses one failing signal (CDP/logcat/test/gate), or researches an external question (GitHub/SO/Reddit/docs). Returns a single VERDICT/EVIDENCE/FIX block. Use whenever you need to find, explain, or root-cause something without changing files.
 tools: bash, read, write, web_search, fetch_content, code_search, get_search_content
-model: anthropic/claude-sonnet-4-6
+model: anthropic/claude-opus-4-7
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

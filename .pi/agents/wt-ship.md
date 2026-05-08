@@ -2,7 +2,7 @@
 name: wt-ship
 description: Gate-keeper for commits and pushes. Stages deliberately, runs the mandatory pre-commit hook, writes a one-line conventional-commit message, pushes. Never bypasses the gate. Use for ALL commits.
 tools: bash, read, write
-model: anthropic/claude-haiku-4-5
+model: anthropic/claude-sonnet-4-6
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false

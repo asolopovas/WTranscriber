@@ -2,7 +2,7 @@
 name: wt-edit
 description: The only agent that edits project files - source (`src/`, `src-tauri/`, `xtask/`, `scripts/`), docs (`docs/**`, `AGENTS.md`), and agent prompts (`.pi/agents/**`, `.pi/chains/**`, `**/SKILL.md`). Given a precise spec, applies the smallest edit, runs scoped checks on touched files, returns a diff summary. Never commits.
 tools: read, edit, write, bash
-model: anthropic/claude-sonnet-4-6
+model: anthropic/claude-opus-4-7
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
