@@ -10,10 +10,9 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { fmtMsLong as fmtLong } from "@composables/format";
+import { fmtMsLong } from "@composables/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
-import Recorder from "@components/Recorder.vue";
 import Toggle from "@components/ui/Toggle.vue";
 import SaveIndicator from "@components/ui/SaveIndicator.vue";
 import Spinner from "@components/icons/Spinner.vue";
@@ -29,22 +28,15 @@ const props = defineProps<{
   transcript: Transcript | null;
   status: "idle" | "running" | "renaming" | "error";
   saveState: SaveState;
+  recording: boolean;
+  recElapsed: string;
 }>();
 
 const emit = defineEmits<{
   (e: "models-changed", models: ModelInfo[]): void;
-  (e: "recording-saved", path: string): void;
+  (e: "rec-start"): void;
+  (e: "rec-stop"): void;
 }>();
-
-const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
-defineExpose({
-  get recording() {
-    return recorderRef.value?.recording ?? false;
-  },
-  get elapsed() {
-    return recorderRef.value?.elapsed ?? "";
-  },
-});
 
 const allLanguageOptions = [
   "auto",
@@ -219,12 +211,6 @@ const headerAriaLabel = computed(() => {
       height: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
     }"
   >
-    <Recorder
-      ref="recorderRef"
-      :workdir="workdir"
-      :headless="true"
-      @saved="(p) => emit('recording-saved', p)"
-    />
     <div
       class="shrink-0 h-14 w-full flex items-center justify-between relative select-none cursor-row-resize md:cursor-pointer touch-none md:touch-auto transition-colors"
       :class="resizingConfig ? 'bg-primary/15' : 'active:bg-primary/10'"
@@ -249,9 +235,9 @@ const headerAriaLabel = computed(() => {
       </h3>
       <div class="flex items-center gap-xs pr-md">
         <button
-          v-if="recorderRef && !recorderRef.recording"
+          v-if="!recording"
           @pointerdown.stop
-          @click.stop.prevent="recorderRef?.start()"
+          @click.stop.prevent="emit('rec-start')"
           class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
           title="Record"
         >
@@ -259,16 +245,16 @@ const headerAriaLabel = computed(() => {
           Rec
         </button>
         <button
-          v-else-if="recorderRef"
+          v-else
           @pointerdown.stop
-          @click.stop.prevent="recorderRef?.stop()"
+          @click.stop.prevent="emit('rec-stop')"
           class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
-          :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
+          :title="`Stop recording \u00b7 ${recElapsed}`"
         >
           <span class="material-symbols-outlined fill text-[16px]">stop</span>
-          {{ recorderRef?.elapsed }}
+          {{ recElapsed }}
         </button>
-        <SaveIndicator v-else :state="saveState" />
+        <SaveIndicator :state="saveState" />
       </div>
     </div>
 
@@ -438,7 +424,7 @@ const headerAriaLabel = computed(() => {
         <div class="flex justify-between items-center">
           <span class="text-on-surface-variant">Duration</span>
           <span class="text-on-surface">
-            {{ transcript ? fmtLong(transcript.duration_ms) : "—" }}
+            {{ transcript ? fmtMsLong(transcript.duration_ms) : "—" }}
           </span>
         </div>
         <div v-if="transcript" class="flex justify-between items-center">

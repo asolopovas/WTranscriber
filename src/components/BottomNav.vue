@@ -2,22 +2,15 @@
 import TranscribeIcon from "./icons/TranscribeIcon.vue";
 import SettingsIcon from "./icons/SettingsIcon.vue";
 import LogIcon from "./icons/LogIcon.vue";
-
-export type Tab = "transcribe" | "settings" | "logs";
+import { TABS, type Tab } from "./nav-tabs";
 
 const model = defineModel<Tab>({ required: true });
-
-const tabs: { id: Tab; label: string }[] = [
-  { id: "transcribe", label: "Transcribe" },
-  { id: "settings", label: "Settings" },
-  { id: "logs", label: "Logs" },
-];
 </script>
 
 <template>
   <nav class="md:hidden flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface">
     <button
-      v-for="t in tabs"
+      v-for="t in TABS"
       :key="t.id"
       class="flex-1 flex flex-col items-center justify-center h-14 transition-colors"
       :class="model === t.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'"

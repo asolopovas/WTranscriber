@@ -18,12 +18,14 @@ import type {
 import Settings from "@components/Settings.vue";
 import LogViewer from "@components/LogViewer.vue";
 import SetupGate from "@components/SetupGate.vue";
-import BottomNav, { type Tab } from "@components/BottomNav.vue";
+import BottomNav from "@components/BottomNav.vue";
+import type { Tab } from "@components/nav-tabs";
 import AppHeader from "@components/AppHeader.vue";
 import StatusStrip from "@components/StatusStrip.vue";
 import FileList from "@components/FileList.vue";
 import TranscriptPanel from "@components/TranscriptPanel.vue";
 import ConfigPanel from "@components/ConfigPanel.vue";
+import Recorder from "@components/Recorder.vue";
 import RenameDialog from "@components/dialogs/RenameDialog.vue";
 import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
@@ -61,7 +63,7 @@ const queueActive = ref(false);
 const queueTotal = ref(0);
 const queueDone = ref(0);
 
-const configPanelRef = ref<InstanceType<typeof ConfigPanel> | null>(null);
+const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
 const fileListRef = ref<InstanceType<typeof FileList> | null>(null);
 
 const selectedEntry = computed<DirEntry | null>(() => {
@@ -318,7 +320,6 @@ async function transcribeAll() {
   queueDone.value = 0;
   try {
     for (const entry of items) {
-      if (!config.value) break;
       await runTranscribe(entry);
       queueDone.value += 1;
     }
@@ -335,37 +336,34 @@ async function autoRename(entry?: DirEntry) {
   if (!target || !target.is_audio || autoRenamingPath.value) return;
   autoRenamingPath.value = target.path;
   try {
-    await runAutoRename(target);
+    let t = transcript.value;
+    if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
+    if (!t) {
+      await message("Transcribe first to enable auto-rename.", {
+        title: "Auto-rename",
+        kind: "info",
+      });
+      return;
+    }
+    status.value = "renaming";
+    try {
+      const s = await api.suggestFilename(t);
+      const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
+      const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
+      const ok = await withDialog(() =>
+        confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
+      );
+      if (!ok) return;
+      const newPath = await api.renameFile(target.path, suggestion);
+      selectedPath.value = newPath;
+      await refreshListing();
+    } catch (e) {
+      error.value = `auto-rename failed: ${String(e)}`;
+    } finally {
+      status.value = "idle";
+    }
   } finally {
     autoRenamingPath.value = null;
-  }
-}
-async function runAutoRename(target: DirEntry) {
-  let t = transcript.value;
-  if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
-  if (!t) {
-    await message("Transcribe first to enable auto-rename.", {
-      title: "Auto-rename",
-      kind: "info",
-    });
-    return;
-  }
-  status.value = "renaming";
-  try {
-    const s = await api.suggestFilename(t);
-    const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
-    const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
-    const ok = await withDialog(() =>
-      confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
-    );
-    if (!ok) return;
-    const newPath = await api.renameFile(target.path, suggestion);
-    selectedPath.value = newPath;
-    await refreshListing();
-  } catch (e) {
-    error.value = `auto-rename failed: ${String(e)}`;
-  } finally {
-    status.value = "idle";
   }
 }
 
@@ -502,10 +500,18 @@ const selectedProgress = computed(() =>
       @pick-audio="pickAudio"
     />
 
+    <Recorder
+      v-if="listing?.path"
+      ref="recorderRef"
+      :workdir="listing.path"
+      :headless="true"
+      @saved="onRecordingSaved"
+    />
+
     <StatusStrip
       v-if="tab === 'transcribe'"
-      :recording="configPanelRef?.recording ?? false"
-      :rec-elapsed="configPanelRef?.elapsed ?? ''"
+      :recording="recorderRef?.recording ?? false"
+      :rec-elapsed="recorderRef?.elapsed ?? ''"
       :status="status"
       :selected-entry="selectedEntry"
       :progress="selectedProgress"
@@ -577,7 +583,6 @@ const selectedProgress = computed(() =>
 
         <ConfigPanel
           v-if="config && listing?.path"
-          ref="configPanelRef"
           :config="config"
           :sys="sys"
           :models="models"
@@ -587,8 +592,11 @@ const selectedProgress = computed(() =>
           :transcript="transcript"
           :status="status"
           :save-state="saveState"
+          :recording="recorderRef?.recording ?? false"
+          :rec-elapsed="recorderRef?.elapsed ?? ''"
           @models-changed="(m) => (models = m)"
-          @recording-saved="onRecordingSaved"
+          @rec-start="recorderRef?.start()"
+          @rec-stop="recorderRef?.stop()"
         />
       </template>
 

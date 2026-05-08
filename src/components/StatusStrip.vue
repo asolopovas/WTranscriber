@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { DirEntry, TranscribeProgress, Transcript } from "@/types";
-import { decodeName, phaseLabel, prettyName } from "@utils/audio";
-import { fmtClock, fmtMs as fmt, fmtMsLong as fmtLong, fmtBytes } from "@composables/format";
+import { phaseLabel, prettyName } from "@utils/audio";
+import { fmtClock, fmtMs, fmtMsLong, fmtBytes } from "@composables/format";
 
 const props = defineProps<{
   recording: boolean;
@@ -56,7 +56,7 @@ const isLiveProgress = computed(
       <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0">check_circle</span>
       <span class="text-on-surface-variant shrink-0">ready</span>
       <span class="text-on-surface-variant shrink-0 ml-auto">
-        {{ fmtLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
+        {{ fmtMsLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
         {{ transcript.speakers_detected }} spk
       </span>
     </template>
@@ -65,10 +65,10 @@ const isLiveProgress = computed(
         graphic_eq
       </span>
       <span class="text-on-surface truncate min-w-0">
-        {{ decodeName(prettyName(selectedEntry.name).display) }}
+        {{ prettyName(selectedEntry.name).display }}
       </span>
       <span class="text-on-surface-variant shrink-0 ml-auto">
-        {{ selectedEntry.duration_ms ? fmt(selectedEntry.duration_ms) : "—" }} ·
+        {{ selectedEntry.duration_ms ? fmtMs(selectedEntry.duration_ms) : "—" }} ·
         {{ fmtBytes(selectedEntry.size_bytes) }}
         <template v-if="selectedEntry.cache_key"> · transcribed </template>
       </span>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Tab } from "@components/BottomNav.vue";
+import { TABS, type Tab } from "@components/nav-tabs";
 
 defineProps<{
   version: string;
@@ -16,12 +16,6 @@ const emit = defineEmits<{
 }>();
 
 const tab = defineModel<Tab>("tab", { required: true });
-
-const tabs: { id: Tab; label: string }[] = [
-  { id: "transcribe", label: "Transcribe" },
-  { id: "settings", label: "Settings" },
-  { id: "logs", label: "Logs" },
-];
 </script>
 
 <template>
@@ -40,7 +34,7 @@ const tabs: { id: Tab; label: string }[] = [
       class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0"
     >
       <button
-        v-for="t in tabs"
+        v-for="t in TABS"
         :key="t.id"
         @click="tab = t.id"
         class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors whitespace-nowrap shrink-0"

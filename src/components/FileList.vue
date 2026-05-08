@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { DirEntry, TranscribeProgress } from "@/types";
 import { decodeName, phaseLabel, prettyName } from "@utils/audio";
-import { fmtMs as fmt, fmtBytes } from "@composables/format";
+import { fmtMs, fmtBytes } from "@composables/format";
 import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
 import Spinner from "@components/icons/Spinner.vue";
 
-defineProps<{
+const props = defineProps<{
   entries: DirEntry[];
   selectedPath: string;
   busy: Record<string, boolean>;
@@ -15,6 +15,14 @@ defineProps<{
   dragOver: boolean;
   hasListing: boolean;
 }>();
+
+const rows = computed(() =>
+  props.entries.map((entry) => ({
+    entry,
+    pretty: prettyName(entry.name),
+    title: decodeName(entry.name),
+  })),
+);
 
 const emit = defineEmits<{
   (e: "choose", entry: DirEntry): void;
@@ -51,7 +59,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
 
   <ul v-else class="flex flex-col md:hidden">
     <li
-      v-for="entry in entries"
+      v-for="{ entry, pretty, title } in rows"
       :key="`m-${entry.path}`"
       class="border-b border-outline-variant/20 px-margin py-md cursor-pointer transition-colors"
       :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
@@ -60,11 +68,8 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
       <div class="flex items-center gap-xs">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-xs">
-            <div
-              class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words"
-              :title="decodeName(entry.name)"
-            >
-              {{ prettyName(entry.name).display }}
+            <div class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words" :title="title">
+              {{ pretty.display }}
             </div>
             <div class="flex items-center gap-unit shrink-0 -mr-xs" @click.stop>
               <button
@@ -173,7 +178,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
     </li>
   </ul>
 
-  <table v-if="entries.length" class="hidden md:table w-full text-bodyMedium">
+  <table v-if="rows.length" class="hidden md:table w-full text-bodyMedium">
     <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
       <tr
         class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
@@ -188,7 +193,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
     </thead>
     <tbody>
       <tr
-        v-for="entry in entries"
+        v-for="{ entry, pretty, title } in rows"
         :key="entry.path"
         class="border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
         :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
@@ -201,18 +206,15 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
           </span>
         </td>
         <td class="px-xs py-xs truncate max-w-0">
-          <span class="text-on-surface" :title="decodeName(entry.name)">
-            {{ prettyName(entry.name).display }}
+          <span class="text-on-surface" :title="title">
+            {{ pretty.display }}
           </span>
-          <span
-            v-if="prettyName(entry.name).timestamp"
-            class="font-mono text-labelSmall text-secondary ml-xs"
-          >
-            {{ prettyName(entry.name).timestamp }}
+          <span v-if="pretty.timestamp" class="font-mono text-labelSmall text-secondary ml-xs">
+            {{ pretty.timestamp }}
           </span>
         </td>
         <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
-          {{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}
+          {{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}
         </td>
         <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
           {{ fmtBytes(entry.size_bytes) }}
@@ -264,7 +266,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               "
               :title="
                 entry.trim_start_ms || entry.trim_end_ms
-                  ? `Trim: ${fmt(entry.trim_start_ms ?? 0)} – ${fmt(
+                  ? `Trim: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
                       entry.trim_end_ms ?? entry.duration_ms ?? 0,
                     )}`
                   : 'Trim — select range to transcribe'
