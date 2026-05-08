@@ -14,19 +14,22 @@ You are the only WTranscriber agent that touches devices/installers and runs the
 ## Output contract
 
 - `mode: install` → `tmp/install-report.json`: `{ branch, results: { win_gui, win_cli, android, wsl_cli: { status: "pass|fail|skip", detail, binary|package } } }`.
-- `mode: test` → `tmp/test-report.json`: per-target `{ status, transcript|screenshot, matched_keywords?, elapsed_s }` plus overall `PASS|FAIL`. Reads `tmp/install-report.json`; skips any target whose install status is not `pass`.
-- `mode: install-and-test` → both files, install first.
-- Failure (no artefact written) → `VERDICT:` / `EVIDENCE:` (≤3 refs) / `FIX:`.
+- `mode: test` → `tmp/test-report.json`: per-target `{ status, transcript|screenshot, matched_keywords?, elapsed_s }` plus overall `PASS|FAIL`. Reads `tmp/install-report.json` first; skips any target whose install status is not `pass`.
+- `mode: install-and-test` → both files, install first; abort the test phase for any target with non-`pass` install.
+- Always return `VERDICT:` / `EVIDENCE:` (≤3 refs) / `FIX:`. Missing predecessor artefact for `mode: test` → `FIX: blocked by missing tmp/install-report.json`.
 
 ## Permissions
 
-Read-only on the repo. Writes only under `tmp/` plus install side-effects (installer output dirs, `adb install`, WSL cargo cache). Never edits project files, never runs `git`, never rebuilds release artefacts, never calls another agent.
+Read-only on the repo. Writes only under `tmp/` plus install side-effects (installer output dirs, `adb install`, WSL cargo cache). Never edits project files, never runs `git add/commit/push`, never rebuilds release artefacts inside a live dev session, never calls another agent.
+
+## Forbidden during a live dev session
+
+A dev session is live when `tmp/_pids.json` exists and Vite owns `:1420` (see AGENTS.md live-dev invariant). While live, do not run `just android-install`, `just android-build`, `cargo tauri build`, or any `wtranscriber` release build — each replaces the debug-dev APK and strands HMR. If asked, refuse with `FIX: out-of-scope - dev session live`.
 
 ## Stop rules
 
-- Forbidden during a dev session: `just android-install`, `just android-build`, any `wtranscriber` release build — all replace the debug-dev APK and strand HMR.
-- Missing prerequisite (no APK, no device, no WSL distro) → record `skip` with reason; skip ≠ failure.
-- Silent installs only (`/S` to NSIS). Stop GUI/Android processes after each test.
-- No `sleep`; poll real signals (`Wait-Process`, `adb wait-for-device`, `dumpsys window`, file existence) with timeout.
+- Missing prerequisite (no APK, no device, no WSL distro) → record `skip` with reason; `skip` ≠ `fail`.
+- Silent installs only (`/S` to NSIS). Stop GUI/Android processes after each test before reporting.
+- No `sleep`; poll real signals (`Wait-Process`, `adb wait-for-device`, `dumpsys window`, file existence) with explicit timeout.
 - Empty transcript with exit 0 → `fail`; do not guess.
-- Max 3 internal retries → stop with `FIX: requires X decision`.
+- Max 3 internal retries on one target → mark that target `fail` with detail and continue; second target failure in the same run → stop with `FIX: requires X decision`.

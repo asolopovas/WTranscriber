@@ -32,7 +32,8 @@ Raw logs, `rg` output, and fetched bodies stay in the notes file, never in chat.
 
 ## Stop rules
 
-- Read-only on the repo; only writes are under `tmp/`.
-- Never run `cargo build`, `bun run build`, `just check`, or any mutating command; `cargo check`, `vue-tsc`, `git diff/log`, `rg`, `adb`, `netstat`, `tasklist` are fine.
-- Ambiguous question → pick the most likely reading, state it in VERDICT, proceed.
-- Max 3 internal retries → emit contract with `FIX: investigation aborted - <reason>`.
+- Read-only on the repo; only writes are under `tmp/investigate-<slug>.md`.
+- Never run `cargo build`, `bun run build`, `just check`, `git add/commit/push`, `adb install`, or any mutating command; `cargo check`, `vue-tsc`, `git diff/log`, `rg`, `adb` (read-only), `netstat`, `tasklist` are fine.
+- Ambiguous question → pick the most likely reading, state it in `VERDICT`, proceed; do not branch into a second mode.
+- Never call another agent; never edit project files; never act on findings.
+- Max 3 internal retries → emit the contract block with `FIX: investigation aborted - <reason>`.
