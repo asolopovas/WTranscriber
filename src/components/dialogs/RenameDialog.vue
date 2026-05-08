@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Modal from "../ui/Modal.vue";
+import PillButton from "../ui/PillButton.vue";
 import { fieldClass } from "../../styles/fields";
 
 const open = defineModel<boolean>("open", { required: true });
@@ -19,18 +20,8 @@ const emit = defineEmits<{ (e: "commit"): void }>();
     <template #footer>
       <span></span>
       <div class="flex gap-xs">
-        <button
-          class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
-          @click="open = false"
-        >
-          Cancel
-        </button>
-        <button
-          class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
-          @click="emit('commit')"
-        >
-          Rename
-        </button>
+        <PillButton @click="open = false">Cancel</PillButton>
+        <PillButton variant="primary" @click="emit('commit')">Rename</PillButton>
       </div>
     </template>
   </Modal>

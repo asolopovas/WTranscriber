@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
+import PillButton from "./ui/PillButton.vue";
 
 const tail = ref<string>("");
 const path = ref<string>("");
@@ -117,13 +118,9 @@ function levelClass(line: string): string {
               <span class="material-symbols-outlined text-[18px] md:text-[16px]">refresh</span>
               Refresh
             </button>
-            <button
-              @click="clear"
-              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-error/60 text-error text-titleSmall hover:bg-error/10 transition-colors flex items-center gap-unit"
-            >
-              <span class="material-symbols-outlined text-[18px] md:text-[16px]">delete</span>
+            <PillButton variant="danger" mobile-tall icon="delete" @click="clear">
               Clear
-            </button>
+            </PillButton>
           </div>
         </div>
         <div class="flex items-center gap-xs text-on-surface-variant min-w-0">

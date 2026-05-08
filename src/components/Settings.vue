@@ -7,6 +7,8 @@ import { fmtBytes } from "../composables/format";
 import { useDebouncedSave } from "../composables/useDebouncedSave";
 import { fieldClass } from "../styles/fields";
 import ModelTable from "./ModelTable.vue";
+import Card from "./ui/Card.vue";
+import PillButton from "./ui/PillButton.vue";
 import SaveIndicator from "./ui/SaveIndicator.vue";
 
 const config = ref<Config | null>(null);
@@ -157,16 +159,7 @@ async function resetAudioCache() {
       <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
 
       <div v-if="config" class="flex flex-col gap-margin">
-        <section
-          v-if="sys"
-          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-        >
-          <div
-            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-          >
-            <span class="material-symbols-outlined text-primary">phone_android</span>
-            <h2 class="text-titleMedium text-on-surface">Device</h2>
-          </div>
+        <Card v-if="sys" icon="phone_android" title="Device">
           <dl
             class="p-margin grid grid-cols-1 md:grid-cols-2 gap-x-margin gap-y-md text-bodyMedium"
           >
@@ -224,17 +217,9 @@ async function resetAudioCache() {
               </div>
             </div>
           </dl>
-        </section>
+        </Card>
 
-        <section
-          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-        >
-          <div
-            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-          >
-            <span class="material-symbols-outlined text-secondary">memory</span>
-            <h2 class="text-titleMedium text-on-surface">Runtime</h2>
-          </div>
+        <Card icon="memory" icon-color="text-secondary" title="Runtime">
           <div class="p-margin">
             <label class="flex flex-col gap-unit max-w-sm">
               <span class="text-titleSmall text-on-surface">Threads</span>
@@ -250,20 +235,11 @@ async function resetAudioCache() {
               </span>
             </label>
           </div>
-        </section>
+        </Card>
 
         <ModelTable :models="models" :progress="modelProgress" show-stats @install="installModel" />
 
-        <section
-          v-if="isAndroid"
-          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-        >
-          <div
-            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-          >
-            <span class="material-symbols-outlined text-tertiary">save</span>
-            <h2 class="text-titleMedium text-on-surface">Storage</h2>
-          </div>
+        <Card v-if="isAndroid" icon="save" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">
             <div class="flex flex-col gap-md">
               <div>
@@ -309,17 +285,9 @@ async function resetAudioCache() {
               }}
             </p>
           </div>
-        </section>
+        </Card>
 
-        <section
-          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-        >
-          <div
-            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-          >
-            <span class="material-symbols-outlined text-tertiary">cleaning_services</span>
-            <h2 class="text-titleMedium text-on-surface">Maintenance</h2>
-          </div>
+        <Card icon="cleaning_services" icon-color="text-tertiary" title="Maintenance">
           <div class="p-margin grid grid-cols-1 md:grid-cols-2 gap-margin">
             <div class="flex flex-col gap-md">
               <div>
@@ -328,14 +296,14 @@ async function resetAudioCache() {
                   Clears saved transcript previews and cached transcription results.
                 </p>
               </div>
-              <button
-                type="button"
-                class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors inline-flex items-center gap-unit w-fit"
+              <PillButton
+                icon="delete_sweep"
+                :icon-size="18"
+                class="w-fit"
                 @click="resetTranscriptCache"
               >
-                <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
                 Reset transcript cache
-              </button>
+              </PillButton>
             </div>
             <div class="flex flex-col gap-md">
               <div>
@@ -344,20 +312,20 @@ async function resetAudioCache() {
                   Clears converted WAV files created for non-WAV audio inputs.
                 </p>
               </div>
-              <button
-                type="button"
-                class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors inline-flex items-center gap-unit w-fit"
+              <PillButton
+                icon="delete_sweep"
+                :icon-size="18"
+                class="w-fit"
                 @click="resetAudioCache"
               >
-                <span class="material-symbols-outlined text-[18px]">delete_sweep</span>
                 Reset audio cache
-              </button>
+              </PillButton>
             </div>
             <p v-if="maintenanceStatus" class="md:col-span-2 text-bodyMedium text-tertiary">
               {{ maintenanceStatus }}
             </p>
           </div>
-        </section>
+        </Card>
       </div>
     </div>
   </main>

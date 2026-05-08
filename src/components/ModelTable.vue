@@ -2,7 +2,9 @@
 import { computed } from "vue";
 import type { FileProgress, ModelInfo } from "../types";
 import { fmtModelSize, progressPct } from "../composables/format";
+import Card from "./ui/Card.vue";
 import Icon from "./ui/Icon.vue";
+import PillButton from "./ui/PillButton.vue";
 import StatusPill from "./ui/StatusPill.vue";
 
 const props = defineProps<{
@@ -49,18 +51,7 @@ function accPct(m: ModelInfo): number {
 </script>
 
 <template>
-  <section
-    v-for="g in grouped"
-    :key="g.id"
-    class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-  >
-    <header
-      class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-    >
-      <Icon :name="g.icon" :size="22" class="text-tertiary" />
-      <h2 class="text-titleMedium text-on-surface">{{ g.label }}</h2>
-    </header>
-
+  <Card v-for="g in grouped" :key="g.id" :icon="g.icon" icon-color="text-tertiary" :title="g.label">
     <ul v-if="showStats" class="flex flex-col md:hidden gap-xs p-md">
       <li
         v-for="m in g.items"
@@ -192,14 +183,14 @@ function accPct(m: ModelInfo): number {
             <StatusPill v-else tone="muted">Not installed</StatusPill>
           </td>
           <td class="px-margin py-md text-right align-top">
-            <button
+            <PillButton
               v-if="m.status === 'not_installed'"
-              class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim transition-colors inline-flex items-center gap-unit"
+              variant="primary"
+              icon="download"
               @click="$emit('install', m.id)"
             >
-              <Icon name="download" :size="16" />
               Install
-            </button>
+            </PillButton>
             <Icon
               v-else-if="m.status === 'installed'"
               name="check"
@@ -210,5 +201,5 @@ function accPct(m: ModelInfo): number {
         </tr>
       </tbody>
     </table>
-  </section>
+  </Card>
 </template>

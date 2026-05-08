@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ExportFormat } from "../../types";
 import Modal from "../ui/Modal.vue";
+import PillButton from "../ui/PillButton.vue";
 
 const open = defineModel<boolean>("open", { required: true });
 const format = defineModel<ExportFormat>("format", { required: true });
@@ -31,18 +32,8 @@ const formats: { value: ExportFormat; label: string }[] = [
     <template #footer>
       <span></span>
       <div class="flex gap-xs">
-        <button
-          class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
-          @click="open = false"
-        >
-          Cancel
-        </button>
-        <button
-          class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
-          @click="emit('commit')"
-        >
-          Save…
-        </button>
+        <PillButton @click="open = false">Cancel</PillButton>
+        <PillButton variant="primary" @click="emit('commit')">Save…</PillButton>
       </div>
     </template>
   </Modal>

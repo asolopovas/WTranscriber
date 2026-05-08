@@ -15,6 +15,7 @@ import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
 import Toggle from "@components/ui/Toggle.vue";
 import SaveIndicator from "@components/ui/SaveIndicator.vue";
+import FormField from "@components/ui/FormField.vue";
 import Spinner from "@components/icons/Spinner.vue";
 import type { SaveState } from "@composables/useDebouncedSave";
 
@@ -272,16 +273,13 @@ const headerAriaLabel = computed(() => {
         ref="configContentEl"
         class="px-md md:px-margin pt-md pb-md md:py-margin space-y-md overflow-y-auto scroll-thin"
       >
-        <label class="block">
-          <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
-            Model
-          </span>
-          <select v-model="config.model" :class="[fieldClass, 'mt-unit']" @change="onModelChanged">
+        <FormField label="Model">
+          <select v-model="config.model" :class="fieldClass" @change="onModelChanged">
             <option v-for="m in allAsrModels" :key="m.id" :value="m.id">
               {{ m.display_name }}{{ m.status === "installed" ? "" : " \u2014 not installed" }}
             </option>
           </select>
-        </label>
+        </FormField>
 
         <div
           v-if="selectedAsrModel && !selectedModelInstalled"
@@ -317,50 +315,38 @@ const headerAriaLabel = computed(() => {
         </div>
 
         <div class="grid grid-cols-2 gap-md">
-          <label class="block">
-            <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
-              Language
-            </span>
-            <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
+          <FormField label="Language">
+            <select v-model="config.language" :class="fieldClass">
               <option v-for="l in languageOptions" :key="l" :value="l">
                 {{ l === "auto" ? "Auto" : l }}
               </option>
             </select>
-          </label>
-          <label class="block">
-            <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
-              Device
-            </span>
-            <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
+          </FormField>
+          <FormField label="Device">
+            <select v-model="config.device" :class="fieldClass">
               <option value="cpu">CPU</option>
               <option v-if="sys?.cuda_available" value="cuda">CUDA</option>
             </select>
-          </label>
+          </FormField>
         </div>
 
         <div class="grid grid-cols-2 gap-md">
-          <label class="block">
-            <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
-              Diarizer
-            </span>
+          <FormField label="Diarizer">
             <select
               v-model="config.diarizer"
               :disabled="!config.diarize"
-              :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
+              :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
             >
               <option value="auto">Auto</option>
               <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
               <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
               <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
             </select>
-          </label>
-          <label class="block">
-            <span class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide">
-              Speakers
-            </span>
+          </FormField>
+          <FormField label="Speakers">
             <select
               :value="config.speakers ?? 0"
-              :class="[fieldClass, 'mt-unit']"
+              :class="fieldClass"
               @change="
                 (e) => {
                   const n = Number((e.target as HTMLSelectElement).value);
@@ -373,7 +359,7 @@ const headerAriaLabel = computed(() => {
                 {{ o.label }}
               </option>
             </select>
-          </label>
+          </FormField>
         </div>
 
         <div class="flex items-center justify-between gap-xl py-xs">
