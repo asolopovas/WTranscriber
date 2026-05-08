@@ -89,6 +89,27 @@ Exits non-zero if Vite never binds `:1420` or (on Android) the WebView never con
 - File-signal contract under `tmp/`: every worker writes an artefact (`investigate-<slug>.md`, `edit-report.json`, `last-commit.json`, `install-report.json`, `test-report.json`). Workers never read each other's stdout, never call each other.
 - Chain when dependent, parallel when independent. Current chain: `install-and-test`.
 
+### Watchdog
+
+Long-running delegations run async so the orchestrator retains control when a child stalls.
+
+- Any `wt-edit` / `wt-runner` / `wt-investigate mode: research` call expected to take > 60 s uses `async: true` with explicit control thresholds:
+  ```
+  async: true,
+  control: {
+    enabled: true,
+    activeNoticeAfterMs: 180000,
+    needsAttentionAfterMs: 300000,
+    failedToolAttemptsBeforeAttention: 2,
+    notifyChannels: ["event", "async"],
+    notifyOn: ["active_long_running", "needs_attention"]
+  }
+  ```
+- On `needs_attention`: orchestrator runs `subagent action: status id: <prefix>`, then `action: interrupt` if no progress, then re-dispatches the task with smaller scope.
+- A run that returns `Failed` synchronously is treated as a hang: re-dispatch immediately with the task split (one file per call) — never retry the same monolithic spec.
+- `scripts/agent-watchdog.ps1` lists in-flight async runs with last-activity age. Run it any turn the dev session feels off.
+- Two consecutive watchdog escalations on the same delegation → escalate to user, do not loop.
+
 ### Hard prohibitions
 
 - No `git`/`cargo`/`bun`/`just check`/`adb`/`tail`/`grep` from the main thread. Poll `tmp/_pids.json` + `tmp/logcat.log` line-count, or dispatch `wt-investigate`.
