@@ -126,7 +126,7 @@ defineExpose({ heightPx, expanded, beginResize });
     :class="[
       bgClass,
       bordered ? 'border-t border-outline-variant/40' : '',
-      'w-full flex flex-col shrink-0 overflow-hidden touch-none relative',
+      'w-full flex flex-col shrink-0 overflow-hidden relative',
       resizing ? '' : 'transition-[max-height,height] duration-200 ease-out',
     ]"
     :style="{
@@ -152,10 +152,10 @@ defineExpose({ heightPx, expanded, beginResize });
     </div>
 
     <div
-      class="flex-1 min-h-0 overflow-hidden"
+      class="flex-1 min-h-0 overflow-y-auto overscroll-contain scroll-thin"
       :style="{ maxHeight: `${Math.max(0, heightPx - headerHeight)}px` }"
     >
-      <div ref="contentEl" class="px-md pt-md pb-md space-y-md overflow-y-auto scroll-thin">
+      <div ref="contentEl" class="px-md pt-md pb-md space-y-md">
         <slot></slot>
       </div>
     </div>

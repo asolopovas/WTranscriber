@@ -1624,9 +1624,9 @@ const fieldClass =
             <article
               v-for="(u, i) in transcript.utterances"
               :key="i"
-              class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
+              class="flex gap-xs items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
             >
-              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
+              <span class="font-mono text-labelSmall text-secondary w-12 shrink-0 pt-unit">{{
                 fmt(u.start_ms)
               }}</span>
               <div class="flex-1 min-w-0">
