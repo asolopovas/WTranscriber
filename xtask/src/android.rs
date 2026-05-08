@@ -469,7 +469,13 @@ fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<
     patch_gradle_properties()?;
     copy_llama_jni(&target)?;
     patch_manifest()?;
-    let env = build_env(&target)?;
+    let mut env = build_env(&target)?;
+    if std::env::var_os("TAURI_DEV_HOST").is_none()
+        && let Some(ip) = detect_dev_host(device)
+    {
+        println!("android dev: auto-detected TAURI_DEV_HOST={ip}");
+        env.push(("TAURI_DEV_HOST".into(), ip));
+    }
     let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev"];
     if open {
         tauri_args.push("--open");
@@ -484,6 +490,72 @@ fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<
         tauri_args.push(d);
     }
     spawn_with_env("bun", &tauri_args, &env)
+}
+
+fn detect_dev_host(device: Option<&str>) -> Option<String> {
+    let mut cmd = std::process::Command::new("adb");
+    if let Some(d) = device {
+        cmd.args(["-s", d]);
+    }
+    let out = cmd
+        .args(["shell", "ip", "-4", "addr", "show", "wlan0"])
+        .output()
+        .ok()?;
+    let txt = String::from_utf8_lossy(&out.stdout);
+    let device_ip = txt
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("inet "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|cidr| cidr.split('/').next())?
+        .to_string();
+    let mut octets = device_ip.split('.');
+    let a = octets.next()?;
+    let b = octets.next()?;
+    let c = octets.next()?;
+    if octets.next().is_none() {
+        return None;
+    }
+    let prefix = format!("{a}.{b}.{c}.");
+    let host_ips = host_ipv4_addresses();
+    host_ips
+        .into_iter()
+        .find(|ip| ip.starts_with(&prefix) && ip != &device_ip)
+}
+
+fn host_ipv4_addresses() -> Vec<String> {
+    if cfg!(target_os = "windows") {
+        let out = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp,Manual -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress",
+            ])
+            .output()
+            .ok();
+        if let Some(o) = out {
+            return String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+        return Vec::new();
+    }
+    let out = std::process::Command::new("sh")
+        .args([
+            "-c",
+            "ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1",
+        ])
+        .output()
+        .ok();
+    out.map(|o| {
+        String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 fn detect_device_target(device: Option<&str>) -> Result<String> {
