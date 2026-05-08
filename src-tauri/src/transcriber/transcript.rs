@@ -287,32 +287,154 @@ mod tests {
         assert_eq!(join_words(&parts), "hello, world.");
     }
 
+    fn word(text: &str, start_ms: u64, end_ms: u64, speaker: Option<&str>) -> Word {
+        Word {
+            text: text.into(),
+            start_ms,
+            end_ms,
+            speaker: speaker.map(str::to_owned),
+            confidence: 0.0,
+        }
+    }
+
     #[test]
     fn smooths_isolated_flicker() {
         let mut words = vec![
-            Word {
-                text: "a".into(),
-                start_ms: 0,
-                end_ms: 1,
-                speaker: Some("A".into()),
-                confidence: 0.0,
-            },
-            Word {
-                text: "b".into(),
-                start_ms: 1,
-                end_ms: 2,
-                speaker: Some("B".into()),
-                confidence: 0.0,
-            },
-            Word {
-                text: "c".into(),
-                start_ms: 2,
-                end_ms: 3,
-                speaker: Some("A".into()),
-                confidence: 0.0,
-            },
+            word("a", 0, 1, Some("A")),
+            word("b", 1, 2, Some("B")),
+            word("c", 2, 3, Some("A")),
         ];
         smooth_flickers(&mut words);
         assert_eq!(words[1].speaker.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn smooth_flickers_noop_for_short_inputs() {
+        let mut empty: Vec<Word> = Vec::new();
+        smooth_flickers(&mut empty);
+        let mut single = vec![word("a", 0, 1, Some("A"))];
+        smooth_flickers(&mut single);
+        assert_eq!(single[0].speaker.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn group_words_splits_on_speaker_change() {
+        let words = vec![word("hi", 0, 1, Some("A")), word("there", 1, 2, Some("B"))];
+        let utts = group_words(&words);
+        assert_eq!(utts.len(), 2);
+        assert_eq!(utts[0].speaker.as_deref(), Some("A"));
+        assert_eq!(utts[1].speaker.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn group_words_breaks_after_sentence_end() {
+        let words = vec![
+            word("hello.", 0, 1, Some("A")),
+            word("again", 1, 2, Some("A")),
+        ];
+        let utts = group_words(&words);
+        assert_eq!(utts.len(), 2);
+        assert_eq!(utts[0].text, "hello.");
+        assert_eq!(utts[1].text, "again");
+    }
+
+    #[test]
+    fn group_words_returns_empty_for_empty_input() {
+        assert!(group_words(&[]).is_empty());
+    }
+
+    #[test]
+    fn detect_script_lang_picks_dominant_script() {
+        assert_eq!(detect_script_lang("hello world").as_deref(), Some("en"));
+        assert_eq!(detect_script_lang("Привет мир").as_deref(), Some("ru"));
+        assert_eq!(detect_script_lang("你好世界").as_deref(), Some("zh"));
+        assert_eq!(detect_script_lang("123 ...").as_deref(), None);
+    }
+
+    #[test]
+    fn resolve_language_prefers_explicit_meta() {
+        assert_eq!(resolve_language("en", &[]), "en");
+    }
+
+    #[test]
+    fn resolve_language_falls_back_to_detected_when_auto() {
+        let utts = vec![Utterance {
+            start_ms: 0,
+            end_ms: 1,
+            speaker: None,
+            text: "hello world".into(),
+            language: Some("en".into()),
+        }];
+        assert_eq!(resolve_language("auto", &utts), "en");
+    }
+
+    #[test]
+    fn resolve_language_joins_multiple_detected_languages() {
+        let utts = vec![
+            Utterance {
+                start_ms: 0,
+                end_ms: 1,
+                speaker: None,
+                text: "hi".into(),
+                language: Some("en".into()),
+            },
+            Utterance {
+                start_ms: 1,
+                end_ms: 2,
+                speaker: None,
+                text: "Привет".into(),
+                language: Some("ru".into()),
+            },
+        ];
+        assert_eq!(resolve_language("", &utts), "en,ru");
+    }
+
+    #[test]
+    fn build_assigns_speaker_labels_from_diarization() {
+        let segs = vec![Segment {
+            text: "hello world".into(),
+            start_ms: 0,
+            end_ms: 2_000,
+            tokens: vec![
+                Token {
+                    text: "hello".into(),
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    confidence: 0.0,
+                },
+                Token {
+                    text: "world".into(),
+                    start_ms: 1_000,
+                    end_ms: 2_000,
+                    confidence: 0.0,
+                },
+            ],
+        }];
+        let diar = vec![
+            DiarSegment {
+                speaker: 7,
+                start_sec: 0.0,
+                end_sec: 1.0,
+            },
+            DiarSegment {
+                speaker: 9,
+                start_sec: 1.0,
+                end_sec: 2.0,
+            },
+        ];
+        let t = build(
+            &segs,
+            &diar,
+            Meta {
+                model: "m".into(),
+                language: "en".into(),
+                duration_ms: 2_000,
+                diarizer: None,
+                device: None,
+            },
+        );
+        assert_eq!(t.speakers_detected, 2);
+        assert_eq!(t.words[0].speaker.as_deref(), Some("SPEAKER_01"));
+        assert_eq!(t.words[1].speaker.as_deref(), Some("SPEAKER_02"));
     }
 }

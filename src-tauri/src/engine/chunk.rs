@@ -279,4 +279,45 @@ mod tests {
     fn empty_samples_yields_no_chunks() {
         assert!(split_chunks(&[], 30.0).is_empty());
     }
+
+    #[test]
+    fn nonpositive_chunk_size_uses_default() {
+        let samples = vec![0.0f32; (WHISPER_SAMPLE_RATE * 5) as usize];
+        let chunks = split_chunks(&samples, 0.0);
+        assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn ms_converts_seconds_to_milliseconds() {
+        assert_eq!(ms(0.0), 0);
+        assert_eq!(ms(1.0), 1_000);
+        assert_eq!(ms(1.234), 1_234);
+    }
+
+    #[test]
+    fn coalesce_segment_groups_subword_tokens() {
+        let tokens = vec![" hello".into(), " world".into()];
+        let stamps = vec![0.0, 0.5];
+        let seg = coalesce_segment(&tokens, stamps, 1.0).unwrap();
+        assert_eq!(seg.text, "hello world");
+        assert_eq!(seg.tokens.len(), 2);
+        assert_eq!(seg.tokens[0].start_ms, 0);
+        assert_eq!(seg.tokens[0].end_ms, 500);
+        assert_eq!(seg.tokens[1].end_ms, 1_000);
+    }
+
+    #[test]
+    fn coalesce_segment_merges_continuation_tokens() {
+        let tokens = vec![" hel".into(), "lo".into(), " world".into()];
+        let stamps = vec![0.0, 0.2, 0.5];
+        let seg = coalesce_segment(&tokens, stamps, 1.0).unwrap();
+        assert_eq!(seg.text, "hello world");
+        assert_eq!(seg.tokens.len(), 2);
+    }
+
+    #[test]
+    fn coalesce_segment_rejects_mismatched_lengths() {
+        assert!(coalesce_segment(&["a".into()], [0.0, 0.1], 1.0).is_none());
+        assert!(coalesce_segment(&[], std::iter::empty::<f64>(), 1.0).is_none());
+    }
 }

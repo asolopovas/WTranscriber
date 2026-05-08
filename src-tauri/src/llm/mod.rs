@@ -229,4 +229,25 @@ mod tests {
         let out = "{\"outer\":{\"inner\":1}}";
         assert_eq!(last_balanced_json(out), Some(out.to_owned()));
     }
+
+    #[test]
+    fn returns_none_for_empty_input() {
+        assert_eq!(last_balanced_json(""), None);
+    }
+
+    #[test]
+    fn returns_none_when_no_object_present() {
+        assert_eq!(last_balanced_json("hello world"), None);
+    }
+
+    #[test]
+    fn tail_returns_full_string_when_short() {
+        assert_eq!(tail("hi", 10), "hi");
+    }
+
+    #[test]
+    fn tail_truncates_with_ellipsis() {
+        let out = tail("0123456789abcdef", 4);
+        assert_eq!(out, "...cdef");
+    }
 }

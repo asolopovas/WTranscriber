@@ -240,4 +240,48 @@ mod tests {
         assert_eq!(Engine::Canary.as_str(), "canary");
         assert_eq!(Engine::NemoCtc.as_str(), "nemo-ctc");
     }
+
+    #[test]
+    fn engine_from_str_roundtrip() {
+        for e in [
+            Engine::WhisperOnnx,
+            Engine::Zipformer,
+            Engine::Parakeet,
+            Engine::Canary,
+            Engine::NemoCtc,
+        ] {
+            assert_eq!(e.as_str().parse::<Engine>().unwrap(), e);
+        }
+    }
+
+    #[test]
+    fn engine_from_str_rejects_unknown() {
+        assert!("nonsense".parse::<Engine>().is_err());
+    }
+
+    #[test]
+    fn diarizer_choice_maps_to_catalog_ids() {
+        assert_eq!(DiarizerChoice::Nemo.as_str(), "nemo-sortformer-v2");
+        assert_eq!(DiarizerChoice::Eres2net.as_str(), "diar-eres2net-base");
+        assert_eq!(DiarizerChoice::Titanet.as_str(), "sherpa-pyannote-titanet");
+        assert_eq!(DiarizerChoice::Auto.as_str(), "auto");
+    }
+
+    #[test]
+    fn diarizer_titanet_uses_titanet_embedding() {
+        assert_eq!(
+            DiarizerChoice::Titanet.embedding_rel(),
+            "titanet_large.onnx"
+        );
+        assert_eq!(
+            DiarizerChoice::Eres2net.embedding_rel(),
+            "3dspeaker_eres2net_base.onnx"
+        );
+    }
+
+    #[test]
+    fn diarizer_choice_deserialises_sherpa_alias_to_eres2net() {
+        let v: DiarizerChoice = serde_json::from_str("\"sherpa\"").unwrap();
+        assert!(matches!(v, DiarizerChoice::Eres2net));
+    }
 }

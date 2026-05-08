@@ -229,27 +229,49 @@ fn resolve_script() -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    fn json(start: f64, end: f64, speaker: &str) -> JsonSegment {
+        JsonSegment {
+            start,
+            end,
+            speaker: speaker.into(),
+        }
+    }
+
     #[test]
     fn maps_string_speakers_to_stable_numeric_ids() {
         let out = map_segments(vec![
-            JsonSegment {
-                start: 0.0,
-                end: 1.0,
-                speaker: "SPEAKER_01".into(),
-            },
-            JsonSegment {
-                start: 1.0,
-                end: 2.0,
-                speaker: "SPEAKER_02".into(),
-            },
-            JsonSegment {
-                start: 2.0,
-                end: 3.0,
-                speaker: "SPEAKER_01".into(),
-            },
+            json(0.0, 1.0, "SPEAKER_01"),
+            json(1.0, 2.0, "SPEAKER_02"),
+            json(2.0, 3.0, "SPEAKER_01"),
         ]);
         assert_eq!(out[0].speaker, 0);
         assert_eq!(out[1].speaker, 1);
         assert_eq!(out[2].speaker, 0);
+    }
+
+    #[test]
+    fn map_segments_preserves_timing() {
+        let out = map_segments(vec![json(1.5, 2.25, "A")]);
+        assert!((out[0].start_sec - 1.5).abs() < 1e-9);
+        assert!((out[0].end_sec - 2.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn map_segments_empty_input_yields_empty() {
+        assert!(map_segments(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn time_progress_is_monotonic() {
+        let start = Instant::now();
+        let pct1 = report_time_progress(start, false, 60.0, 0.0, &mut |_| {});
+        let pct2 = report_time_progress(start, false, 60.0, pct1, &mut |_| {});
+        assert!(pct2 >= pct1);
+    }
+
+    #[test]
+    fn time_progress_jumps_to_high_percent_on_completion() {
+        let pct = report_time_progress(Instant::now(), true, 60.0, 0.0, &mut |_| {});
+        assert!((pct - 95.0).abs() < 1e-9);
     }
 }

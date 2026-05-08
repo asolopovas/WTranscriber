@@ -353,4 +353,57 @@ mod tests {
     fn default_diarizer_is_nemo_sortformer() {
         assert_eq!(default_id(Family::Diarizer), Some("nemo-sortformer-v2"));
     }
+
+    #[test]
+    fn by_id_returns_none_for_unknown() {
+        assert!(by_id("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn family_as_str_matches_serde_lowercase() {
+        assert_eq!(Family::Asr.as_str(), "asr");
+        assert_eq!(Family::Diarizer.as_str(), "diarizer");
+        assert_eq!(Family::Llm.as_str(), "llm");
+    }
+
+    #[test]
+    fn engine_kind_matches_catalog_engine_string() {
+        let entry = by_id("sherpa-whisper-turbo").unwrap();
+        assert_eq!(entry.engine_kind().unwrap().as_str(), entry.engine);
+    }
+
+    #[test]
+    fn paths_for_resolves_relative_files_under_models_dir() {
+        let entry = by_id("qwen3-0.6b-q4km").unwrap();
+        let paths = paths_for(entry).unwrap();
+        assert_eq!(paths.len(), entry.files.len());
+        for p in paths {
+            assert!(p.ends_with("qwen3-0.6b-q4km.gguf"));
+        }
+    }
+
+    #[test]
+    fn model_dir_uses_first_segment_of_rel_path() {
+        let dir = model_dir("sherpa-whisper-turbo").unwrap();
+        assert!(dir.ends_with("sherpa-whisper-turbo"));
+    }
+
+    #[test]
+    fn asr_family_contains_whisper_and_parakeet() {
+        let ids: Vec<&str> = by_family(Family::Asr)
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect();
+        assert!(ids.contains(&"sherpa-whisper-turbo"));
+        assert!(ids.contains(&"parakeet-tdt-0.6b-v3-int8"));
+    }
+
+    #[test]
+    fn llm_family_includes_qwen3_default() {
+        assert!(
+            by_family(Family::Llm)
+                .iter()
+                .any(|e| e.id == "qwen3-0.6b-q4km")
+        );
+    }
 }

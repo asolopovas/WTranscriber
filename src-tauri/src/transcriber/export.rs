@@ -134,3 +134,114 @@ fn format_vtt(ms: u64) -> String {
     let r = ms % 1000;
     format!("{h:02}:{m:02}:{s:02}.{r:03}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transcriber::{Transcript, Utterance};
+
+    fn sample() -> Transcript {
+        Transcript {
+            model: "m".into(),
+            language: "en".into(),
+            duration_ms: 5_000,
+            diarizer: None,
+            device: None,
+            speakers_detected: 2,
+            utterances: vec![
+                Utterance {
+                    start_ms: 0,
+                    end_ms: 1_500,
+                    speaker: Some("SPEAKER_01".into()),
+                    text: "hello, world".into(),
+                    language: None,
+                },
+                Utterance {
+                    start_ms: 2_000,
+                    end_ms: 4_500,
+                    speaker: None,
+                    text: " un-spoken ".into(),
+                    language: None,
+                },
+            ],
+            words: Vec::new(),
+        }
+    }
+
+    fn write_to_string(t: &Transcript, fmt: Format) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("out");
+        write(t, &dst, fmt).unwrap();
+        std::fs::read_to_string(&dst).unwrap()
+    }
+
+    #[test]
+    fn formats_clock_padding() {
+        assert_eq!(format_clock(0), "00:00:00");
+        assert_eq!(format_clock(3_661_000), "01:01:01");
+    }
+
+    #[test]
+    fn srt_uses_comma_subsecond_separator() {
+        assert_eq!(format_srt(3_661_123), "01:01:01,123");
+    }
+
+    #[test]
+    fn vtt_uses_dot_subsecond_separator() {
+        assert_eq!(format_vtt(3_661_123), "01:01:01.123");
+    }
+
+    #[test]
+    fn csv_field_quotes_embedded_specials() {
+        assert_eq!(csv_field("plain"), "plain");
+        assert_eq!(csv_field("a,b"), "\"a,b\"");
+        assert_eq!(csv_field("she said \"hi\""), "\"she said \"\"hi\"\"\"");
+        assert_eq!(csv_field("line\nbreak"), "\"line\nbreak\"");
+    }
+
+    #[test]
+    fn writes_txt_with_speaker_prefix_and_clock() {
+        let out = write_to_string(&sample(), Format::Txt);
+        assert!(out.contains("[00:00:00] SPEAKER_01: hello, world"));
+        assert!(out.contains("[00:00:02] un-spoken"));
+    }
+
+    #[test]
+    fn writes_csv_with_header() {
+        let out = write_to_string(&sample(), Format::Csv);
+        let mut lines = out.lines();
+        assert_eq!(lines.next(), Some("start,end,speaker,text"));
+        assert!(out.contains("\"hello, world\""));
+    }
+
+    #[test]
+    fn writes_srt_with_index_and_arrow() {
+        let out = write_to_string(&sample(), Format::Srt);
+        assert!(out.starts_with("1\n") || out.starts_with("1\r\n"));
+        assert!(out.contains("00:00:00,000 --> 00:00:01,500"));
+        assert!(out.contains("SPEAKER_01: hello, world"));
+    }
+
+    #[test]
+    fn writes_vtt_with_header_and_voice_tag() {
+        let out = write_to_string(&sample(), Format::Vtt);
+        assert!(out.starts_with("WEBVTT"));
+        assert!(out.contains("00:00:00.000 --> 00:00:01.500"));
+        assert!(out.contains("<v SPEAKER_01>hello, world"));
+    }
+
+    #[test]
+    fn writes_json_roundtrip() {
+        let out = write_to_string(&sample(), Format::Json);
+        let parsed: Transcript = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed.utterances.len(), 2);
+    }
+
+    #[test]
+    fn write_creates_missing_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("nested").join("deep").join("out.txt");
+        write(&sample(), &dst, Format::Txt).unwrap();
+        assert!(dst.exists());
+    }
+}

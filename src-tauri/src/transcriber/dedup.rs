@@ -138,4 +138,47 @@ mod tests {
         assert_eq!(canon("Hello,"), "hello");
         assert_eq!(canon("Hello"), canon("hello!"));
     }
+
+    #[test]
+    fn collapses_repeated_trigram() {
+        let tokens: Vec<Token> = ["a", "b", "c", "a", "b", "c", "x"]
+            .into_iter()
+            .map(tok)
+            .collect();
+        let out = collapse_repeats(&tokens);
+        assert_eq!(
+            out.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+            vec!["a", "b", "c", "x"]
+        );
+    }
+
+    #[test]
+    fn keeps_double_unigram_below_threshold() {
+        let tokens = vec![tok("hi"), tok("hi"), tok("done")];
+        let out = collapse_repeats(&tokens);
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn collapse_in_text_preserves_unrepeated() {
+        assert_eq!(collapse_in_text("alpha beta gamma"), "alpha beta gamma");
+    }
+
+    #[test]
+    fn collapse_in_text_returns_short_input_unchanged() {
+        assert_eq!(collapse_in_text(""), "");
+        assert_eq!(collapse_in_text("solo"), "solo");
+    }
+
+    #[test]
+    fn collapse_repeats_handles_short_input() {
+        assert!(collapse_repeats(&[]).is_empty());
+        let single = vec![tok("only")];
+        assert_eq!(collapse_repeats(&single).len(), 1);
+    }
+
+    #[test]
+    fn canon_normalises_unicode_case() {
+        assert_eq!(canon("Ω"), canon("ω"));
+    }
 }

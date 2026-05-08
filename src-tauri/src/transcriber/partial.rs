@@ -54,3 +54,71 @@ pub fn clear(key: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    static FS_LOCK: Mutex<()> = Mutex::new(());
+
+    fn fresh_root() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        crate::paths::init(
+            tmp.path().join("config"),
+            tmp.path().join("data"),
+            tmp.path().join("cache"),
+        );
+        tmp
+    }
+
+    fn sample(key: &str) -> Partial {
+        Partial {
+            key: key.into(),
+            last_done_sec: 12.5,
+            segments: vec![Segment {
+                text: "hello".into(),
+                start_ms: 0,
+                end_ms: 500,
+                tokens: Vec::new(),
+            }],
+        }
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+        let p = sample("kpartial");
+        save(&p).unwrap();
+        let loaded = load("kpartial").expect("load returns saved partial");
+        assert_eq!(loaded.key, "kpartial");
+        assert!((loaded.last_done_sec - 12.5).abs() < 1e-9);
+        assert_eq!(loaded.segments.len(), 1);
+    }
+
+    #[test]
+    fn load_returns_none_when_missing() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+        assert!(load("never-saved").is_none());
+    }
+
+    #[test]
+    fn clear_removes_persisted_file() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+        let p = sample("kclear");
+        save(&p).unwrap();
+        clear("kclear").unwrap();
+        assert!(load("kclear").is_none());
+    }
+
+    #[test]
+    fn clear_is_idempotent_on_missing_key() {
+        let _g = FS_LOCK.lock().unwrap();
+        let _root = fresh_root();
+        clear("absent").unwrap();
+    }
+}

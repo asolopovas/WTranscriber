@@ -231,6 +231,44 @@ mod tests {
     }
 
     #[test]
+    fn build_key_params_reads_file_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.wav");
+        std::fs::write(&path, b"hello").unwrap();
+        let params = build_key_params(&path, "whisper", "en", 0, false, 0, 0).unwrap();
+        assert_eq!(params.model, "whisper");
+        assert!(params.source_path.is_absolute());
+        assert!(params.mtime_ns > 0);
+    }
+
+    #[test]
+    fn build_key_params_errors_when_file_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("missing.wav");
+        assert!(build_key_params(&p, "m", "en", 0, false, 0, 0).is_err());
+    }
+
+    #[test]
+    fn key_changes_with_trim_window() {
+        let mut p = KeyParams {
+            source_path: PathBuf::from("/audio/a.wav"),
+            mtime_ns: 1,
+            model: "m".into(),
+            language: "en".into(),
+            speakers: 0,
+            no_diarize: false,
+            trim_start_ms: 0,
+            trim_end_ms: 0,
+        };
+        let base = compute_key(&p);
+        p.trim_start_ms = 1000;
+        assert_ne!(compute_key(&p), base);
+        p.trim_start_ms = 0;
+        p.trim_end_ms = 5000;
+        assert_ne!(compute_key(&p), base);
+    }
+
+    #[test]
     fn key_changes_with_inputs() {
         let mut p = KeyParams {
             source_path: PathBuf::from("/audio/a.wav"),

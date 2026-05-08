@@ -159,4 +159,56 @@ mod tests {
         assert_eq!(s.filename(".wav"), "test-topic_240101-120000.wav");
         assert_eq!(s.filename(""), "test-topic_240101-120000");
     }
+
+    #[test]
+    fn sanitize_topic_strips_diacritics_to_hyphens() {
+        assert_eq!(sanitize_topic("naïve café"), "na-ve-caf");
+    }
+
+    #[test]
+    fn sanitize_topic_collapses_to_empty_for_pure_punctuation() {
+        assert!(sanitize_topic("!!!").is_empty());
+    }
+
+    #[test]
+    fn extract_text_includes_speaker_prefix() {
+        let t = Transcript {
+            model: "m".into(),
+            language: "en".into(),
+            duration_ms: 0,
+            diarizer: None,
+            device: None,
+            speakers_detected: 1,
+            utterances: vec![crate::transcriber::Utterance {
+                start_ms: 0,
+                end_ms: 1,
+                speaker: Some("SPEAKER_01".into()),
+                text: "hello".into(),
+                language: None,
+            }],
+            words: Vec::new(),
+        };
+        assert_eq!(extract_text(&t), "SPEAKER_01: hello\n");
+    }
+
+    #[test]
+    fn extract_text_omits_speaker_when_absent() {
+        let t = Transcript {
+            model: "m".into(),
+            language: "en".into(),
+            duration_ms: 0,
+            diarizer: None,
+            device: None,
+            speakers_detected: 0,
+            utterances: vec![crate::transcriber::Utterance {
+                start_ms: 0,
+                end_ms: 1,
+                speaker: None,
+                text: "lone line".into(),
+                language: None,
+            }],
+            words: Vec::new(),
+        };
+        assert_eq!(extract_text(&t), "lone line\n");
+    }
 }

@@ -210,4 +210,65 @@ mod tests {
         let out = "{\"text\":\"\"}";
         assert!(parse_json(out).is_err());
     }
+
+    #[test]
+    fn binary_name_matches_target_os() {
+        let n = binary_name();
+        let is_exe = std::path::Path::new(n)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"));
+        assert_eq!(is_exe, cfg!(windows));
+    }
+
+    #[test]
+    fn detects_cuda_provider_arg() {
+        let with_cuda = vec!["--provider=cuda".to_owned(), "input.wav".to_owned()];
+        assert!(uses_cuda(&with_cuda));
+        let cpu = vec!["--provider=cpu".to_owned()];
+        assert!(!uses_cuda(&cpu));
+    }
+
+    #[test]
+    fn swap_provider_replaces_only_cuda_arg() {
+        let args = vec![
+            "--threads=4".to_owned(),
+            "--provider=cuda".to_owned(),
+            "input.wav".to_owned(),
+        ];
+        let swapped = swap_provider_to_cpu(&args);
+        assert_eq!(swapped[0], "--threads=4");
+        assert_eq!(swapped[1], "--provider=cpu");
+        assert_eq!(swapped[2], "input.wav");
+    }
+
+    #[test]
+    fn detects_known_cuda_failure_signatures() {
+        assert!(is_cuda_load_failure("Error: cudnn library not found"));
+        assert!(is_cuda_load_failure("CUDAProviderFactory init failed"));
+        assert!(is_cuda_load_failure(
+            "error loading onnxruntime_providers_cuda.dll"
+        ));
+        assert!(is_cuda_load_failure("CUDA error loading driver"));
+    }
+
+    #[test]
+    fn ignores_unrelated_failure_messages() {
+        assert!(!is_cuda_load_failure("invalid input shape"));
+        assert!(!is_cuda_load_failure("OOM allocating tensor"));
+    }
+
+    #[test]
+    fn cuda_failure_reason_picks_first_relevant_line() {
+        let stderr = "noise line\n   error loading cudnn_ops64_9.dll\nlater";
+        let reason = cuda_failure_reason(stderr);
+        assert!(reason.contains("cudnn_ops64_9.dll"));
+    }
+
+    #[test]
+    fn cuda_failure_reason_falls_back_when_no_match() {
+        assert_eq!(
+            cuda_failure_reason("no relevant lines here"),
+            "CUDA provider failed to initialize"
+        );
+    }
 }

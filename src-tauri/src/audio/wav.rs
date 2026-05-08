@@ -141,3 +141,48 @@ pub fn write_pcm16_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result
     w.flush()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_then_read_roundtrip_preserves_samples() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.wav");
+        let samples: Vec<f32> = (0..4_000).map(|i| (i as f32 / 4_000.0) - 0.5).collect();
+        write_pcm16_wav(&path, &samples, WHISPER_SAMPLE_RATE).unwrap();
+        let read = read_pcm16_wav(&path).unwrap();
+        assert_eq!(read.len(), samples.len());
+        for (a, b) in samples.iter().zip(read.iter()) {
+            assert!((a - b).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn read_rejects_non_riff_header() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bogus.wav");
+        std::fs::write(&path, b"NOTAWAVEFILEPADDED").unwrap();
+        assert!(read_pcm16_wav(&path).is_err());
+    }
+
+    #[test]
+    fn read_rejects_wrong_sample_rate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("48k.wav");
+        write_pcm16_wav(&path, &[0.0; 16], 48_000).unwrap();
+        assert!(read_pcm16_wav(&path).is_err());
+    }
+
+    #[test]
+    fn write_clamps_extreme_input_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.wav");
+        write_pcm16_wav(&path, &[5.0, -5.0, 0.0], WHISPER_SAMPLE_RATE).unwrap();
+        let read = read_pcm16_wav(&path).unwrap();
+        assert!((read[0] - 1.0).abs() < 1e-3);
+        assert!((read[1] - -1.0).abs() < 1e-3);
+        assert!(read[2].abs() < 1e-3);
+    }
+}

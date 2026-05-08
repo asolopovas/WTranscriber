@@ -29,3 +29,41 @@ impl Serialize for Error {
         serializer.serialize_str(&self.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_to_human_readable_string() {
+        let e = Error::Config("bad".into());
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(json, "\"config: bad\"");
+    }
+
+    #[test]
+    fn cancelled_serializes_to_marker_string() {
+        let json = serde_json::to_string(&Error::Cancelled).unwrap();
+        assert_eq!(json, "\"cancelled\"");
+    }
+
+    #[test]
+    fn from_io_error_round_trips_through_display() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let e: Error = io.into();
+        assert!(e.to_string().starts_with("io:"));
+    }
+
+    #[test]
+    fn from_serde_error_uses_serde_variant() {
+        let bad: serde_json::Error = serde_json::from_str::<u32>("not-a-number").unwrap_err();
+        let e: Error = bad.into();
+        assert!(e.to_string().starts_with("serde:"));
+    }
+
+    #[test]
+    fn from_anyhow_error_uses_other_variant() {
+        let e: Error = anyhow::anyhow!("boom").into();
+        assert!(e.to_string().contains("boom"));
+    }
+}

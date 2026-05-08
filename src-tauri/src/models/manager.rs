@@ -164,3 +164,21 @@ pub struct FileProgress {
 pub fn list() -> Result<Vec<ModelInfo>> {
     manager().list()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_strings_use_snake_case() {
+        assert_eq!(ModelStatus::Installed.as_str(), "installed");
+        assert_eq!(ModelStatus::Downloading.as_str(), "downloading");
+        assert_eq!(ModelStatus::NotInstalled.as_str(), "not_installed");
+    }
+
+    #[test]
+    fn status_serialises_to_snake_case() {
+        let raw = serde_json::to_string(&ModelStatus::NotInstalled).unwrap();
+        assert_eq!(raw, "\"not_installed\"");
+    }
+}
