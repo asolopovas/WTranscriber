@@ -59,18 +59,6 @@ docs/release.md     release process + build-speed reference
 - **Lints**: `cargo clippy -- -D warnings`, pedantic + nursery on.
 - **Formatters**: `cargo fmt`, `prettier` (TS/Vue/MD/JSON/HTML).
 
-## Build performance
-
-- Cargo runs on all cores by default. Don't cap `-j` or set `CARGO_BUILD_JOBS=1`.
-- A long single-line stall during link is normal — sherpa-onnx is statically linked.
-  Verify progress with `cargo build -v` (it logs `Compiling X v…` per crate).
-- Cold release build ≈ 3.5 min on Windows (16 cores). Warm rebuild after a Rust
-  change: 6–28 s depending on bundle target. See `docs/release.md` for the table.
-- The `[profile.release]` is tuned for build speed (incremental on, LTO off).
-  Don't re-enable LTO without proving it matters at runtime — heavy lifting is
-  C++ (sherpa-onnx, webkit), so Rust LTO is sub-1 % runtime gain at minutes per
-  build.
-
 ## Recipes
 
 ```
@@ -170,20 +158,3 @@ Full guide: `docs/tauri-debug.md`. Quick reference:
   `println!` + `tauri-plugin-log` Stdout target.
 - Screenshot: `MSYS_NO_PATHCONV=1 adb exec-out screencap -p > tmp/x.png`.
   `*.png` at the repo root is gitignored — keep captures under `tmp/`.
-
-## Migration from `wt` (Go)
-
-The Rust layout mirrors the Go one to make porting mechanical:
-
-| Go (`internal/`) | Rust (`src-tauri/src/`)             |
-| ---------------- | ----------------------------------- |
-| `config.go`      | `config.rs`                         |
-| `models/`        | `models.rs`                         |
-| `transcriber/`   | `transcriber/`                      |
-| `diarizer/`      | `transcriber/diarizer.rs` (planned) |
-| `gui/`           | `src/` (Vue)                        |
-| `appinfo/`       | `lib.rs` (`app_version` command)    |
-
-Engine binaries (`sherpa-onnx-offline`, `llama-cli`, NeMo Sortformer) run as
-sidecars via `tauri-plugin-shell`. They are not bundled here; the user fetches
-them post-install (same pattern as the Windows installer in `wt`).
