@@ -42,6 +42,8 @@ const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
 const listing = ref<DirListing | null>(null);
 const selectedPath = ref<string>("");
+const selectedPaths = ref(new Set<string>());
+let lastRangeAnchor: string | null = null;
 const transcript = ref<Transcript | null>(null);
 const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
@@ -329,6 +331,22 @@ onMounted(async () => {
       }
     }),
   );
+  function onKeyDown(e: KeyboardEvent) {
+    if (tab.value !== "transcribe") return;
+    if (dialogOpen.value) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      selectedPaths.value = new Set(audioEntries.value.map((en) => en.path));
+    } else if (e.key === "Escape" && selectedPaths.value.size > 0) {
+      clearSelection();
+    } else if ((e.key === "Delete" || e.key === "Backspace") && selectedPaths.value.size > 0) {
+      e.preventDefault();
+      void bulkDelete();
+    }
+  }
+  document.addEventListener("keydown", onKeyDown);
+  unlisten.push(() => document.removeEventListener("keydown", onKeyDown));
 });
 
 onUnmounted(() => {
@@ -378,9 +396,9 @@ async function stopTranscribe(entry: DirEntry) {
   await api.cancelTranscribe(entry.path);
 }
 
-async function transcribeAll() {
+async function transcribeAll(targets?: DirEntry[]) {
   if (!config.value || queueActive.value) return;
-  const items = untranscribedEntries.value;
+  const items = targets ?? untranscribedEntries.value;
   if (!items.length) return;
   queueActive.value = true;
   queueTotal.value = items.length;
@@ -395,6 +413,66 @@ async function transcribeAll() {
     queueTotal.value = 0;
     queueDone.value = 0;
   }
+}
+
+function toggleSelect(path: string) {
+  const next = new Set(selectedPaths.value);
+  if (next.has(path)) next.delete(path);
+  else next.add(path);
+  selectedPaths.value = next;
+  lastRangeAnchor = path;
+}
+
+function rangeSelect(anchor: string) {
+  if (anchor === "__all__") {
+    if (selectedPaths.value.size === audioEntries.value.length) {
+      selectedPaths.value = new Set();
+    } else {
+      selectedPaths.value = new Set(audioEntries.value.map((e) => e.path));
+    }
+    return;
+  }
+  const paths = audioEntries.value.map((e) => e.path);
+  const anchorIdx = paths.indexOf(anchor);
+  const from = lastRangeAnchor ? paths.indexOf(lastRangeAnchor) : anchorIdx;
+  if (anchorIdx < 0 || from < 0) return;
+  const lo = Math.min(from, anchorIdx);
+  const hi = Math.max(from, anchorIdx);
+  const next = new Set(selectedPaths.value);
+  for (let i = lo; i <= hi; i++) next.add(paths[i]);
+  selectedPaths.value = next;
+  lastRangeAnchor = anchor;
+}
+
+function clearSelection() {
+  selectedPaths.value = new Set();
+  lastRangeAnchor = null;
+}
+
+async function bulkDelete() {
+  const targets = [...selectedPaths.value];
+  if (!targets.length) return;
+  clearSelection();
+  for (const path of targets) {
+    try {
+      await api.deleteFile(path);
+      if (selectedPath.value === path) {
+        selectedPath.value = "";
+        transcript.value = null;
+      }
+    } catch (e) {
+      error.value = String(e);
+    }
+  }
+  await refreshListing();
+}
+
+async function bulkTranscribe() {
+  const targets = [...selectedPaths.value]
+    .map((p) => audioEntries.value.find((e) => e.path === p))
+    .filter((e): e is DirEntry => !!e && !busy.value[e.path]);
+  if (!targets.length) return;
+  await transcribeAll(targets);
 }
 
 const autoRenamingPath = ref<string | null>(null);
@@ -622,6 +700,19 @@ const selectedProgress = computed(() =>
             </template>
           </ErrorBanner>
 
+          <div
+            v-if="selectedPaths.size > 0"
+            class="flex items-center gap-xs px-margin py-xs border-b border-outline-variant/40 shrink-0 bg-surface-container-low font-mono text-labelSmall"
+          >
+            <span class="text-on-surface-variant">{{ selectedPaths.size }} selected</span>
+            <span class="text-outline-variant">•</span>
+            <Button variant="ghost" shape="link" @click="bulkTranscribe">Transcribe</Button>
+            <span class="text-outline-variant">•</span>
+            <Button variant="ghost" shape="link" @click="bulkDelete">Delete</Button>
+            <span class="text-outline-variant">•</span>
+            <Button variant="ghost" shape="link" @click="clearSelection">Clear</Button>
+          </div>
+
           <div class="flex-1 overflow-y-auto scroll-thin">
             <FileList
               ref="fileListRef"
@@ -640,6 +731,9 @@ const selectedProgress = computed(() =>
               @rename="openRename"
               @export="openExport"
               @delete="deleteEntry"
+              :selected-paths="selectedPaths"
+              @toggle-select="toggleSelect"
+              @range-select="rangeSelect"
             />
           </div>
 

@@ -8,16 +8,21 @@ import Spinner from "@components/icons/Spinner.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 import MenuItem from "@components/ui/MenuItem.vue";
+import Checkbox from "@components/ui/Checkbox.vue";
 
-const props = defineProps<{
-  entries: DirEntry[];
-  selectedPath: string;
-  busy: Record<string, boolean>;
-  progressByPath: Record<string, TranscribeProgress>;
-  autoRenamingPath: string | null;
-  dragOver: boolean;
-  hasListing: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    entries: DirEntry[];
+    selectedPath: string;
+    busy: Record<string, boolean>;
+    progressByPath: Record<string, TranscribeProgress>;
+    autoRenamingPath: string | null;
+    dragOver: boolean;
+    hasListing: boolean;
+    selectedPaths?: Set<string>;
+  }>(),
+  { selectedPaths: () => new Set<string>() },
+);
 
 const rows = computed(() =>
   props.entries.map((entry) => ({
@@ -36,7 +41,11 @@ const emit = defineEmits<{
   (e: "rename", entry: DirEntry): void;
   (e: "export", entry: DirEntry): void;
   (e: "delete", entry: DirEntry): void;
+  (e: "toggle-select", path: string): void;
+  (e: "range-select", path: string): void;
 }>();
+
+const selectionActive = computed(() => props.selectedPaths.size > 0);
 
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
@@ -64,11 +73,21 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
     <li
       v-for="{ entry, pretty, title } in rows"
       :key="`m-${entry.path}`"
-      class="border-b border-outline-variant/20 px-margin py-md cursor-pointer transition-colors"
+      class="group border-b border-outline-variant/20 px-margin py-md cursor-pointer transition-colors"
       :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
-      @click="emit('choose', entry)"
+      @click="selectionActive ? emit('toggle-select', entry.path) : emit('choose', entry)"
     >
       <div class="flex items-center gap-xs">
+        <div
+          v-if="selectionActive || selectedPaths.has(entry.path)"
+          class="shrink-0 mr-xs"
+          @click.stop
+        >
+          <Checkbox
+            :model-value="selectedPaths.has(entry.path)"
+            @update:model-value="emit('toggle-select', entry.path)"
+          />
+        </div>
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-xs">
             <div
@@ -176,9 +195,16 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
   <table v-if="rows.length" class="hidden md:table w-full text-bodyMedium">
     <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
       <tr
-        class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
+        class="group text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
       >
-        <th class="px-margin py-xs w-8"></th>
+        <th class="px-margin py-xs w-8">
+          <Checkbox
+            :model-value="selectionActive && selectedPaths.size === entries.length"
+            class="opacity-0 group-hover:opacity-100"
+            :class="selectionActive ? '!opacity-100' : ''"
+            @update:model-value="emit('range-select', '__all__')"
+          />
+        </th>
         <th class="px-xs py-xs">Name</th>
         <th class="px-xs py-xs w-24">Duration</th>
         <th class="px-xs py-xs w-24">Size</th>
@@ -190,13 +216,20 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
       <tr
         v-for="{ entry, pretty, title } in rows"
         :key="entry.path"
-        class="border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
+        class="group border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
         :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
-        @click="emit('choose', entry)"
+        @click="selectionActive ? emit('toggle-select', entry.path) : emit('choose', entry)"
         @dblclick="emit('transcribe', entry)"
       >
-        <td class="px-margin py-xs">
-          <Icon name="graphic_eq" :size="20" class="text-on-surface-variant" />
+        <td class="px-margin py-xs" @click.stop>
+          <Checkbox
+            :model-value="selectedPaths.has(entry.path)"
+            class="opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+            :class="selectedPaths.has(entry.path) ? '!opacity-100' : ''"
+            @update:model-value="
+              (_v: boolean, _ev?: MouseEvent) => emit('toggle-select', entry.path)
+            "
+          />
         </td>
         <td class="px-xs py-xs truncate max-w-0">
           <span class="text-on-surface" :title="title">
