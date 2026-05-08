@@ -8,9 +8,9 @@ Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `
 src/                  Vue 3 frontend (api.ts, types.ts mirrors Rust)
 src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
 xtask/src/            build / release / android orchestration
-scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1
+scripts/              cdp.mjs, error-monitor.mjs, dev-bootstrap.ps1, diarize.py, install-*.ps1
 docs/                 android · agents · dev-loop · release · rust-build-speed
-.pi/agents/           coder · committer · runner · triage · scout · researcher · docs-updater
+.pi/agents/           investigate · edit · ship · runner
 ```
 
 ## Commands
@@ -22,7 +22,7 @@ just check               pre-release gate (fmt + clippy + vue-tsc + tests + mach
 just release-stable      check + bump + tag + build + publish
 ```
 
-`just --list` for the rest. Pre-commit hook (`.githooks/pre-commit`) is scoped to staged files and mandatory; `--no-verify` is forbidden.
+`just --list` for the rest. Pre-commit hook (`.githooks/pre-commit`) is mandatory; `--no-verify` is forbidden.
 
 ## Conventions
 
@@ -33,80 +33,71 @@ just release-stable      check + bump + tag + build + publish
 - No comments in code. No `sleep` in scripts; poll a real signal with timeout.
 - Conventional commits, simple British English.
 
-## Testing
+## Agent roster
 
-- Inner loop: `cargo check -p wtranscriber`, `bunx vue-tsc --noEmit`.
-- Pre-release gate: `just check` (route through `wt-triage`, never main thread).
-- Cross-platform smoke: chain `install-and-test` (30 s clip → `tmp/install-report.json` + `tmp/test-report.json`).
-- Skill `tauri-debugging` (global) covers WebView inspector, CDP, logcat, IPC. Load before any debugging session.
+Four agents, one verb each. Selection rule: _reading? writing files? writing git? touching a device?_
+
+| Agent            | Verb                   | Use for                                                                                                                                             |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wt-investigate` | answer                 | find code (`mode: map`), diagnose one failing signal (`mode: diagnose`), research the web (`mode: research`), review a staged diff (`mode: review`) |
+| `wt-edit`        | mutate                 | apply edits to source, docs, agent prompts, skills — anywhere under the repo                                                                        |
+| `wt-ship`        | gate+commit            | stage, run pre-commit hook, write conventional message, push                                                                                        |
+| `wt-runner`      | install/test on device | install + smoke-test on Win GUI, Win CLI, Android, WSL (mode-driven)                                                                                |
+
+Skill `tauri-debugging` covers WebView inspector, CDP, logcat, IPC mechanics — load before any debugging session.
 
 ## Orchestrator runbook
 
-> **Live dev invariant.** The WebView must serve live Vite assets throughout any development session.
->
-> - **Desktop**: WebView must load the Vite dev URL (e.g. `http://localhost:1420/`). Confirm via the WebView inspector; any other URL signals a stale build.
-> - **Android**: `location.href` always returns `http://tauri.localhost/` even in dev — Tauri proxies through a custom scheme. The authoritative liveness signal is `tmp/android-dev.log`: recent `connecting to 127.0.0.1:1420` / `connected to 127.0.0.1:1420` entries from `RustStdoutStderr` confirm an active session. Absent entries → restart the dev recipe.
+Main thread coordinates only: design + delegate + synthesise. Never edits source, runs `git`/`cargo`/`bun`/`just check`, or greps logs directly.
 
-Main thread coordinates only: design + delegate + synthesise. Never edits source, greps logs, runs `just check`, or commits.
+> **Live dev invariant.** The WebView must serve live Vite assets throughout any dev session.
+>
+> - **Desktop**: WebView loads `http://localhost:1420/`. Confirm via `tmp/error-monitor.log` (no `:1421 failed`).
+> - **Android**: `location.href` is always `http://tauri.localhost/` (Tauri custom scheme). The authoritative liveness signal is `tmp/android-dev.log` showing recent `connecting to 127.0.0.1:1420` from `RustStdoutStderr`. Absent → restart bootstrap.
 
 ### Bootstrap (per session)
 
-1. `git config --get core.hooksPath` must be `.githooks`. Set if not. Ensure `tmp/` exists.
-2. Ask platform if unknown (desktop / android USB / android Wi-Fi). Recipe is fixed per transport; switching mid-session strands HMR (reload via CDP first):
-   - Desktop: `just dev`. Android USB: `just android-dev`. Android Wi-Fi: `just android-dev-host`.
-   - Android: after WebView is up, `just android-debug-attach` forwards CDP `:9222`.
-3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs; when a `cmd /c` wrapper is used the wrapper PID exits immediately, so track the port-owning PID via `netstat -ano | findstr :1420`. Write `tmp/_platform` as `android` or `desktop`. **Android only**: additionally spawn `adb logcat -c` then `adb logcat -b main,events *:W RustStdoutStderr:V Tauri:V chromium:V am_crash:V am_proc_died:V am_kill:V` → `tmp/logcat.log` as a detached process; record its PID (see `docs/dev-loop.md` §Live signals on Android).
-4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed` **(desktop)** / `tmp/logcat.log` free of `am_kill`/`am_proc_died` **(Android)**, no `Replacing devUrl host` substitution to a non-loopback address, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
-5. **Android only**: after `just android-debug-attach`, grep `tmp/android-dev.log` for `connecting to 127.0.0.1:1420` entries within the last 60 seconds. Absent → bootstrap FAILED, restart the dev recipe from step 3. Record the log evidence in the checklist.
-6. Report bootstrap as a checklist.
+Single command. The script handles hooks path, detached process spawning, port-owner tracking (not the `cmd /c` wrapper PID), `adb reverse`, logcat, and CDP forwarding:
 
-Never instruct the user to run a dev command; the orchestrator launches it.
+```
+powershell -ExecutionPolicy Bypass -File scripts/dev-bootstrap.ps1 -Platform <desktop|android-usb|android-host>
+```
+
+Exits non-zero if Vite never binds `:1420` or (on Android) the WebView never connects within 180 s. Writes `tmp/_platform`, `tmp/_pids.json`. After it returns OK, dispatch `wt-investigate` `mode: diagnose` on the latest log artefact to confirm a clean start before doing real work.
 
 ### Per-turn
 
-**Desktop**: diff `tmp/error-monitor.log` line count. **Android**: diff `tmp/logcat.log` line count. New lines → `wt-triage` with excerpt. Then Decision table.
-
-**Android — after every edit batch**: JS edit: confirm `tmp/android-dev.log` contains `[vite] hmr update` for the touched file since the edit timestamp. Rust edit: confirm `just android-dev` was restarted and `tmp/android-dev.log` shows a fresh `connecting to 127.0.0.1:1420` entry.
+- **Desktop**: line-count diff `tmp/error-monitor.log`. New lines → `wt-investigate` `mode: diagnose` with excerpt.
+- **Android**: line-count diff `tmp/logcat.log`. New `am_kill`/`am_proc_died`/`am_crash` lines → `wt-investigate` with excerpt.
+- After every edit batch on Android: JS edit must produce `[vite] hmr update` in `tmp/android-dev.log`; Rust/native edit requires restarting bootstrap (`just android-install` is forbidden — it ships a bundled-assets APK and strands HMR).
 
 ### Decision table
 
-| Signal                                                                                 | Action                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| New line in `tmp/error-monitor.log` (desktop)                                          | `wt-triage` with excerpt                                                                                                                                                                                                                                                                    |
-| New line in `tmp/logcat.log` (Android) — incl. `am_kill` / `am_proc_died` / `am_crash` | `wt-triage` with logcat excerpt                                                                                                                                                                                                                                                             |
-| Source edit needed                                                                     | `wt-coder`                                                                                                                                                                                                                                                                                  |
-| Edits applied, gate not hit                                                            | `wt-committer`                                                                                                                                                                                                                                                                              |
-| Need to find where X lives in repo                                                     | `wt-scout`                                                                                                                                                                                                                                                                                  |
-| Need a built artifact                                                                  | `wt-runner` (mode: install)                                                                                                                                                                                                                                                                 |
-| Rust/native edit during live dev (Android)                                             | Kill dev session; re-run `just android-dev` (rebuilds + reinstalls the debug-dev APK that loads the Vite dev URL). Never `just android-install` / `just android-build` / `wt-runner` install — all replace the dev APK with a bundled-assets build and silently strand subsequent JS edits. |
-| JS-only edit on Android                                                                | No reinstall. Verify: `tmp/android-dev.log` shows `[vite] hmr update /src/…` for the touched file since the edit timestamp.                                                                                                                                                                 |
-| Specific in-app misbehaviour or gate failure (single signal)                           | `wt-triage`                                                                                                                                                                                                                                                                                 |
-| Continuous live-signal watch (desktop)                                                 | `scripts/observer.mjs` running; poll `tmp/observer-latest.json`. **Desktop-only — blind on Android.**                                                                                                                                                                                       |
-| Continuous live-signal watch (Android)                                                 | tail `tmp/logcat.log` (detached `adb logcat` spawned at bootstrap); `tmp/observer-latest.json` counter is stale/blind on Android                                                                                                                                                            |
-| 30 s-clip smoke after install                                                          | chain `install-and-test`                                                                                                                                                                                                                                                                    |
-| Commit / ship                                                                          | `wt-committer`                                                                                                                                                                                                                                                                              |
-| Release                                                                                | `wt-committer` → `just release-stable` artifacts via `wt-runner`                                                                                                                                                                                                                            |
-| External knowledge needed                                                              | `wt-researcher`                                                                                                                                                                                                                                                                             |
-| Recurring agent failure or workflow drift                                              | `wt-docs-updater` → `wt-committer` as `chore(agents): tighten <name>`                                                                                                                                                                                                                       |
+| Need                                               | Dispatch                                                                          |
+| -------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Find/diagnose/research/review                      | `wt-investigate` (pick mode)                                                      |
+| Edit any project file                              | `wt-edit`                                                                         |
+| Commit + push                                      | `wt-ship`                                                                         |
+| Build artefact, install, or smoke-test on a device | `wt-runner`                                                                       |
+| 30 s smoke after install                           | chain `install-and-test`                                                          |
+| Release                                            | `wt-ship` → `just release-stable` artefacts via `wt-runner`                       |
+| Recurring agent/workflow drift                     | `wt-edit` on `.pi/agents/**` or `AGENTS.md`, then `wt-ship` as `chore(agents): …` |
 
 ### Coordination
 
-- **Fresh context per worker** (`defaultContext: fresh`). Orchestrator carries project state; workers re-derive.
-- **File-signal contract** under `tmp/`: every worker writes a JSON or `.md` artifact (`coder-report`, `last-commit`, `install-report`, `test-report`, `triage-<topic>`, `scout-<slug>`, `research-<slug>`, `docs-update`, `error-monitor.log`). Workers never read each other's stdout.
-- **Chain when dependent, parallel when independent.** Chains live in `.pi/chains/`. Current: `install-and-test`. For cross-file work the orchestrator may chain `wt-scout → wt-coder → wt-committer`; skip any link not warranted.
-- Cross-file refactor planning is orchestrator's job (per runbook). Pre-commit semantic review: dispatch `wt-triage` with `mode: review` on the staged diff.
+- Fresh context per worker (`defaultContext: fresh`). Orchestrator carries project state; workers re-derive from logs and `git log`.
+- File-signal contract under `tmp/`: every worker writes an artefact (`investigate-<slug>.md`, `edit-report.json`, `last-commit.json`, `install-report.json`, `test-report.json`). Workers never read each other's stdout, never call each other.
+- Chain when dependent, parallel when independent. Current chain: `install-and-test`.
 
 ### Hard prohibitions
 
-- No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread; poll `tmp/observer-latest.json` (desktop) or `tmp/logcat.log` line-count (Android), or dispatch `wt-triage`.
-- On Android, do not use `tmp/observer-latest.json` or `tmp/error-monitor.log` as the live-signal source; they are blind to OOM and process-death events. Use `tmp/logcat.log` (or dispatch `wt-triage` with a logcat tail) instead.
-- Never run `just android-install`, `just android-build`, or `wt-runner` install mode during a dev session. All three replace the debug-dev APK with a bundled-assets build that ignores Vite. The only Android-side reinstall path during dev is restarting `just android-dev`.
-- Do not declare a JS change live on Android without `tmp/android-dev.log` showing `[vite] hmr update` for the touched file. Do not declare a Rust change live without a fresh `just android-dev` start confirmed by a new `connecting to 127.0.0.1:1420` entry in `tmp/android-dev.log`.
-- No agent-to-agent calls; signal via `tmp/` files.
-- No raw log dumps to the user; relay `VERDICT / EVIDENCE / FIX` only.
+- No `git`/`cargo`/`bun`/`just check`/`adb`/`tail`/`grep` from the main thread. Poll `tmp/_pids.json` + `tmp/logcat.log` line-count, or dispatch `wt-investigate`.
+- Never run `just android-install`, `just android-build`, or `wt-runner install` during a dev session — all replace the debug-dev APK and silently strand HMR. The only Android-side reinstall path during dev is re-running bootstrap.
+- Do not declare an Android JS change live without `[vite] hmr update` for the touched file in `tmp/android-dev.log`. Do not declare a Rust change live without a fresh `connecting to 127.0.0.1:1420` after restart.
+- No agent-to-agent calls. No raw log dumps to the user — relay `VERDICT / EVIDENCE / FIX` only.
 
 ### Self-repair
 
-Tests red or build broken → re-delegate with a sharper spec. Agent misbehaves (missing contract block, raw-log dump, gate bypass, agent-to-agent call, scope creep) → `wt-docs-updater` patches the smallest closing rule. Two failed repair attempts → escalate to the user.
+Worker fails contract (no VERDICT block, raw log dump, gate bypass, scope creep) → re-delegate with sharper spec. Recurring → `wt-edit` patches the smallest closing rule in `.pi/agents/**` or `AGENTS.md`, then `wt-ship`. Two failed repair attempts → escalate to user.
 
-Agent quality bar: `.pi/agents/wt-docs-updater.md`.
+Agent quality bar (enforced when editing `.pi/agents/**`): one job per agent named in first sentence of `description`; frontmatter complete (`tools`, `systemPromptMode: replace`, `inheritProjectContext: true`, `inheritSkills: false`, `defaultContext: fresh`); output contract before description of work; body ≤ ~60 lines; imperative voice; no restating rules already in this file.

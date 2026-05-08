@@ -24,6 +24,8 @@ steps:
       Reference text from a known-good Windows CLI run is in tmp/test-30s_sherpa-whisper-turbo_*.json - you may compare against it.
 
       Write tmp/test-report.json and print a summary plus overall PASS/FAIL verdict.
+
+      Failures: do not edit code or commit. Stop with FIX block; orchestrator routes to wt-investigate then wt-edit then wt-ship.
     output: false
 ---
 
