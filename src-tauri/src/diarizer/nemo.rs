@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -18,6 +18,7 @@ use crate::{
     diarizer::{Backend, Progress, Segment},
     error::{Error, Result},
     paths,
+    process::quiet_command,
 };
 
 #[derive(Debug, Clone)]
@@ -65,7 +66,7 @@ impl Backend for NemoDiarizer {
         }
         args.push(wav.display().to_string());
 
-        let mut cmd = build_command(&self.python);
+        let mut cmd = quiet_command(self.python.as_os_str());
         cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn()?;
@@ -222,20 +223,6 @@ fn resolve_script() -> Result<PathBuf> {
         .into_iter()
         .find(|p| p.exists())
         .ok_or_else(|| Error::Config("diarize.py not found for NeMo Sortformer diarization".into()))
-}
-
-#[cfg(windows)]
-fn build_command(bin: &Path) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new(bin);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn build_command(bin: &Path) -> Command {
-    Command::new(bin)
 }
 
 #[cfg(test)]

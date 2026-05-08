@@ -7,7 +7,7 @@
 use std::{
     io::BufReader,
     path::Path,
-    process::{Child, Command, Stdio},
+    process::{Child, Stdio},
     sync::Arc,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -18,6 +18,7 @@ use crate::{
     audio::find_ffmpeg,
     audio_toolkit::constants::WHISPER_SAMPLE_RATE,
     error::{Error, Result},
+    process::quiet_command,
 };
 
 enum Backend {
@@ -137,7 +138,7 @@ pub fn ffmpeg_stream(
     let Some(ffmpeg) = find_ffmpeg() else {
         return symphonia_stream(input, start_ms, end_ms, cancel);
     };
-    let mut cmd = build_command(&ffmpeg);
+    let mut cmd = quiet_command(ffmpeg.as_os_str());
     if start_ms > 0 {
         cmd.arg("-ss").arg(format_ms(start_ms));
     }
@@ -263,7 +264,7 @@ where
 
 #[allow(dead_code)]
 pub fn collect_to_wav(input: &Path, output: &Path, cancel: Arc<AtomicBool>) -> Result<u64> {
-    use crate::audio_toolkit::wav::write_pcm16_wav;
+    use crate::audio::write_pcm16_wav;
     let mut src = ffmpeg_stream(input, 0, None, cancel)?;
     let mut all = Vec::<f32>::new();
     let mut buf = vec![0.0_f32; 16_000];
@@ -282,18 +283,4 @@ fn format_ms(ms: u64) -> String {
     let secs = ms / 1000;
     let frac = ms % 1000;
     format!("{secs}.{frac:03}")
-}
-
-#[cfg(windows)]
-fn build_command(bin: &Path) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new(bin);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn build_command(bin: &Path) -> Command {
-    Command::new(bin)
 }

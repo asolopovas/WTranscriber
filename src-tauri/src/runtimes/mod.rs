@@ -3,12 +3,12 @@ pub mod inproc_cuda;
 pub mod llama;
 pub mod sherpa;
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    process::quiet_command,
+};
 
 pub use cudnn::{
     ensure as ensure_cudnn, is_installed as cudnn_installed, supported as cudnn_supported,
@@ -37,7 +37,7 @@ pub fn extract(archive: &Path, dest: &Path) -> Result<()> {
         )));
     };
 
-    let status = build_tar_command()
+    let status = quiet_command("tar")
         .arg(flag)
         .arg(archive)
         .arg("-C")
@@ -61,31 +61,9 @@ fn ext_eq(name: &str, ext: &str) -> bool {
 }
 
 pub fn locate_bin_dir(root: &Path, target: &str) -> Option<PathBuf> {
-    walk_for_file(root, target, 5).and_then(|p| p.parent().map(Path::to_path_buf))
-}
-
-pub fn walk_for_file(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
-    if depth == 0 {
-        return None;
-    }
-    let entries = std::fs::read_dir(dir).ok()?;
-    let mut subdirs = Vec::new();
-    for e in entries.flatten() {
-        let path = e.path();
-        let Ok(ty) = e.file_type() else { continue };
-        if ty.is_file() && e.file_name() == target {
-            return Some(path);
-        }
-        if ty.is_dir() {
-            subdirs.push(path);
-        }
-    }
-    for s in subdirs {
-        if let Some(p) = walk_for_file(&s, target, depth - 1) {
-            return Some(p);
-        }
-    }
-    None
+    let target_os = std::ffi::OsStr::new(target);
+    crate::process::walk_for_file(root, 5, |p| p.is_file() && p.file_name() == Some(target_os))
+        .and_then(|p| p.parent().map(Path::to_path_buf))
 }
 
 pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
@@ -114,18 +92,4 @@ pub fn move_or_copy_dir(src: &Path, dst: &Path) -> Result<()> {
         copy_dir_all(src, dst)?;
     }
     Ok(())
-}
-
-#[cfg(windows)]
-fn build_tar_command() -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new("tar");
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn build_tar_command() -> Command {
-    Command::new("tar")
 }

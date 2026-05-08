@@ -6,11 +6,13 @@
 
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     sync::OnceLock,
 };
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    process::quiet_command,
+};
 
 static FFMPEG: OnceLock<Option<PathBuf>> = OnceLock::new();
 static FFPROBE: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -76,7 +78,7 @@ fn find_ffmpeg_windows() -> Option<PathBuf> {
 
 pub fn probe_duration_ms(path: &Path) -> Option<u64> {
     if let Some(probe) = find_ffprobe() {
-        let out = quiet_command(&probe)
+        let out = quiet_command(probe.as_os_str())
             .args([
                 "-v",
                 "error",
@@ -97,7 +99,11 @@ pub fn probe_duration_ms(path: &Path) -> Option<u64> {
         }
     }
     let ffmpeg = find_ffmpeg()?;
-    let out = quiet_command(&ffmpeg).arg("-i").arg(path).output().ok()?;
+    let out = quiet_command(ffmpeg.as_os_str())
+        .arg("-i")
+        .arg(path)
+        .output()
+        .ok()?;
     parse_ffmpeg_duration(&String::from_utf8_lossy(&out.stderr))
 }
 
@@ -113,7 +119,7 @@ fn parse_ffmpeg_duration(stderr: &str) -> Option<u64> {
 }
 
 pub fn run(ffmpeg: &Path, input: &Path, output: &Path) -> Result<()> {
-    let out = quiet_command(ffmpeg)
+    let out = quiet_command(ffmpeg.as_os_str())
         .args(["-loglevel", "error", "-y", "-i"])
         .arg(input)
         .args([
@@ -133,18 +139,4 @@ pub fn run(ffmpeg: &Path, input: &Path, output: &Path) -> Result<()> {
         return Err(Error::Transcribe(format!("ffmpeg failed: {msg}")));
     }
     Ok(())
-}
-
-#[cfg(windows)]
-fn quiet_command(program: &Path) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new(program);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn quiet_command(program: &Path) -> Command {
-    Command::new(program)
 }

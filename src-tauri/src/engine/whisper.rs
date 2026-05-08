@@ -1,12 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::{
     config::Config,
-    engine::{
-        chunk::{ChunkProcessor, run_chunked, segments_from_sherpa},
-        runtime,
-        sherpa::{find_binary, parse_json, run_cmd},
-    },
+    engine::{chunk::run_chunked, processor::Processor, runtime, sherpa::find_binary},
     error::{Error, Result},
     transcriber::Segment,
 };
@@ -18,26 +14,21 @@ struct WhisperPaths {
     tokens: PathBuf,
 }
 
+fn build_paths(dir: &std::path::Path, prefix: &str) -> Option<WhisperPaths> {
+    let p = WhisperPaths {
+        encoder: dir.join(format!("{prefix}encoder.int8.onnx")),
+        decoder: dir.join(format!("{prefix}decoder.int8.onnx")),
+        tokens: dir.join(format!("{prefix}tokens.txt")),
+    };
+    (p.encoder.exists() && p.decoder.exists() && p.tokens.exists()).then_some(p)
+}
+
 fn resolve_paths(model_id: &str) -> Result<WhisperPaths> {
     let dir = crate::models::model_dir(model_id)?;
-    let stems: &[&str] = &[
-        model_id,
-        model_id.strip_prefix("sherpa-whisper-").unwrap_or(model_id),
-        "",
-    ];
-    for stem in stems {
-        let prefix = if stem.is_empty() {
-            String::new()
-        } else {
-            format!("{stem}-")
-        };
-        let c = WhisperPaths {
-            encoder: dir.join(format!("{prefix}encoder.int8.onnx")),
-            decoder: dir.join(format!("{prefix}decoder.int8.onnx")),
-            tokens: dir.join(format!("{prefix}tokens.txt")),
-        };
-        if c.encoder.exists() && c.decoder.exists() && c.tokens.exists() {
-            return Ok(c);
+    let bare = model_id.strip_prefix("sherpa-whisper-").unwrap_or(model_id);
+    for prefix in [&format!("{model_id}-"), &format!("{bare}-"), ""] {
+        if let Some(p) = build_paths(&dir, prefix) {
+            return Ok(p);
         }
     }
     Err(Error::Transcribe(format!(
@@ -51,46 +42,6 @@ fn language_arg(config: &Config) -> Option<String> {
     (!lang.is_empty() && lang != "auto").then(|| lang.to_owned())
 }
 
-struct Processor<'a> {
-    bin: PathBuf,
-    paths: WhisperPaths,
-    config: &'a Config,
-    language: Option<String>,
-    cancelled: &'a dyn Fn() -> bool,
-}
-
-impl ChunkProcessor for Processor<'_> {
-    fn process(&mut self, wav: &Path, chunk_dur_sec: f64) -> Result<Vec<Segment>> {
-        let args = self.args(wav);
-        let (stdout, _stderr, _) = run_cmd(&self.bin, &args, self.cancelled)?;
-        Ok(parse_json(&stdout)
-            .map(|r| segments_from_sherpa(&r, chunk_dur_sec))
-            .unwrap_or_default())
-    }
-
-    fn is_cancelled(&self) -> bool {
-        (self.cancelled)()
-    }
-}
-
-impl Processor<'_> {
-    fn args(&self, wav: &Path) -> Vec<String> {
-        let mut a = vec![
-            format!("--whisper-encoder={}", self.paths.encoder.display()),
-            format!("--whisper-decoder={}", self.paths.decoder.display()),
-            format!("--tokens={}", self.paths.tokens.display()),
-            format!("--num-threads={}", runtime::threads(self.config)),
-            format!("--provider={}", runtime::provider(self.config).as_arg()),
-            "--model-type=whisper".into(),
-        ];
-        if let Some(lang) = self.language.as_deref() {
-            a.push(format!("--whisper-language={lang}"));
-        }
-        a.push(wav.display().to_string());
-        a
-    }
-}
-
 pub fn run(
     samples: &[f32],
     audio_dur_sec: f64,
@@ -101,12 +52,25 @@ pub fn run(
     let bin = find_binary()?;
     let paths = resolve_paths(&config.model)?;
     let language = language_arg(config);
+    let language_for_args = language.clone();
 
     let processor = Processor {
         bin,
-        paths,
-        config,
-        language: language.clone(),
+        build_args: Box::new(move |wav| {
+            let mut a = vec![
+                format!("--whisper-encoder={}", paths.encoder.display()),
+                format!("--whisper-decoder={}", paths.decoder.display()),
+                format!("--tokens={}", paths.tokens.display()),
+                format!("--num-threads={}", runtime::threads(config)),
+                format!("--provider={}", runtime::provider(config).as_arg()),
+                "--model-type=whisper".into(),
+            ];
+            if let Some(lang) = language_for_args.as_deref() {
+                a.push(format!("--whisper-language={lang}"));
+            }
+            a.push(wav.display().to_string());
+            a
+        }),
         cancelled,
     };
     let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;

@@ -1,13 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::{
     config::Config,
     engine::{
-        chunk::{ChunkProcessor, run_single, segments_from_sherpa},
+        chunk::run_single,
+        processor::{Processor, resolve_variant},
         runtime,
-        sherpa::{find_binary, parse_json, run_cmd},
+        sherpa::find_binary,
     },
-    error::{Error, Result},
+    error::Result,
     transcriber::Segment,
 };
 
@@ -18,13 +19,6 @@ pub enum Kind {
 }
 
 impl Kind {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Zipformer => "zipformer",
-            Self::Parakeet => "parakeet",
-        }
-    }
-
     const fn model_type(self) -> Option<&'static str> {
         match self {
             Self::Zipformer => None,
@@ -41,67 +35,26 @@ struct Paths {
     tokens: PathBuf,
 }
 
+fn build_paths(dir: &std::path::Path, suffix: &str) -> Option<Paths> {
+    let p = Paths {
+        encoder: dir.join(format!("encoder{suffix}.onnx")),
+        decoder: dir.join(format!("decoder{suffix}.onnx")),
+        joiner: dir.join(format!("joiner{suffix}.onnx")),
+        tokens: dir.join("tokens.txt"),
+    };
+    (p.encoder.exists() && p.decoder.exists() && p.joiner.exists() && p.tokens.exists())
+        .then_some(p)
+}
+
 fn resolve(model_id: &str) -> Result<Paths> {
-    let dir = crate::models::model_dir(model_id)?;
-    for variant in [
-        ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx"),
-        ("encoder.onnx", "decoder.onnx", "joiner.onnx"),
-    ] {
-        let p = Paths {
-            encoder: dir.join(variant.0),
-            decoder: dir.join(variant.1),
-            joiner: dir.join(variant.2),
-            tokens: dir.join("tokens.txt"),
-        };
-        if p.encoder.exists() && p.decoder.exists() && p.joiner.exists() && p.tokens.exists() {
-            return Ok(p);
-        }
-    }
-    Err(Error::Transcribe(format!(
-        "transducer model files missing in {}",
-        dir.display()
-    )))
-}
-
-struct Processor<'a> {
-    bin: PathBuf,
-    paths: Paths,
-    config: &'a Config,
-    kind: Kind,
-    cancelled: &'a dyn Fn() -> bool,
-}
-
-impl ChunkProcessor for Processor<'_> {
-    fn process(&mut self, wav: &Path, chunk_dur_sec: f64) -> Result<Vec<Segment>> {
-        let args = self.args(wav);
-        let (stdout, _, _) = run_cmd(&self.bin, &args, self.cancelled)?;
-        Ok(parse_json(&stdout)
-            .map(|r| segments_from_sherpa(&r, chunk_dur_sec))
-            .unwrap_or_default())
-    }
-
-    fn is_cancelled(&self) -> bool {
-        (self.cancelled)()
-    }
-}
-
-impl Processor<'_> {
-    fn args(&self, wav: &Path) -> Vec<String> {
-        let mut a = vec![
-            format!("--tokens={}", self.paths.tokens.display()),
-            format!("--encoder={}", self.paths.encoder.display()),
-            format!("--decoder={}", self.paths.decoder.display()),
-            format!("--joiner={}", self.paths.joiner.display()),
-            format!("--num-threads={}", runtime::threads(self.config)),
-            "--decoding-method=greedy_search".into(),
-            format!("--provider={}", runtime::provider(self.config).as_arg()),
-        ];
-        if let Some(mt) = self.kind.model_type() {
-            a.push(format!("--model-type={mt}"));
-        }
-        a.push(wav.display().to_string());
-        a
-    }
+    resolve_variant(
+        model_id,
+        "transducer",
+        [
+            |dir: &std::path::Path| build_paths(dir, ".int8"),
+            |dir: &std::path::Path| build_paths(dir, ""),
+        ],
+    )
 }
 
 pub fn run(
@@ -116,12 +69,24 @@ pub fn run(
     let paths = resolve(&config.model)?;
     let processor = Processor {
         bin,
-        paths,
-        config,
-        kind,
+        build_args: Box::new(move |wav| {
+            let mut a = vec![
+                format!("--tokens={}", paths.tokens.display()),
+                format!("--encoder={}", paths.encoder.display()),
+                format!("--decoder={}", paths.decoder.display()),
+                format!("--joiner={}", paths.joiner.display()),
+                format!("--num-threads={}", runtime::threads(config)),
+                "--decoding-method=greedy_search".into(),
+                format!("--provider={}", runtime::provider(config).as_arg()),
+            ];
+            if let Some(mt) = kind.model_type() {
+                a.push(format!("--model-type={mt}"));
+            }
+            a.push(wav.display().to_string());
+            a
+        }),
         cancelled,
     };
     let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
-    let _ = kind.name();
     Ok((segs, "en".into(), rtf))
 }

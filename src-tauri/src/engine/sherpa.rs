@@ -9,7 +9,10 @@ static CUDA_DISABLED: AtomicBool = AtomicBool::new(false);
 
 use serde::Deserialize;
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    process::{find_executable, quiet_command},
+};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[allow(dead_code)]
@@ -38,34 +41,14 @@ pub const fn binary_name() -> &'static str {
 
 pub fn find_binary() -> Result<PathBuf> {
     let name = binary_name();
-
-    if let Ok(env_dir) = std::env::var("WT_SHERPA_DIR") {
-        let p = Path::new(&env_dir).join(name);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-
-    if let Some(p) = crate::runtimes::sherpa::find_any(name) {
-        return Ok(p);
-    }
-
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        let p = dir.join(name);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-
-    if let Ok(p) = which::which(name) {
-        return Ok(p);
-    }
-
-    Err(Error::Transcribe(format!(
-        "{name} not found (set WT_SHERPA_DIR or install sherpa-onnx)"
-    )))
+    find_executable("WT_SHERPA_DIR", name, || {
+        crate::runtimes::sherpa::find_any(name)
+    })
+    .map_err(|_| {
+        Error::Transcribe(format!(
+            "{name} not found (set WT_SHERPA_DIR or install sherpa-onnx)"
+        ))
+    })
 }
 
 pub fn run_cmd(
@@ -177,21 +160,8 @@ fn cuda_failure_reason(stderr: &str) -> String {
     "CUDA provider failed to initialize".into()
 }
 
-#[cfg(windows)]
 fn build_command(bin: &Path) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new(bin);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    if let Some(path) = crate::runtimes::cudnn::augmented_path() {
-        cmd.env("PATH", path);
-    }
-    cmd
-}
-
-#[cfg(not(windows))]
-fn build_command(bin: &Path) -> Command {
-    let mut cmd = Command::new(bin);
+    let mut cmd = quiet_command(bin.as_os_str());
     if let Some(path) = crate::runtimes::cudnn::augmented_path() {
         cmd.env("PATH", path);
     }

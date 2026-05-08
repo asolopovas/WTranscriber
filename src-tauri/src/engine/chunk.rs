@@ -83,8 +83,8 @@ pub fn split_chunks(samples: &[f32], sec: f64) -> Vec<Chunk<'_>> {
 }
 
 fn shift(segs: &mut [Segment], start_sec: f64, end_sec: f64) {
-    let off_ms = (start_sec * 1000.0) as u64;
-    let limit_ms = (end_sec * 1000.0) as u64;
+    let off_ms = ms(start_sec);
+    let limit_ms = ms(end_sec);
     let clamp = |t: u64| (t + off_ms).clamp(off_ms, limit_ms);
     for s in segs.iter_mut() {
         s.start_ms = clamp(s.start_ms);
@@ -97,8 +97,8 @@ fn shift(segs: &mut [Segment], start_sec: f64, end_sec: f64) {
 }
 
 pub fn segments_from_sherpa(r: &super::SherpaResult, chunk_dur_sec: f64) -> Vec<Segment> {
-    if !r.tokens.is_empty() && r.tokens.len() == r.timestamps.len() {
-        return coalesce_tokens(&r.tokens, &r.timestamps, chunk_dur_sec);
+    if let Some(seg) = coalesce_segment(&r.tokens, r.timestamps.iter().copied(), chunk_dur_sec) {
+        return vec![seg];
     }
     let text = r.text.trim();
     if text.is_empty() {
@@ -107,16 +107,24 @@ pub fn segments_from_sherpa(r: &super::SherpaResult, chunk_dur_sec: f64) -> Vec<
     vec![Segment {
         text: text.to_owned(),
         start_ms: 0,
-        end_ms: (chunk_dur_sec * 1000.0) as u64,
+        end_ms: ms(chunk_dur_sec),
         tokens: Vec::new(),
     }]
 }
 
-fn coalesce_tokens(tokens: &[String], timestamps: &[f64], audio_dur_sec: f64) -> Vec<Segment> {
-    struct Word {
-        text: String,
-        start: f64,
-        end: f64,
+struct Word {
+    text: String,
+    start: f64,
+    end: f64,
+}
+
+pub fn coalesce_segment<I>(tokens: &[String], timestamps: I, audio_dur_sec: f64) -> Option<Segment>
+where
+    I: IntoIterator<Item = f64>,
+{
+    let stamps: Vec<f64> = timestamps.into_iter().collect();
+    if tokens.is_empty() || tokens.len() != stamps.len() {
+        return None;
     }
     let mut words: Vec<Word> = Vec::with_capacity(tokens.len() / 2 + 1);
     for (i, tok) in tokens.iter().enumerate() {
@@ -128,7 +136,7 @@ fn coalesce_tokens(tokens: &[String], timestamps: &[f64], audio_dur_sec: f64) ->
         if is_boundary || words.is_empty() {
             words.push(Word {
                 text: piece.to_owned(),
-                start: timestamps[i],
+                start: stamps[i],
                 end: 0.0,
             });
         } else {
@@ -136,7 +144,7 @@ fn coalesce_tokens(tokens: &[String], timestamps: &[f64], audio_dur_sec: f64) ->
         }
     }
     if words.is_empty() {
-        return Vec::new();
+        return None;
     }
     for i in 0..words.len() {
         words[i].end = if i + 1 < words.len() {
@@ -150,17 +158,21 @@ fn coalesce_tokens(tokens: &[String], timestamps: &[f64], audio_dur_sec: f64) ->
         .iter()
         .map(|w| Token {
             text: w.text.clone(),
-            start_ms: (w.start * 1000.0) as u64,
-            end_ms: (w.end * 1000.0) as u64,
+            start_ms: ms(w.start),
+            end_ms: ms(w.end),
             confidence: 0.0,
         })
         .collect();
-    vec![Segment {
+    Some(Segment {
         text: parts.join(" "),
-        start_ms: (words.first().unwrap().start * 1000.0) as u64,
-        end_ms: (words.last().unwrap().end * 1000.0) as u64,
+        start_ms: ms(words.first().unwrap().start),
+        end_ms: ms(words.last().unwrap().end),
         tokens: toks,
-    }]
+    })
+}
+
+pub const fn ms(sec: f64) -> u64 {
+    (sec * 1000.0) as u64
 }
 
 pub trait ChunkProcessor {

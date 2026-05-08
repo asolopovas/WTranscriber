@@ -11,6 +11,7 @@ mod logfile;
 mod models;
 pub mod namer;
 mod paths;
+mod process;
 mod progress;
 mod runtimes;
 

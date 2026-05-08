@@ -1,6 +1,7 @@
 mod canary;
 mod chunk;
 mod nemo_ctc;
+mod processor;
 mod recognizer;
 mod runtime;
 mod sherpa;
@@ -19,7 +20,7 @@ pub use whisper::run as run_whisper;
 use crate::{
     config::{Config, Engine},
     error::{Error, Result},
-    transcriber::{Segment, Token},
+    transcriber::Segment,
 };
 
 pub fn run(
@@ -110,16 +111,15 @@ fn run_in_process(
         let result = stream
             .get_result()
             .ok_or_else(|| Error::Transcribe("empty result from recognizer".into()))?;
-        let mut chunk_segs: Vec<Segment> = Vec::new();
-        for mut seg in build_segments(&result, chunk_dur) {
-            let offset_ms = f64_ms(ch.start_sec);
+        let mut chunk_segs = build_segments(&result, chunk_dur);
+        let offset_ms = chunk::ms(ch.start_sec);
+        for seg in &mut chunk_segs {
             seg.start_ms = seg.start_ms.saturating_add(offset_ms);
             seg.end_ms = seg.end_ms.saturating_add(offset_ms);
             for tok in &mut seg.tokens {
                 tok.start_ms = tok.start_ms.saturating_add(offset_ms);
                 tok.end_ms = tok.end_ms.saturating_add(offset_ms);
             }
-            chunk_segs.push(seg);
         }
         on_chunk(chunk_segs, ch.end_sec);
     }
@@ -141,82 +141,22 @@ fn build_segments(
     result: &sherpa_onnx::OfflineRecognizerResult,
     audio_dur_sec: f64,
 ) -> Vec<Segment> {
-    let text = result.text.trim();
-    if text.is_empty() && result.tokens.is_empty() {
-        return Vec::new();
+    let stamps = result.timestamps.as_deref().unwrap_or(&[]);
+    if let Some(seg) = chunk::coalesce_segment(
+        &result.tokens,
+        stamps.iter().copied().map(f64::from),
+        audio_dur_sec,
+    ) {
+        return vec![seg];
     }
-    let timestamps = result.timestamps.as_ref();
-    if let Some(ts) = timestamps
-        && !result.tokens.is_empty()
-        && ts.len() == result.tokens.len()
-    {
-        return vec![coalesce_word_segment(&result.tokens, ts, audio_dur_sec)];
+    let text = result.text.trim();
+    if text.is_empty() {
+        return Vec::new();
     }
     vec![Segment {
         text: text.to_owned(),
         start_ms: 0,
-        end_ms: f64_ms(audio_dur_sec),
+        end_ms: chunk::ms(audio_dur_sec),
         tokens: Vec::new(),
     }]
-}
-
-fn coalesce_word_segment(tokens: &[String], timestamps: &[f32], audio_dur_sec: f64) -> Segment {
-    struct Word {
-        text: String,
-        start: f64,
-        end: f64,
-    }
-    let mut words: Vec<Word> = Vec::with_capacity(tokens.len() / 2 + 1);
-    for (i, tok) in tokens.iter().enumerate() {
-        if tok.is_empty() {
-            continue;
-        }
-        let is_boundary = i == 0 || tok.starts_with(' ');
-        let piece = tok.strip_prefix(' ').unwrap_or(tok);
-        if is_boundary || words.is_empty() {
-            words.push(Word {
-                text: piece.to_owned(),
-                start: f64::from(timestamps[i]),
-                end: 0.0,
-            });
-        } else {
-            words.last_mut().unwrap().text.push_str(piece);
-        }
-    }
-    if words.is_empty() {
-        return Segment {
-            text: String::new(),
-            start_ms: 0,
-            end_ms: f64_ms(audio_dur_sec),
-            tokens: Vec::new(),
-        };
-    }
-    for i in 0..words.len() {
-        words[i].end = if i + 1 < words.len() {
-            words[i + 1].start
-        } else {
-            audio_dur_sec
-        };
-    }
-    let parts: Vec<&str> = words.iter().map(|w| w.text.as_str()).collect();
-    let toks: Vec<Token> = words
-        .iter()
-        .map(|w| Token {
-            text: w.text.clone(),
-            start_ms: f64_ms(w.start),
-            end_ms: f64_ms(w.end),
-            confidence: 0.0,
-        })
-        .collect();
-    Segment {
-        text: parts.join(" "),
-        start_ms: f64_ms(words.first().unwrap().start),
-        end_ms: f64_ms(words.last().unwrap().end),
-        tokens: toks,
-    }
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn f64_ms(sec: f64) -> u64 {
-    (sec * 1000.0) as u64
 }

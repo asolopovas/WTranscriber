@@ -4,6 +4,7 @@ use crate::{
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
+    process::quiet_command,
     runtimes::extract,
 };
 
@@ -173,7 +174,7 @@ fn persist_user_path(bin: &std::path::Path) -> Result<bool> {
     } else {
         format!("{current};{bin_str}")
     };
-    let status = build_reg_command()
+    let status = quiet_command("reg")
         .args([
             "add",
             "HKCU\\Environment",
@@ -201,7 +202,7 @@ fn persist_user_path(_bin: &std::path::Path) -> Result<bool> {
 
 #[cfg(windows)]
 fn read_user_path() -> Option<String> {
-    let out = build_reg_command()
+    let out = quiet_command("reg")
         .args(["query", "HKCU\\Environment", "/v", "Path"])
         .output()
         .ok()?;
@@ -227,56 +228,25 @@ fn read_user_path() -> Option<String> {
 }
 
 #[cfg(windows)]
-fn build_reg_command() -> std::process::Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = std::process::Command::new("reg");
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(windows)]
 fn broadcast_settings_change() {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let _ = std::process::Command::new("powershell.exe")
+    let _ = quiet_command("powershell.exe")
         .args([
             "-NoLogo",
             "-NoProfile",
             "-Command",
             "Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition '[DllImport(\"user32.dll\", SetLastError=true)]public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out System.UIntPtr lpdwResult);'; $r=[System.UIntPtr]::Zero; [void][Win32.NativeMethods]::SendMessageTimeout([System.IntPtr]0xffff, 0x1A, [System.UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$r)",
         ])
-        .creation_flags(CREATE_NO_WINDOW)
         .status();
 }
 
 fn locate_archive_root(root: &std::path::Path) -> Option<PathBuf> {
-    walk(root, 5)
-}
-
-fn walk(dir: &std::path::Path, depth: usize) -> Option<PathBuf> {
-    if depth == 0 {
-        return None;
-    }
-    let entries = std::fs::read_dir(dir).ok()?;
-    let mut subdirs = Vec::new();
-    for e in entries.flatten() {
-        let path = e.path();
-        let Ok(ty) = e.file_type() else { continue };
-        if ty.is_dir() {
-            let bin = path.join("bin");
-            if bin.join(target_dll()).exists() || bin.join("x64").join(target_dll()).exists() {
-                return Some(path);
-            }
-            subdirs.push(path);
+    crate::process::walk_for_file(root, 5, |p| {
+        if !p.is_dir() {
+            return false;
         }
-    }
-    for s in subdirs {
-        if let Some(p) = walk(&s, depth - 1) {
-            return Some(p);
-        }
-    }
-    None
+        let bin = p.join("bin");
+        bin.join(target_dll()).exists() || bin.join("x64").join(target_dll()).exists()
+    })
 }
 
 fn flatten_x64(dir: &std::path::Path) {

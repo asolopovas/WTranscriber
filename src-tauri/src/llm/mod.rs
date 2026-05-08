@@ -1,13 +1,13 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use crate::{
     error::{Error, Result},
     models::{Family, by_family, paths_for},
     paths,
+    process::{find_executable, quiet_command},
 };
 
 #[derive(Debug, Clone)]
@@ -35,29 +35,11 @@ const fn binary_name() -> &'static str {
 
 fn find_binary() -> Result<PathBuf> {
     let name = binary_name();
-    if let Ok(env_dir) = std::env::var("WT_LLM_DIR") {
-        let p = Path::new(&env_dir).join(name);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-    if let Some(p) = crate::runtimes::llama::find() {
-        return Ok(p);
-    }
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        let p = dir.join(name);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
-    if let Ok(p) = which::which(name) {
-        return Ok(p);
-    }
-    Err(Error::Transcribe(format!(
-        "{name} not found (set WT_LLM_DIR or install llama.cpp)"
-    )))
+    find_executable("WT_LLM_DIR", name, crate::runtimes::llama::find).map_err(|_| {
+        Error::Transcribe(format!(
+            "{name} not found (set WT_LLM_DIR or install llama.cpp)"
+        ))
+    })
 }
 
 fn first_installed_llm() -> Option<PathBuf> {
@@ -147,7 +129,7 @@ impl Runner {
         temp: f32,
         cpu_only: bool,
     ) -> Result<String> {
-        let mut cmd = build_command(&self.binary);
+        let mut cmd = quiet_command(self.binary.as_os_str());
         cmd.arg("-m")
             .arg(&self.model)
             .arg("-f")
@@ -187,20 +169,6 @@ fn write_temp(prefix: &str, suffix: &str, content: &str) -> Result<PathBuf> {
     let mut file = std::fs::File::create(&path)?;
     file.write_all(content.as_bytes())?;
     Ok(path)
-}
-
-#[cfg(windows)]
-fn build_command(bin: &Path) -> Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut cmd = Command::new(bin);
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd
-}
-
-#[cfg(not(windows))]
-fn build_command(bin: &Path) -> Command {
-    Command::new(bin)
 }
 
 pub fn last_balanced_json(s: &str) -> Option<String> {

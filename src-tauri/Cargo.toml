@@ -52,7 +52,6 @@ regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
-hound = "3.5"
 rubato = "0.16"
 symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }

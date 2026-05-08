@@ -1,13 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::{
     config::Config,
     engine::{
-        chunk::{ChunkProcessor, run_single, segments_from_sherpa},
+        chunk::run_single,
+        processor::{Processor, resolve_variant},
         runtime,
-        sherpa::{find_binary, parse_json, run_cmd},
+        sherpa::find_binary,
     },
-    error::{Error, Result},
+    error::Result,
     transcriber::Segment,
 };
 
@@ -17,55 +18,23 @@ struct Paths {
     tokens: PathBuf,
 }
 
+fn build_paths(dir: &std::path::Path, model: &str) -> Option<Paths> {
+    let p = Paths {
+        model: dir.join(model),
+        tokens: dir.join("tokens.txt"),
+    };
+    (p.model.exists() && p.tokens.exists()).then_some(p)
+}
+
 fn resolve(model_id: &str) -> Result<Paths> {
-    let dir = crate::models::model_dir(model_id)?;
-    for m in ["model.int8.onnx", "model.onnx"] {
-        let p = Paths {
-            model: dir.join(m),
-            tokens: dir.join("tokens.txt"),
-        };
-        if p.model.exists() && p.tokens.exists() {
-            return Ok(p);
-        }
-    }
-    Err(Error::Transcribe(format!(
-        "nemo-ctc model files missing in {}",
-        dir.display()
-    )))
-}
-
-struct Processor<'a> {
-    bin: PathBuf,
-    paths: Paths,
-    config: &'a Config,
-    cancelled: &'a dyn Fn() -> bool,
-}
-
-impl ChunkProcessor for Processor<'_> {
-    fn process(&mut self, wav: &Path, chunk_dur_sec: f64) -> Result<Vec<Segment>> {
-        let args = self.args(wav);
-        let (stdout, _, _) = run_cmd(&self.bin, &args, self.cancelled)?;
-        Ok(parse_json(&stdout)
-            .map(|r| segments_from_sherpa(&r, chunk_dur_sec))
-            .unwrap_or_default())
-    }
-
-    fn is_cancelled(&self) -> bool {
-        (self.cancelled)()
-    }
-}
-
-impl Processor<'_> {
-    fn args(&self, wav: &Path) -> Vec<String> {
-        vec![
-            format!("--nemo-ctc-model={}", self.paths.model.display()),
-            format!("--tokens={}", self.paths.tokens.display()),
-            format!("--num-threads={}", runtime::threads(self.config)),
-            format!("--provider={}", runtime::provider(self.config).as_arg()),
-            "--model-type=nemo_ctc".into(),
-            wav.display().to_string(),
-        ]
-    }
+    resolve_variant(
+        model_id,
+        "nemo-ctc",
+        [
+            |dir: &std::path::Path| build_paths(dir, "model.int8.onnx"),
+            |dir: &std::path::Path| build_paths(dir, "model.onnx"),
+        ],
+    )
 }
 
 pub fn run(
@@ -79,8 +48,16 @@ pub fn run(
     let paths = resolve(&config.model)?;
     let processor = Processor {
         bin,
-        paths,
-        config,
+        build_args: Box::new(move |wav| {
+            vec![
+                format!("--nemo-ctc-model={}", paths.model.display()),
+                format!("--tokens={}", paths.tokens.display()),
+                format!("--num-threads={}", runtime::threads(config)),
+                format!("--provider={}", runtime::provider(config).as_arg()),
+                "--model-type=nemo_ctc".into(),
+                wav.display().to_string(),
+            ]
+        }),
         cancelled,
     };
     let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
