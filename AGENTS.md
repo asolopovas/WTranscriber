@@ -60,7 +60,15 @@ just release-stable     check + bump + tag + build + publish
 ## Android quick refs
 
 - HMR design loop: see `docs/android.md` section "Live UI dev".
-- `just android-debug-attach` forwards `tcp:9222` to the WebView; then open `chrome://inspect`.
-- `node scripts/cdp.mjs "<expr>"` evaluates JS in the live WebView.
+- `just android-dev` auto-detects the connected device's ABI; no `--target` flag (upstream `tauri android dev` doesn't accept one).
+- Frontend / backend rebuilds are decoupled:
+  - `just android-dev` runs with `--no-watch`. Vue/TS/CSS edits hot-reload instantly; the dev session never restarts.
+  - Rust edits do **not** trigger anything. Rebuild on demand: `just android-install` in a second terminal. The dev session keeps streaming HMR while the app relaunches with the new native code.
+  - Opt into Tauri's auto-Rust-rebuild with `cargo xtask android dev --watch`.
+- **Diagnostics: prefer CDP over screenshots.**
+  - `just android-debug-attach` forwards `tcp:9222` to the WebView.
+  - `node scripts/cdp.mjs "<expr>"` evaluates JS in the live WebView — `getBoundingClientRect`, `getComputedStyle`, `outerHTML`, `querySelectorAll`, anything.
+  - Use `adb exec-out screencap -p > tmp/screen.png` only when a _visual_ judgment is needed (fonts, animations, overall composition). Layout/spacing/colors/classes → always CDP.
+- `chrome://inspect` for full DevTools (DOM tree, network, console, breakpoints).
 - Logcat: `chromium` / `Console` (JS), `RustStdoutStderr` (Rust).
 - Screenshots under `tmp/` (root `*.png` is gitignored).

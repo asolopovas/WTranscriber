@@ -253,9 +253,7 @@ watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
 });
 
-const { state: saveState, error: saveError } = useDebouncedSave(config, (next) =>
-  api.saveConfig(next),
-);
+const { error: saveError } = useDebouncedSave(config, (next) => api.saveConfig(next));
 watch(saveError, (e) => {
   if (e) error.value = `save failed: ${e}`;
 });
@@ -569,7 +567,6 @@ const selectedProgress = computed(() =>
           :progress="selectedProgress"
           :transcript="transcript"
           :status="status"
-          :save-state="saveState"
           :recording="recorderRef?.recording ?? false"
           :rec-elapsed="recorderRef?.elapsed ?? ''"
           @models-changed="(m) => (models = m)"

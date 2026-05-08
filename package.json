@@ -12,7 +12,7 @@
     "test:ui": "playwright test"
   },
   "dependencies": {
-    "@fontsource/material-symbols-outlined": "^5.2.43",
+    "@fontsource-variable/material-symbols-outlined": "^5.2.43",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2",

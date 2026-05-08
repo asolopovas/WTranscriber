@@ -15,12 +15,10 @@ import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
 import { usePanelResize } from "@composables/usePanelResize";
 import Toggle from "@components/ui/Toggle.vue";
-import SaveIndicator from "@components/ui/SaveIndicator.vue";
 import FormField from "@components/ui/FormField.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 import Spinner from "@components/icons/Spinner.vue";
-import type { SaveState } from "@composables/useDebouncedSave";
 
 const props = defineProps<{
   config: Config;
@@ -31,7 +29,6 @@ const props = defineProps<{
   progress: TranscribeProgress | null;
   transcript: Transcript | null;
   status: "idle" | "running" | "renaming" | "error";
-  saveState: SaveState;
   recording: boolean;
   recElapsed: string;
 }>();
@@ -211,7 +208,6 @@ const headerAriaLabel = computed(() => {
         >
           {{ recElapsed }}
         </Button>
-        <SaveIndicator :state="saveState" />
       </div>
     </div>
 

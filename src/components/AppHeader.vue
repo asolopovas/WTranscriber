@@ -22,7 +22,7 @@ const tab = defineModel<Tab>("tab", { required: true });
 
 <template>
   <header
-    class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
+    class="flex justify-between items-center w-full px-margin h-20 md:h-24 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
   >
     <div class="flex items-center gap-xs">
       <Icon name="graphic_eq" :size="24" class="text-primary" />

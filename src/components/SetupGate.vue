@@ -82,7 +82,7 @@ function familyLabel(f: string): string {
 
 <template>
   <div
-    class="fixed inset-0 z-50 grid place-items-center bg-surface/95 backdrop-blur-sm overflow-y-auto px-xl py-xl"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-surface/95 backdrop-blur-sm overflow-y-auto px-xl py-xl"
   >
     <div class="w-full max-w-md flex flex-col gap-xl">
       <div class="flex flex-col items-center gap-md">

@@ -64,10 +64,10 @@ android-prebuilts:
 android-init: android-targets android-prebuilts
     bun run tauri android init
 
-android-dev target="aarch64":
-    cargo xtask android dev --target {{target}}
-android-dev-host target="aarch64":
-    cargo xtask android dev --target {{target}} --host
+android-dev device="":
+    cargo xtask android dev {{device}}
+android-dev-host device="":
+    cargo xtask android dev --host {{device}}
 
 android-build target="aarch64":
     cargo xtask android build --target {{target}}

@@ -12,7 +12,7 @@ pub enum Cmd {
     Build(TargetArgs),
     /// Build (debuggable), sign with debug.keystore, adb install -r — fast iteration
     Install(InstallArgs),
-    /// Run `tauri android dev` for a target ABI
+    /// Run `tauri android dev`. Target ABI is auto-detected from the connected device.
     Dev(DevArgs),
     /// Print Android toolchain locations and prebuilts status
     Doctor(TargetArgs),
@@ -51,13 +51,17 @@ pub struct InstallArgs {
 
 #[derive(ClapArgs)]
 pub struct DevArgs {
-    #[arg(long, default_value = "aarch64")]
-    pub target: String,
     #[arg(long)]
     pub open: bool,
     /// Bind dev server to LAN IP and set TAURI_DEV_HOST (required for Wi-Fi / non-USB devices)
     #[arg(long)]
     pub host: bool,
+    /// Re-enable Tauri's Rust file watcher (default: off, keeps HMR session stable;
+    /// rebuild backend with `just android-install` in a separate terminal)
+    #[arg(long)]
+    pub watch: bool,
+    /// Optional device name when multiple devices/emulators are attached (passed to tauri)
+    pub device: Option<String>,
 }
 
 #[derive(ClapArgs)]
@@ -72,7 +76,7 @@ pub fn run(c: Cmd) -> Result<()> {
     match c {
         Cmd::Build(a) => cmd_build(&a.target),
         Cmd::Install(a) => cmd_install(&a.target, a.fresh),
-        Cmd::Dev(a) => cmd_dev(&a.target, a.open, a.host),
+        Cmd::Dev(a) => cmd_dev(a.open, a.host, a.watch, a.device.as_deref()),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
         Cmd::CliPush => cmd_cli_push(),
@@ -457,27 +461,64 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_dev(target: &str, open: bool, host: bool) -> Result<()> {
-    ensure_prebuilts(target)?;
+fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<()> {
+    let target = detect_device_target(device)?;
+    println!("android dev: detected ABI → target={target}");
+    ensure_prebuilts(&target)?;
     patch_gradle_build_config()?;
     patch_gradle_properties()?;
-    let dev = std::process::Command::new("adb").arg("devices").output()?;
-    let txt = String::from_utf8_lossy(&dev.stdout);
-    let has_device = txt.lines().any(|l| l.trim().ends_with("\tdevice"));
-    if !has_device {
-        bail!("no adb device — connect device and enable USB debugging");
-    }
-    copy_llama_jni(target)?;
+    copy_llama_jni(&target)?;
     patch_manifest()?;
-    let env = build_env(target)?;
-    let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev", "--target", target];
+    let env = build_env(&target)?;
+    let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev"];
     if open {
         tauri_args.push("--open");
     }
     if host {
         tauri_args.push("--host");
     }
+    if !watch {
+        tauri_args.push("--no-watch");
+    }
+    if let Some(d) = device {
+        tauri_args.push(d);
+    }
     spawn_with_env("bun", &tauri_args, &env)
+}
+
+fn detect_device_target(device: Option<&str>) -> Result<String> {
+    let out = std::process::Command::new("adb").arg("devices").output()?;
+    let txt = String::from_utf8_lossy(&out.stdout);
+    let serials: Vec<&str> = txt
+        .lines()
+        .filter_map(|l| l.split_once('\t'))
+        .filter(|(_, s)| s.trim() == "device")
+        .map(|(id, _)| id)
+        .collect();
+    if serials.is_empty() {
+        bail!("no adb device — connect device and enable USB debugging");
+    }
+    let mut cmd = std::process::Command::new("adb");
+    if let Some(d) = device {
+        cmd.args(["-s", d]);
+    } else if serials.len() > 1 {
+        bail!(
+            "multiple adb devices attached: {} — pass one as `cargo xtask android dev <device>`",
+            serials.join(", ")
+        );
+    }
+    let abi_out = cmd
+        .args(["shell", "getprop", "ro.product.cpu.abi"])
+        .output()
+        .context("adb shell getprop ro.product.cpu.abi")?;
+    let abi = String::from_utf8_lossy(&abi_out.stdout).trim().to_string();
+    Ok(match abi.as_str() {
+        "arm64-v8a" => "aarch64".into(),
+        "armeabi-v7a" | "armeabi" => "armv7".into(),
+        "x86" => "i686".into(),
+        "x86_64" => "x86_64".into(),
+        other => bail!("unsupported device ABI: {other}"),
+    })
 }
 
 fn cmd_cli(target: &str, debug: bool) -> Result<()> {
