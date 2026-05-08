@@ -62,6 +62,80 @@ const queueDone = ref(0);
 const configOpen = ref(
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
 );
+const CONFIG_HEIGHT_KEY = "wt.configHeightVh";
+const CONFIG_COLLAPSED_VH = 6;
+const CONFIG_DEFAULT_VH = 45;
+const CONFIG_MAX_VH = 85;
+const CONFIG_OPEN_THRESHOLD = 12;
+const configHeightVh = ref(
+  (() => {
+    if (typeof window === "undefined") return CONFIG_DEFAULT_VH;
+    const v = Number(localStorage.getItem(CONFIG_HEIGHT_KEY) ?? "");
+    return Number.isFinite(v) && v >= CONFIG_COLLAPSED_VH && v <= CONFIG_MAX_VH
+      ? v
+      : CONFIG_DEFAULT_VH;
+  })(),
+);
+watch(configHeightVh, (v) => {
+  if (typeof window !== "undefined") localStorage.setItem(CONFIG_HEIGHT_KEY, String(Math.round(v)));
+});
+const resizingConfig = ref(false);
+function snapConfig(vh: number): number {
+  const stops = [CONFIG_COLLAPSED_VH, CONFIG_DEFAULT_VH, CONFIG_MAX_VH];
+  let best = stops[0];
+  let bestDist = Math.abs(stops[0] - vh);
+  for (const s of stops) {
+    const d = Math.abs(s - vh);
+    if (d < bestDist) {
+      bestDist = d;
+      best = s;
+    }
+  }
+  return best;
+}
+function beginConfigResize(ev: PointerEvent) {
+  ev.preventDefault();
+  resizingConfig.value = true;
+  const startY = ev.clientY;
+  const startVh = configHeightVh.value;
+  let dragged = false;
+  const move = (e: PointerEvent) => {
+    const deltaPx = startY - e.clientY;
+    if (Math.abs(deltaPx) > 3) dragged = true;
+    const deltaVh = (deltaPx / window.innerHeight) * 100;
+    configHeightVh.value = Math.max(
+      CONFIG_COLLAPSED_VH,
+      Math.min(CONFIG_MAX_VH, startVh + deltaVh),
+    );
+  };
+  const up = () => {
+    resizingConfig.value = false;
+    if (dragged) {
+      configHeightVh.value = snapConfig(configHeightVh.value);
+    } else {
+      configHeightVh.value =
+        startVh > CONFIG_OPEN_THRESHOLD ? CONFIG_COLLAPSED_VH : CONFIG_DEFAULT_VH;
+    }
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
+}
+const configExpandedMobile = computed(() => configHeightVh.value > CONFIG_OPEN_THRESHOLD);
+const isMobile = ref(
+  typeof window !== "undefined" && !window.matchMedia("(min-width: 768px)").matches,
+);
+if (typeof window !== "undefined") {
+  const mq = window.matchMedia("(min-width: 768px)");
+  const onChange = (e: MediaQueryListEvent) => {
+    isMobile.value = !e.matches;
+  };
+  mq.addEventListener?.("change", onChange);
+  onUnmounted(() => mq.removeEventListener?.("change", onChange));
+}
 const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
@@ -1056,11 +1130,6 @@ function fmtBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function basename(path: string): string {
-  const raw = path.split(/[\\/]/).pop() ?? path;
-  return decodeName(raw);
-}
-
 const fieldClass =
   "w-full bg-surface-container-high border border-outline-variant/60 text-on-surface text-bodyMedium px-md py-xs rounded-lg appearance-none focus:outline-none focus:border-primary transition-colors";
 </script>
@@ -1589,11 +1658,6 @@ const fieldClass =
                 <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
                   <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
                   Transcript
-                  <span
-                    v-if="selectedPath"
-                    class="font-mono text-labelSmall text-on-surface-variant"
-                    >— {{ basename(selectedPath) }}</span
-                  >
                 </h3>
                 <button
                   class="text-on-surface-variant hover:text-on-surface text-titleSmall"
@@ -1626,9 +1690,30 @@ const fieldClass =
         </section>
 
         <aside
-          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-y-auto scroll-thin max-h-[40vh] md:max-h-none"
+          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto"
+          :class="resizingConfig ? '' : 'transition-[max-height,height] duration-200 ease-out'"
+          :style="{
+            maxHeight: isMobile ? `min(${configHeightVh}dvh, calc(100% - 96px))` : undefined,
+            height: isMobile ? `min(${configHeightVh}dvh, calc(100% - 96px))` : undefined,
+          }"
         >
-          <div v-if="config" class="py-unit px-md md:p-margin space-y-unit md:space-y-xl">
+          <button
+            type="button"
+            class="md:hidden shrink-0 w-full py-xs flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
+            :class="resizingConfig ? 'cursor-grabbing' : ''"
+            :aria-label="configExpandedMobile ? 'Collapse configuration' : 'Expand configuration'"
+            :aria-expanded="configExpandedMobile"
+            @pointerdown="beginConfigResize"
+          >
+            <span
+              class="block w-10 h-1.5 rounded-full transition-colors"
+              :class="resizingConfig ? 'bg-primary' : 'bg-outline-variant'"
+            ></span>
+          </button>
+          <div
+            v-if="config"
+            class="py-unit px-md md:p-margin space-y-unit md:space-y-xl flex-1 min-h-0 overflow-y-auto scroll-thin"
+          >
             <Recorder
               v-if="listing?.path"
               ref="recorderRef"
@@ -1637,11 +1722,15 @@ const fieldClass =
               @saved="onRecordingSaved"
             />
             <details
-              :open="configOpen"
-              @toggle="(e: Event) => (configOpen = (e.target as HTMLDetailsElement).open)"
+              :open="isMobile ? configExpandedMobile : configOpen"
+              @toggle="
+                (e: Event) => {
+                  if (!isMobile) configOpen = (e.target as HTMLDetailsElement).open;
+                }
+              "
             >
               <summary
-                class="flex items-center justify-between cursor-pointer list-none mb-unit md:mb-md md:pointer-events-none gap-xs"
+                class="flex items-center justify-between list-none mb-unit md:mb-md pointer-events-none gap-xs"
               >
                 <h3 class="text-titleSmall text-on-surface flex items-center gap-unit">
                   <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
@@ -1650,7 +1739,7 @@ const fieldClass =
                 <button
                   v-if="recorderRef && !recorderRef.recording"
                   @click.stop.prevent="recorderRef?.start()"
-                  class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
+                  class="pointer-events-auto min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
                   title="Record"
                 >
                   <span
@@ -1663,7 +1752,7 @@ const fieldClass =
                 <button
                   v-else-if="recorderRef"
                   @click.stop.prevent="recorderRef?.stop()"
-                  class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
+                  class="pointer-events-auto min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
                   :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
                 >
                   <span
