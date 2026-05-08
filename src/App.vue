@@ -138,6 +138,8 @@ async function pickAudio() {
   await addPathsToWorkdir(paths);
 }
 
+const yieldToUI = () => new Promise<void>((r) => setTimeout(r, 0));
+
 function addPathsToWorkdir(paths: string[]) {
   if (!listing.value) return;
   const dir = listing.value.path;
@@ -179,6 +181,7 @@ function addPathsToWorkdir(paths: string[]) {
   void (async () => {
     let lastDest: string | null = null;
     for (const p of audioPaths) {
+      await yieldToUI();
       try {
         const destPath = await tryAdd(p);
         if (!listing.value) return;
@@ -202,9 +205,10 @@ function addPathsToWorkdir(paths: string[]) {
 
     if (!listing.value) return;
     const toProbe = listing.value.entries.filter((e) => e.is_audio && e.duration_ms === null);
-    for (let i = 0; i < toProbe.length; i += 10) {
+    for (let i = 0; i < toProbe.length; i += 2) {
+      await yieldToUI();
       await Promise.allSettled(
-        toProbe.slice(i, i + 10).map((e) =>
+        toProbe.slice(i, i + 2).map((e) =>
           api.probeDuration(e.path).then((ms) => {
             e.duration_ms = ms ?? null;
           }),

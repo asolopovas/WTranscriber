@@ -736,8 +736,11 @@ pub fn history_load(key: String) -> Result<Option<Transcript>> {
 }
 
 #[tauri::command]
-pub fn probe_duration(path: PathBuf) -> Option<u64> {
-    audio::probe_duration_ms(&path)
+pub async fn probe_duration(path: PathBuf) -> Option<u64> {
+    tokio::task::spawn_blocking(move || audio::probe_duration_ms(&path))
+        .await
+        .ok()
+        .flatten()
 }
 
 #[tauri::command]
