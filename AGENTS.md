@@ -35,7 +35,9 @@ docs/
 - Errors returned from Rust to JS must use `error::Error` (implements `Serialize`).
 - `src/types.ts` mirrors Rust structs.
 - TS/Vue imports use path aliases (`@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`). No relative imports (`./`, `../`).
-- Run `just check` before every commit and fix everything it reports. It runs fmt, clippy (pedantic + nursery, `-D warnings`), vue-tsc, vue lint, tests, dead-deps (`cargo machete`), and security audit (`cargo audit` + `bun audit`). The pre-commit hook enforces it. Bugs are caught here, not later.
+- Two-tier quality gate. Bugs are caught here, not later.
+  - **Pre-commit (development):** the `.githooks/pre-commit` hook runs only the checks relevant to staged files — `cargo fmt --check` + `clippy -D warnings` for Rust, `prettier --check` + `vue-tsc` for TS/Vue, `prettier --check` for docs. Fast, scoped, mandatory. Never bypass with `--no-verify`.
+  - **Pre-release (final gate):** `just check` is the single command that runs the full cross-cutting suite — fmt, clippy (pedantic + nursery, `-D warnings`), vue-tsc, vue lint, tests, dead-deps (`cargo machete`), and security audit (`cargo audit` + `bun audit`). It must pass before any release. `just release-stable` chains it in automatically; do not skip it.
 
 ## Commands
 
@@ -43,7 +45,7 @@ docs/
 just dev                desktop (HMR)
 just android-dev        Android over USB (HMR via adb reverse)
 just android-dev-host   Android over LAN (--host)
-just check              fmt + lint + typecheck + vue-lint + test + dep-check + audit
+just check              full pre-release gate: fmt + lint + typecheck + vue-lint + test + dep-check + audit
 just release-stable     check + bump + tag + build + publish
 ```
 
