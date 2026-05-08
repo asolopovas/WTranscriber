@@ -18,7 +18,15 @@ export function hasAudioExt(path: string): boolean {
 }
 
 export function basenameOf(p: string): string {
-  const cleaned = p.replace(/\\/g, "/");
+  let s = p;
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    /* leave as-is */
+  }
+  const schemeStripped = s.replace(/^[a-z][a-z0-9+.-]*:(\/\/)?/i, "");
+  const colonStripped = schemeStripped.replace(/^[A-Za-z0-9_-]+:/, "");
+  const cleaned = colonStripped.replace(/\\/g, "/");
   const idx = cleaned.lastIndexOf("/");
   const tail = idx === -1 ? cleaned : cleaned.slice(idx + 1);
   return tail.split("?")[0] || "audio";
