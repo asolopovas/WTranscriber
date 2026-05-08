@@ -9,7 +9,7 @@ just android-dev          # USB / emulator
 just android-dev-host     # Wi-Fi / LAN
 ```
 
-Frontend-only watcher (`--no-watch`). Vue/TS/CSS push live; Rust edits ignored. Backend rebuilds via `just android-install` in another terminal - HMR keeps streaming, app relaunches with new native code.
+Frontend-only watcher (`--no-watch`). Vue/TS/CSS push live. Rust edits require restarting `just android-dev` — it rebuilds and reinstalls the debug-dev APK that loads the Vite dev URL. Never run `just android-install` during a dev session; it installs a bundled-assets APK and silently strands all subsequent JS edits.
 
 Run in the user's own terminal. Spawning through a subagent on Windows pops an empty conhost (`CREATE_NEW_PROCESS_GROUP` quirk).
 
