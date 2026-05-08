@@ -19,6 +19,7 @@ import type {
 import Settings from "./components/Settings.vue";
 import LogViewer from "./components/LogViewer.vue";
 import Recorder from "./components/Recorder.vue";
+import SlidingPanel from "./components/SlidingPanel.vue";
 import SetupGate from "./components/SetupGate.vue";
 import TranscribeIcon from "./components/icons/TranscribeIcon.vue";
 import SaveIcon from "./components/icons/SaveIcon.vue";
@@ -63,7 +64,7 @@ const configOpen = ref(
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
 );
 const CONFIG_HEIGHT_KEY = "wt.configHeightPx";
-const CONFIG_HEADER_PX = 48;
+const CONFIG_HEADER_PX = 56;
 const CONFIG_COLLAPSED_PX = CONFIG_HEADER_PX;
 const CONFIG_OPEN_THRESHOLD_PX = CONFIG_HEADER_PX + 16;
 const configContentEl = ref<HTMLElement | null>(null);
@@ -737,38 +738,6 @@ async function deleteEntry(entry?: DirEntry) {
 const exporting = ref(false);
 const exportTarget = ref<DirEntry | null>(null);
 const exportFormat = ref<ExportFormat>("txt");
-
-const TRANSCRIPT_HEIGHT_KEY = "wt.transcriptHeightVh";
-const transcriptHeightVh = ref(
-  (() => {
-    const v = Number(localStorage.getItem(TRANSCRIPT_HEIGHT_KEY) ?? "");
-    return Number.isFinite(v) && v >= 20 && v <= 80 ? v : 40;
-  })(),
-);
-watch(transcriptHeightVh, (v) => {
-  localStorage.setItem(TRANSCRIPT_HEIGHT_KEY, String(Math.round(v)));
-});
-const resizingTranscript = ref(false);
-function beginTranscriptResize(ev: PointerEvent) {
-  ev.preventDefault();
-  resizingTranscript.value = true;
-  const startY = ev.clientY;
-  const startVh = transcriptHeightVh.value;
-  const move = (e: PointerEvent) => {
-    const deltaPx = startY - e.clientY;
-    const deltaVh = (deltaPx / window.innerHeight) * 100;
-    transcriptHeightVh.value = Math.max(20, Math.min(80, startVh + deltaVh));
-  };
-  const up = () => {
-    resizingTranscript.value = false;
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", up);
-  };
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-  window.addEventListener("pointercancel", up);
-}
 
 function drawWaveformFallback(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d");
@@ -1648,58 +1617,47 @@ const fieldClass =
             </table>
           </div>
 
-          <div
+          <SlidingPanel
             v-if="transcript"
-            class="relative shrink-0 border-t border-outline-variant/40 flex flex-col"
-            :style="{ height: transcriptHeightVh + 'vh' }"
+            storage-key="wt.transcriptHeightPx"
+            :initial-height="360"
+            :auto-max="true"
           >
-            <div
-              class="absolute -top-1 left-0 right-0 h-2 cursor-row-resize touch-none flex items-center justify-center group z-10"
-              :class="resizingTranscript ? 'bg-primary/20' : ''"
-              @pointerdown="beginTranscriptResize"
-              title="Drag to resize transcript pane"
-            >
-              <div
-                class="w-12 h-1 rounded-full transition-colors"
-                :class="
-                  resizingTranscript ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
-                "
-              ></div>
-            </div>
-            <div class="flex-1 overflow-y-auto scroll-thin p-margin">
-              <div class="flex items-center justify-between mb-md">
-                <h3 class="text-titleSmall text-on-surface flex items-center gap-xs">
-                  <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
-                  Transcript
-                </h3>
-                <button
-                  class="text-on-surface-variant hover:text-on-surface text-titleSmall"
-                  @click="closeTranscript"
-                >
-                  <span class="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </div>
-              <article
-                v-for="(u, i) in transcript.utterances"
-                :key="i"
-                class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
+            <template #header>
+              <h3 class="text-titleSmall text-on-surface flex items-center gap-xs pl-md">
+                <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
+                Transcript
+              </h3>
+              <button
+                @pointerdown.stop
+                @click.stop="closeTranscript"
+                class="mr-md w-9 h-9 inline-flex items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
+                title="Close transcript"
+                aria-label="Close transcript"
               >
-                <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
-                  fmt(u.start_ms)
-                }}</span>
-                <div class="flex-1 min-w-0">
-                  <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
-                    {{ u.speaker }}
-                  </div>
-                  <p
-                    class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
-                  >
-                    {{ u.text }}
-                  </p>
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </template>
+            <article
+              v-for="(u, i) in transcript.utterances"
+              :key="i"
+              class="flex gap-md items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
+            >
+              <span class="font-mono text-labelSmall text-secondary w-20 shrink-0 pt-unit">{{
+                fmt(u.start_ms)
+              }}</span>
+              <div class="flex-1 min-w-0">
+                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
+                  {{ u.speaker }}
                 </div>
-              </article>
-            </div>
-          </div>
+                <p
+                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
+                >
+                  {{ u.text }}
+                </p>
+              </div>
+            </article>
+          </SlidingPanel>
         </section>
 
         <aside
@@ -1719,7 +1677,7 @@ const fieldClass =
           />
           <div
             v-if="config"
-            class="shrink-0 h-12 w-full flex items-center justify-between relative select-none cursor-row-resize md:cursor-pointer touch-none md:touch-auto transition-colors"
+            class="shrink-0 h-14 w-full flex items-center justify-between relative select-none cursor-row-resize md:cursor-pointer touch-none md:touch-auto transition-colors"
             :class="resizingConfig ? 'bg-primary/15' : 'active:bg-primary/10'"
             role="button"
             :aria-expanded="isMobile ? configExpandedMobile : configOpen"
