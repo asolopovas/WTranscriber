@@ -63,10 +63,10 @@ const configOpen = ref(
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
 );
 const CONFIG_HEIGHT_KEY = "wt.configHeightVh";
-const CONFIG_COLLAPSED_VH = 6;
+const CONFIG_COLLAPSED_VH = 9;
 const CONFIG_DEFAULT_VH = 45;
 const CONFIG_MAX_VH = 85;
-const CONFIG_OPEN_THRESHOLD = 12;
+const CONFIG_OPEN_THRESHOLD = 22;
 const configHeightVh = ref(
   (() => {
     if (typeof window === "undefined") return CONFIG_DEFAULT_VH;
@@ -1699,15 +1699,18 @@ const fieldClass =
         >
           <button
             type="button"
-            class="md:hidden shrink-0 w-full py-xs flex items-center justify-center cursor-grab active:cursor-grabbing touch-none"
-            :class="resizingConfig ? 'cursor-grabbing' : ''"
+            class="md:hidden shrink-0 relative w-full h-4 cursor-row-resize touch-none flex items-center justify-center group"
+            :class="resizingConfig ? 'bg-primary/20' : ''"
             :aria-label="configExpandedMobile ? 'Collapse configuration' : 'Expand configuration'"
             :aria-expanded="configExpandedMobile"
+            title="Drag to resize configuration"
             @pointerdown="beginConfigResize"
           >
             <span
-              class="block w-10 h-1.5 rounded-full transition-colors"
-              :class="resizingConfig ? 'bg-primary' : 'bg-outline-variant'"
+              class="block w-12 h-1 rounded-full transition-colors"
+              :class="
+                resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
+              "
             ></span>
           </button>
           <div
