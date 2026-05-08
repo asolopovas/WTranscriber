@@ -85,4 +85,28 @@ subagent({
 
 The monitor reattaches to a new WebView instance automatically after `just android-install` (CDP retries ~2 min).
 
+### Live signals on Android
+
+`scripts/error-monitor.mjs` and `tmp/observer-latest.json` are **desktop-only**. On Android, OOM kills and process-death events appear in the Android events log buffer, not the main buffer that `error-monitor.mjs` tails. `tmp/observer-latest.json` will show a stale counter from any previous desktop session.
+
+Authoritative Android live-signal source: `tmp/logcat.log`, populated at bootstrap by:
+
+```
+adb logcat -c
+adb logcat -b main,events *:W RustStdoutStderr:V Tauri:V chromium:V am_crash:V am_proc_died:V am_kill:V
+```
+
+Key tags:
+
+| Tag                | What it signals                            |
+| ------------------ | ------------------------------------------ |
+| `am_kill`          | Low-memory killer (OOM) terminated the app |
+| `am_proc_died`     | Process death (any cause)                  |
+| `am_crash`         | Unhandled Java/Kotlin crash                |
+| `RustStdoutStderr` | Rust `println!` / `eprintln!` / panics     |
+| `chromium`         | WebView JS errors and console output       |
+| `Tauri`            | Tauri IPC and plugin events                |
+
+Spawn as a detached process at bootstrap (same `Start-Process` pattern as the dev server) and record its PID. The per-turn diff target on Android is the line-count of `tmp/logcat.log`, **not** `tmp/error-monitor.log`.
+
 Agent roster, decision table, and delegation rules live in [`AGENTS.md`](../AGENTS.md) - not restated here.

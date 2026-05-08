@@ -46,6 +46,13 @@ const PID_RETRY_MS = 5000;
 
 mkdirSync("tmp", { recursive: true });
 
+if (existsSync("tmp/_platform") && readFileSync("tmp/_platform", "utf8").trim() === "android") {
+  console.error(
+    "[observer] Android session: observer.mjs is desktop-only. Tail tmp/logcat.log instead.",
+  );
+  process.exit(0);
+}
+
 function nowIso() {
   return new Date().toISOString();
 }

@@ -50,33 +50,35 @@ Main thread coordinates only: design + delegate + synthesise. Never edits source
 2. Ask platform if unknown (desktop / android USB / android Wi-Fi). Recipe is fixed per transport; switching mid-session strands HMR (reload via CDP first):
    - Desktop: `just dev`. Android USB: `just android-dev`. Android Wi-Fi: `just android-dev-host`.
    - Android: after WebView is up, `just android-debug-attach` forwards CDP `:9222`.
-3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs; when a `cmd /c` wrapper is used the wrapper PID exits immediately, so track the port-owning PID via `netstat -ano | findstr :1420`.
-4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed`, no `Replacing devUrl host` substitution to a non-loopback address, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
+3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs; when a `cmd /c` wrapper is used the wrapper PID exits immediately, so track the port-owning PID via `netstat -ano | findstr :1420`. Write `tmp/_platform` as `android` or `desktop`. **Android only**: additionally spawn `adb logcat -c` then `adb logcat -b main,events *:W RustStdoutStderr:V Tauri:V chromium:V am_crash:V am_proc_died:V am_kill:V` → `tmp/logcat.log` as a detached process; record its PID (see `docs/dev-loop.md` §Live signals on Android).
+4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed` **(desktop)** / `tmp/logcat.log` free of `am_kill`/`am_proc_died` **(Android)**, no `Replacing devUrl host` substitution to a non-loopback address, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
 5. Report bootstrap as a checklist.
 
 Never instruct the user to run a dev command; the orchestrator launches it.
 
 ### Per-turn
 
-Diff `tmp/error-monitor.log` line count after every user turn and edit batch. New lines → `wt-triage` with excerpt only. Then Decision table.
+**Desktop**: diff `tmp/error-monitor.log` line count. **Android**: diff `tmp/logcat.log` line count. New lines → `wt-triage` with excerpt. Then Decision table.
 
 ### Decision table
 
-| Signal                                                       | Action                                                                                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| New line in `tmp/error-monitor.log`                          | `wt-triage` with excerpt                                                                                                        |
-| Source edit needed                                           | `wt-coder`                                                                                                                      |
-| Edits applied, gate not hit                                  | `wt-committer`                                                                                                                  |
-| Need to find where X lives in repo                           | `wt-scout`                                                                                                                      |
-| Need a built artifact                                        | `wt-runner` (mode: install)                                                                                                     |
-| Native edit during live dev                                  | `just android-install` from main thread (never `wt-runner` / `just android-build`; both replace the debug-dev APK and kill HMR) |
-| Specific in-app misbehaviour or gate failure (single signal) | `wt-triage`                                                                                                                     |
-| Continuous live-signal watch                                 | `scripts/observer.mjs` already running (spawned by `tmp/_bootstrap.ps1`); orchestrator polls `tmp/observer-latest.json`         |
-| 30 s-clip smoke after install                                | chain `install-and-test`                                                                                                        |
-| Commit / ship                                                | `wt-committer`                                                                                                                  |
-| Release                                                      | `wt-committer` → `just release-stable` artifacts via `wt-runner`                                                                |
-| External knowledge needed                                    | `wt-researcher`                                                                                                                 |
-| Recurring agent failure or workflow drift                    | `wt-docs-updater` → `wt-committer` as `chore(agents): tighten <name>`                                                           |
+| Signal                                                                                 | Action                                                                                                                           |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| New line in `tmp/error-monitor.log` (desktop)                                          | `wt-triage` with excerpt                                                                                                         |
+| New line in `tmp/logcat.log` (Android) — incl. `am_kill` / `am_proc_died` / `am_crash` | `wt-triage` with logcat excerpt                                                                                                  |
+| Source edit needed                                                                     | `wt-coder`                                                                                                                       |
+| Edits applied, gate not hit                                                            | `wt-committer`                                                                                                                   |
+| Need to find where X lives in repo                                                     | `wt-scout`                                                                                                                       |
+| Need a built artifact                                                                  | `wt-runner` (mode: install)                                                                                                      |
+| Native edit during live dev                                                            | `just android-install` from main thread (never `wt-runner` / `just android-build`; both replace the debug-dev APK and kill HMR)  |
+| Specific in-app misbehaviour or gate failure (single signal)                           | `wt-triage`                                                                                                                      |
+| Continuous live-signal watch (desktop)                                                 | `scripts/observer.mjs` running; poll `tmp/observer-latest.json`. **Desktop-only — blind on Android.**                            |
+| Continuous live-signal watch (Android)                                                 | tail `tmp/logcat.log` (detached `adb logcat` spawned at bootstrap); `tmp/observer-latest.json` counter is stale/blind on Android |
+| 30 s-clip smoke after install                                                          | chain `install-and-test`                                                                                                         |
+| Commit / ship                                                                          | `wt-committer`                                                                                                                   |
+| Release                                                                                | `wt-committer` → `just release-stable` artifacts via `wt-runner`                                                                 |
+| External knowledge needed                                                              | `wt-researcher`                                                                                                                  |
+| Recurring agent failure or workflow drift                                              | `wt-docs-updater` → `wt-committer` as `chore(agents): tighten <name>`                                                            |
 
 ### Coordination
 
@@ -87,7 +89,8 @@ Diff `tmp/error-monitor.log` line count after every user turn and edit batch. Ne
 
 ### Hard prohibitions
 
-- No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread; poll `tmp/observer-latest.json` or dispatch `wt-triage`.
+- No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread; poll `tmp/observer-latest.json` (desktop) or `tmp/logcat.log` line-count (Android), or dispatch `wt-triage`.
+- On Android, do not use `tmp/observer-latest.json` or `tmp/error-monitor.log` as the live-signal source; they are blind to OOM and process-death events. Use `tmp/logcat.log` (or dispatch `wt-triage` with a logcat tail) instead.
 - `wt-runner` install mode is release-only; never during a live dev session.
 - No agent-to-agent calls; signal via `tmp/` files.
 - No raw log dumps to the user; relay `VERDICT / EVIDENCE / FIX` only.

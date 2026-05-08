@@ -35,8 +35,9 @@ When the task starts with `mode: review` plus a diff reference (`staged` or a co
 
 ## Sources
 
-- `tmp/error-monitor.log` - unified logcat + CDP console (see `scripts/error-monitor.mjs`).
-- `adb logcat -d -t <N>` filtered by tag (`RustStdoutStderr`, `chromium`, `Console`, `*:E`).
+- `tmp/error-monitor.log` - unified logcat + CDP console (desktop-only; blind to Android OOM/process-death).
+- `tmp/logcat.log` - authoritative Android live signal when present (spawned at bootstrap).
+- `adb logcat -d -t <N> -b main,events` filtered by tag (`RustStdoutStderr`, `chromium`, `Console`, `am_crash`, `am_proc_died`, `am_kill`, `*:E`). On Android this supersedes `tmp/error-monitor.log` and `tmp/observer-latest.json` for crash diagnosis.
 - `node scripts/cdp.mjs "<expr>"` - live WebView introspection.
 - `cargo test`, `bun run vue-tsc`, `cargo clippy --all-targets -- -D warnings`, `just check`.
 - `git log -p`, `git blame`, `git diff`.
@@ -59,6 +60,7 @@ Spend ≤60s walking the matching chain in order before opening wider investigat
 - **Android blank / "failed http request" / WebView won't load** → `adb reverse --list` for `tcp:1420`; `tmp/android-dev.log` for `Using <ip>` (VPN/wrong NIC); Vite bind interface; `TAURI_DEV_HOST` env.
 - **HMR not updating** → `netstat -ano | findstr 1420\|1421` owner PID; `tmp/android-dev.log` for `hmr update`; CDP target URL via `scripts/cdp.mjs`.
 - **Native Rust panic** → `adb logcat -d | grep -E "RustStdoutStderr.*panic|FATAL"`.
+- **Android OOM / process-death** → `adb logcat -b events -d | grep -E "am_kill|am_proc_died|am_crash"`.
 - **Pre-commit / `just check` red** → identify failing step (fmt/clippy/vue-tsc/test/machete/audit), file:line, fix scope.
 - **Regression after commit `X`** → `git log -p X^..X` on touched files, pair with current symptom.
 
