@@ -62,30 +62,29 @@ const queueDone = ref(0);
 const configOpen = ref(
   typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
 );
-const CONFIG_HEIGHT_KEY = "wt.configHeightVh";
-const CONFIG_COLLAPSED_VH = 9;
-const CONFIG_DEFAULT_VH = 45;
-const CONFIG_MAX_VH = 85;
-const CONFIG_OPEN_THRESHOLD = 22;
-const configHeightVh = ref(
+const CONFIG_HEIGHT_KEY = "wt.configHeightPx";
+const CONFIG_COLLAPSED_PX = 48;
+const CONFIG_OPEN_THRESHOLD_PX = 100;
+const configContentEl = ref<HTMLElement | null>(null);
+const configContentHeightPx = ref(0);
+const configHeightPx = ref(
   (() => {
-    if (typeof window === "undefined") return CONFIG_DEFAULT_VH;
+    if (typeof window === "undefined") return CONFIG_COLLAPSED_PX;
     const v = Number(localStorage.getItem(CONFIG_HEIGHT_KEY) ?? "");
-    return Number.isFinite(v) && v >= CONFIG_COLLAPSED_VH && v <= CONFIG_MAX_VH
-      ? v
-      : CONFIG_DEFAULT_VH;
+    return Number.isFinite(v) && v >= CONFIG_COLLAPSED_PX ? v : CONFIG_COLLAPSED_PX;
   })(),
 );
-watch(configHeightVh, (v) => {
+const configMaxPx = computed(() => CONFIG_COLLAPSED_PX + configContentHeightPx.value);
+watch(configHeightPx, (v) => {
   if (typeof window !== "undefined") localStorage.setItem(CONFIG_HEIGHT_KEY, String(Math.round(v)));
 });
 const resizingConfig = ref(false);
-function snapConfig(vh: number): number {
-  const stops = [CONFIG_COLLAPSED_VH, CONFIG_DEFAULT_VH, CONFIG_MAX_VH];
+function snapConfig(px: number): number {
+  const stops = [CONFIG_COLLAPSED_PX, configMaxPx.value];
   let best = stops[0];
-  let bestDist = Math.abs(stops[0] - vh);
+  let bestDist = Math.abs(stops[0] - px);
   for (const s of stops) {
-    const d = Math.abs(s - vh);
+    const d = Math.abs(s - px);
     if (d < bestDist) {
       bestDist = d;
       best = s;
@@ -97,24 +96,23 @@ function beginConfigResize(ev: PointerEvent) {
   ev.preventDefault();
   resizingConfig.value = true;
   const startY = ev.clientY;
-  const startVh = configHeightVh.value;
+  const startPx = configHeightPx.value;
   let dragged = false;
   const move = (e: PointerEvent) => {
     const deltaPx = startY - e.clientY;
     if (Math.abs(deltaPx) > 3) dragged = true;
-    const deltaVh = (deltaPx / window.innerHeight) * 100;
-    configHeightVh.value = Math.max(
-      CONFIG_COLLAPSED_VH,
-      Math.min(CONFIG_MAX_VH, startVh + deltaVh),
+    configHeightPx.value = Math.max(
+      CONFIG_COLLAPSED_PX,
+      Math.min(configMaxPx.value, startPx + deltaPx),
     );
   };
   const up = () => {
     resizingConfig.value = false;
     if (dragged) {
-      configHeightVh.value = snapConfig(configHeightVh.value);
+      configHeightPx.value = snapConfig(configHeightPx.value);
     } else {
-      configHeightVh.value =
-        startVh > CONFIG_OPEN_THRESHOLD ? CONFIG_COLLAPSED_VH : CONFIG_DEFAULT_VH;
+      configHeightPx.value =
+        startPx > CONFIG_OPEN_THRESHOLD_PX ? CONFIG_COLLAPSED_PX : configMaxPx.value;
     }
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
@@ -124,7 +122,20 @@ function beginConfigResize(ev: PointerEvent) {
   window.addEventListener("pointerup", up);
   window.addEventListener("pointercancel", up);
 }
-const configExpandedMobile = computed(() => configHeightVh.value > CONFIG_OPEN_THRESHOLD);
+const configExpandedMobile = computed(() => configHeightPx.value > CONFIG_OPEN_THRESHOLD_PX);
+watch([configContentEl, configExpandedMobile], ([el, expanded]) => {
+  if (!el || typeof window === "undefined" || !expanded) return;
+  const measure = () => {
+    configContentHeightPx.value = el.scrollHeight;
+    if (configHeightPx.value > CONFIG_COLLAPSED_PX) {
+      configHeightPx.value = Math.min(configHeightPx.value, configMaxPx.value);
+    }
+  };
+  const ro = new ResizeObserver(measure);
+  ro.observe(el);
+  measure();
+  onUnmounted(() => ro.disconnect());
+});
 const isMobile = ref(
   typeof window !== "undefined" && !window.matchMedia("(min-width: 768px)").matches,
 );
@@ -1690,16 +1701,16 @@ const fieldClass =
         </section>
 
         <aside
-          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto"
+          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto relative"
           :class="resizingConfig ? '' : 'transition-[max-height,height] duration-200 ease-out'"
           :style="{
-            maxHeight: isMobile ? `min(${configHeightVh}dvh, calc(100% - 96px))` : undefined,
-            height: isMobile ? `min(${configHeightVh}dvh, calc(100% - 96px))` : undefined,
+            maxHeight: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
+            height: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
           }"
         >
           <button
             type="button"
-            class="md:hidden shrink-0 relative w-full h-4 cursor-row-resize touch-none flex items-center justify-center group"
+            class="md:hidden absolute -top-1 left-0 right-0 h-2 cursor-row-resize touch-none flex items-center justify-center group z-10"
             :class="resizingConfig ? 'bg-primary/20' : ''"
             :aria-label="configExpandedMobile ? 'Collapse configuration' : 'Expand configuration'"
             :aria-expanded="configExpandedMobile"
@@ -1715,7 +1726,8 @@ const fieldClass =
           </button>
           <div
             v-if="config"
-            class="py-unit px-md md:p-margin space-y-unit md:space-y-xl flex-1 min-h-0 overflow-y-auto scroll-thin"
+            ref="configContentEl"
+            class="px-md md:p-margin py-[6px] md:py-margin space-y-unit md:space-y-xl flex-1 min-h-0 overflow-y-auto scroll-thin"
           >
             <Recorder
               v-if="listing?.path"
