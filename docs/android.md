@@ -1,6 +1,6 @@
 # Android build
 
-Module of [`AGENTS.md`](../AGENTS.md). Covers Android build pipeline, linking, and HMR-based UI dev. For runtime debugging see [`tauri-debug.md`](tauri-debug.md).
+Module of [`AGENTS.md`](../AGENTS.md). Covers Android build pipeline, linking, and HMR-based UI dev. For runtime debugging load the global skill `tauri-debugging`.
 
 ## Status
 
@@ -98,7 +98,7 @@ This is the preferred diagnostic path — exact computed values, no PNG round-tr
 1. `just android-dev` (leave running, ABI auto-detected, frontend-only HMR).
 2. Edit Vue/CSS → changes appear instantly on device.
 3. `node scripts/cdp.mjs "<expr>"` for sizing/style verification.
-4. `chrome://inspect` for full DevTools (DOM tree, network, console, breakpoints) — see `docs/tauri-debug.md`.
+4. `chrome://inspect` for full DevTools (DOM tree, network, console, breakpoints) — see skill `tauri-debugging`.
 5. Backend change? `just android-install` in another terminal; HMR session keeps running.
 
 Gotchas:
