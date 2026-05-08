@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import Icon from "./Icon.vue";
+import Icon from "@components/ui/Icon.vue";
 
 type Variant =
   | "primary"

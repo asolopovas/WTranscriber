@@ -34,6 +34,7 @@ docs/
 - Edition 2024. Use `LazyLock`, `let-else`, etc.
 - Errors returned from Rust to JS must use `error::Error` (implements `Serialize`).
 - `src/types.ts` mirrors Rust structs.
+- TS/Vue imports use path aliases (`@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`). No relative imports (`./`, `../`).
 - Run `just check` before every commit and fix everything it reports. It runs fmt, clippy (pedantic + nursery, `-D warnings`), vue-tsc, vue lint, tests, dead-deps (`cargo machete`), and security audit (`cargo audit` + `bun audit`). The pre-commit hook enforces it. Bugs are caught here, not later.
 
 ## Commands

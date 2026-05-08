@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import TranscribeIcon from "./icons/TranscribeIcon.vue";
-import SettingsIcon from "./icons/SettingsIcon.vue";
-import LogIcon from "./icons/LogIcon.vue";
-import Button from "./ui/Button.vue";
-import { TABS, type Tab } from "./nav-tabs";
+import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
+import SettingsIcon from "@components/icons/SettingsIcon.vue";
+import LogIcon from "@components/icons/LogIcon.vue";
+import Button from "@components/ui/Button.vue";
+import { TABS, type Tab } from "@components/nav-tabs";
 
 const model = defineModel<Tab>({ required: true });
 </script>

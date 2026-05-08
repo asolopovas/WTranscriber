@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { ExportFormat } from "../../types";
-import Modal from "../ui/Modal.vue";
-import Button from "../ui/Button.vue";
+import type { ExportFormat } from "@/types";
+import Modal from "@components/ui/Modal.vue";
+import Button from "@components/ui/Button.vue";
 
 const open = defineModel<boolean>("open", { required: true });
 const format = defineModel<ExportFormat>("format", { required: true });

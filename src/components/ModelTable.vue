@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { FileProgress, ModelInfo } from "../types";
-import { fmtModelSize, progressPct } from "../composables/format";
-import Card from "./ui/Card.vue";
-import Icon from "./ui/Icon.vue";
-import Button from "./ui/Button.vue";
-import StatusPill from "./ui/StatusPill.vue";
+import type { FileProgress, ModelInfo } from "@/types";
+import { fmtModelSize, progressPct } from "@composables/format";
+import Card from "@components/ui/Card.vue";
+import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
+import StatusPill from "@components/ui/StatusPill.vue";
 
 const props = defineProps<{
   models: ModelInfo[];

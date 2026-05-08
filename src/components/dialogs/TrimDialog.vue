@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { api } from "../../api";
-import type { AudioMeta, DirEntry } from "../../types";
-import { fmtMs } from "../../composables/format";
-import Modal from "../ui/Modal.vue";
-import ErrorBanner from "../ui/ErrorBanner.vue";
-import Icon from "../ui/Icon.vue";
-import Button from "../ui/Button.vue";
-import Spinner from "../icons/Spinner.vue";
-import CancelIcon from "../icons/CancelIcon.vue";
-import SaveIcon from "../icons/SaveIcon.vue";
+import { api } from "@/api";
+import type { AudioMeta, DirEntry } from "@/types";
+import { fmtMs } from "@composables/format";
+import Modal from "@components/ui/Modal.vue";
+import ErrorBanner from "@components/ui/ErrorBanner.vue";
+import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
+import Spinner from "@components/icons/Spinner.vue";
+import CancelIcon from "@components/icons/CancelIcon.vue";
+import SaveIcon from "@components/icons/SaveIcon.vue";
 
 const props = defineProps<{ target: DirEntry | null }>();
 const emit = defineEmits<{

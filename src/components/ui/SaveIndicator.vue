@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SaveState } from "../../composables/useDebouncedSave";
+import type { SaveState } from "@composables/useDebouncedSave";
 
 defineProps<{ state: SaveState }>();
 

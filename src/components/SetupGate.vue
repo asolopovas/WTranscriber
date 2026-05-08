@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { FileProgress, ModelInfo } from "../types";
-import DownloadCircle from "./DownloadCircle.vue";
+import type { FileProgress, ModelInfo } from "@/types";
+import DownloadCircle from "@components/DownloadCircle.vue";
 
 interface Props {
   essentialIds: string[];

@@ -12,7 +12,7 @@ import type {
   SystemInfo,
   TranscribeProgress,
   Transcript,
-} from "./types";
+} from "@/types";
 
 export const api = {
   appVersion: () => invoke<string>("app_version"),

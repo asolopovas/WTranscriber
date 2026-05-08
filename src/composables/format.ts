@@ -1,4 +1,4 @@
-import type { FileProgress } from "../types";
+import type { FileProgress } from "@/types";
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 

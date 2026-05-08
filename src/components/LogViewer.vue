@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { api } from "../api";
-import ErrorBanner from "./ui/ErrorBanner.vue";
-import Icon from "./ui/Icon.vue";
-import Button from "./ui/Button.vue";
+import { api } from "@/api";
+import ErrorBanner from "@components/ui/ErrorBanner.vue";
+import Icon from "@components/ui/Icon.vue";
+import Button from "@components/ui/Button.vue";
 
 const tail = ref<string>("");
 const path = ref<string>("");

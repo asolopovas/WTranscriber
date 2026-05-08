@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import Button from "./Button.vue";
+import Button from "@components/ui/Button.vue";
 
 withDefaults(
   defineProps<{

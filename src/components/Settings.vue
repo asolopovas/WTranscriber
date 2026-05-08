@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { api, events } from "../api";
-import type { Config, FileProgress, ModelInfo, SystemInfo } from "../types";
-import { fmtBytes } from "../composables/format";
-import { useDebouncedSave } from "../composables/useDebouncedSave";
-import { fieldClass } from "../styles/fields";
-import ModelTable from "./ModelTable.vue";
-import Card from "./ui/Card.vue";
-import DefRow from "./ui/DefRow.vue";
-import Button from "./ui/Button.vue";
-import SaveIndicator from "./ui/SaveIndicator.vue";
+import { api, events } from "@/api";
+import type { Config, FileProgress, ModelInfo, SystemInfo } from "@/types";
+import { fmtBytes } from "@composables/format";
+import { useDebouncedSave } from "@composables/useDebouncedSave";
+import { fieldClass } from "@styles/fields";
+import ModelTable from "@components/ModelTable.vue";
+import Card from "@components/ui/Card.vue";
+import DefRow from "@components/ui/DefRow.vue";
+import Button from "@components/ui/Button.vue";
+import SaveIndicator from "@components/ui/SaveIndicator.vue";
 
 const config = ref<Config | null>(null);
 const sys = ref<SystemInfo | null>(null);

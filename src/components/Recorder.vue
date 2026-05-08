@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
-import { api } from "../api";
-import Button from "./ui/Button.vue";
+import { api } from "@/api";
+import Button from "@components/ui/Button.vue";
 
 const props = defineProps<{ workdir: string; headless?: boolean }>();
 const emit = defineEmits<{ (e: "saved", path: string): void }>();
