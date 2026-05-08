@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { api } from "@/api";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
 import Icon from "@components/ui/Icon.vue";
@@ -42,7 +43,8 @@ async function refresh() {
 }
 
 async function clear() {
-  if (!confirm("Erase the log file? This cannot be undone.")) return;
+  const ok = await confirm("Erase the log file? This cannot be undone.");
+  if (!ok) return;
   try {
     await api.logClear();
     await refresh();
