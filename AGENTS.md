@@ -60,9 +60,11 @@ The main thread is the coordinator. It never edits without HMR, never greps logs
 
 1. Verify hook: `git config --get core.hooksPath` → must be `.githooks`. If not, set it.
 2. Ensure `tmp/` exists.
-3. Ask user platform if unknown: **desktop** or **android**.
-   - User runs HMR in their own terminal: `just dev` (desktop) or `just android-dev` (android).
-   - Android: after WebView is up, orchestrator runs `just android-debug-attach` to forward CDP `:9222`.
+3. Ask user platform if unknown: **desktop** or **android**. For android, also ask transport: **USB cable** or **Wi-Fi (no USB)**. Recipe follows transport and never changes mid-session:
+   - Desktop: user runs `just dev`.
+   - Android USB: user runs `just android-dev` (reverse-port over `tauri.localhost`).
+   - Android Wi-Fi: user runs `just android-dev-host` (HMR over `ws://<LAN>:1421`).
+   - Android: after WebView is up, orchestrator runs `just android-debug-attach` to forward CDP `:9222`, then **verifies HMR is live** (next step). Switching transport after a session has begun strands the WebView on a stale HMR endpoint — the orchestrator must reload the page via CDP (`node scripts/cdp.mjs "location.reload()"`) before claiming bootstrap done.
 4. Spawn the monitor as an async subagent (long-running, non-blocking):
    ```js
    subagent({
@@ -73,7 +75,12 @@ The main thread is the coordinator. It never edits without HMR, never greps logs
      control: { enabled: false },
    });
    ```
-5. Record the async run id; report bootstrap status to the user as a checklist.
+5. Record the async run id.
+6. **HMR sanity check** before declaring bootstrap done:
+   - `curl -s http://localhost:9222/json` → ≥1 target whose URL is `http://tauri.localhost/` (USB) or `http://<LAN>:1420/` (Wi-Fi).
+   - `tail -n 50 tmp/error-monitor.log` → no `WebSocket connection to 'ws://...:1421/' failed` lines in the last minute. If present, the WebView is on a stale HMR config; reload via CDP and re-check.
+   - Touch a frontend file (`src/main.ts` mtime bump is enough) and confirm the device receives an HMR update via CDP console (`[vite] hot updated`). If silent, treat as a **bootstrap failure** — surface to the user, do not proceed.
+7. Report bootstrap status to the user as a checklist.
 
 ### Per-turn protocol
 
