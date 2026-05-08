@@ -42,7 +42,10 @@ just release-stable      check + bump + tag + build + publish
 
 ## Orchestrator runbook
 
-> **Live dev invariant.** The device WebView must load from the Vite dev URL throughout any development session. Verify with `just android-debug-eval "location.href"` (Android) or the WebView inspector (desktop). A result containing `tauri.localhost` means the device is on a stale bundled build — kill the installed APK, restart the dev recipe, and re-verify before marking any change live.
+> **Live dev invariant.** The WebView must serve live Vite assets throughout any development session.
+>
+> - **Desktop**: WebView must load the Vite dev URL (e.g. `http://localhost:1420/`). Confirm via the WebView inspector; any other URL signals a stale build.
+> - **Android**: `location.href` always returns `http://tauri.localhost/` even in dev — Tauri proxies through a custom scheme. The authoritative liveness signal is `tmp/android-dev.log`: recent `connecting to 127.0.0.1:1420` / `connected to 127.0.0.1:1420` entries from `RustStdoutStderr` confirm an active session. Absent entries → restart the dev recipe.
 
 Main thread coordinates only: design + delegate + synthesise. Never edits source, greps logs, runs `just check`, or commits.
 
@@ -54,7 +57,7 @@ Main thread coordinates only: design + delegate + synthesise. Never edits source
    - Android: after WebView is up, `just android-debug-attach` forwards CDP `:9222`.
 3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs; when a `cmd /c` wrapper is used the wrapper PID exits immediately, so track the port-owning PID via `netstat -ano | findstr :1420`. Write `tmp/_platform` as `android` or `desktop`. **Android only**: additionally spawn `adb logcat -c` then `adb logcat -b main,events *:W RustStdoutStderr:V Tauri:V chromium:V am_crash:V am_proc_died:V am_kill:V` → `tmp/logcat.log` as a detached process; record its PID (see `docs/dev-loop.md` §Live signals on Android).
 4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed` **(desktop)** / `tmp/logcat.log` free of `am_kill`/`am_proc_died` **(Android)**, no `Replacing devUrl host` substitution to a non-loopback address, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
-5. **Android only**: run `just android-debug-eval "location.href"`. If the result contains `tauri.localhost` or any non-Vite host, bootstrap FAILED — restart the dev recipe from step 3. Record the verified URL in the checklist.
+5. **Android only**: after `just android-debug-attach`, grep `tmp/android-dev.log` for `connecting to 127.0.0.1:1420` entries within the last 60 seconds. Absent → bootstrap FAILED, restart the dev recipe from step 3. Record the log evidence in the checklist.
 6. Report bootstrap as a checklist.
 
 Never instruct the user to run a dev command; the orchestrator launches it.
@@ -63,7 +66,7 @@ Never instruct the user to run a dev command; the orchestrator launches it.
 
 **Desktop**: diff `tmp/error-monitor.log` line count. **Android**: diff `tmp/logcat.log` line count. New lines → `wt-triage` with excerpt. Then Decision table.
 
-**Android — after every edit batch**: JS edit: confirm `tmp/android-dev.log` contains `[vite] hmr update` for the touched file since the edit timestamp. Rust edit: confirm `just android-dev` was restarted and `just android-debug-eval "location.href"` still returns the Vite URL.
+**Android — after every edit batch**: JS edit: confirm `tmp/android-dev.log` contains `[vite] hmr update` for the touched file since the edit timestamp. Rust edit: confirm `just android-dev` was restarted and `tmp/android-dev.log` shows a fresh `connecting to 127.0.0.1:1420` entry.
 
 ### Decision table
 
@@ -76,7 +79,7 @@ Never instruct the user to run a dev command; the orchestrator launches it.
 | Need to find where X lives in repo                                                     | `wt-scout`                                                                                                                                                                                                                                                                                  |
 | Need a built artifact                                                                  | `wt-runner` (mode: install)                                                                                                                                                                                                                                                                 |
 | Rust/native edit during live dev (Android)                                             | Kill dev session; re-run `just android-dev` (rebuilds + reinstalls the debug-dev APK that loads the Vite dev URL). Never `just android-install` / `just android-build` / `wt-runner` install — all replace the dev APK with a bundled-assets build and silently strand subsequent JS edits. |
-| JS-only edit on Android                                                                | No reinstall. Verify: `tmp/android-dev.log` shows `[vite] hmr update /src/…` for the touched file; `just android-debug-eval "location.href"` returns the Vite URL, not `tauri.localhost`.                                                                                                   |
+| JS-only edit on Android                                                                | No reinstall. Verify: `tmp/android-dev.log` shows `[vite] hmr update /src/…` for the touched file since the edit timestamp.                                                                                                                                                                 |
 | Specific in-app misbehaviour or gate failure (single signal)                           | `wt-triage`                                                                                                                                                                                                                                                                                 |
 | Continuous live-signal watch (desktop)                                                 | `scripts/observer.mjs` running; poll `tmp/observer-latest.json`. **Desktop-only — blind on Android.**                                                                                                                                                                                       |
 | Continuous live-signal watch (Android)                                                 | tail `tmp/logcat.log` (detached `adb logcat` spawned at bootstrap); `tmp/observer-latest.json` counter is stale/blind on Android                                                                                                                                                            |
@@ -98,7 +101,7 @@ Never instruct the user to run a dev command; the orchestrator launches it.
 - No `git`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb`/`curl`/`tasklist`) from main thread; poll `tmp/observer-latest.json` (desktop) or `tmp/logcat.log` line-count (Android), or dispatch `wt-triage`.
 - On Android, do not use `tmp/observer-latest.json` or `tmp/error-monitor.log` as the live-signal source; they are blind to OOM and process-death events. Use `tmp/logcat.log` (or dispatch `wt-triage` with a logcat tail) instead.
 - Never run `just android-install`, `just android-build`, or `wt-runner` install mode during a dev session. All three replace the debug-dev APK with a bundled-assets build that ignores Vite. The only Android-side reinstall path during dev is restarting `just android-dev`.
-- Do not declare a JS or Rust change live on Android without verifying via `just android-debug-eval` (HMR entry in `tmp/android-dev.log` for JS; fresh `just android-dev` start for Rust).
+- Do not declare a JS change live on Android without `tmp/android-dev.log` showing `[vite] hmr update` for the touched file. Do not declare a Rust change live without a fresh `just android-dev` start confirmed by a new `connecting to 127.0.0.1:1420` entry in `tmp/android-dev.log`.
 - No agent-to-agent calls; signal via `tmp/` files.
 - No raw log dumps to the user; relay `VERDICT / EVIDENCE / FIX` only.
 

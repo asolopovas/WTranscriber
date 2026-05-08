@@ -57,6 +57,8 @@ node scripts/cdp.mjs "<expr>"
 
 `getBoundingClientRect`, `getComputedStyle`, `outerHTML`, `querySelectorAll`, anything. Use this instead of PNG screenshots for layout/spacing/colors/classes.
 
+`location.href` always returns `http://tauri.localhost/` on Android (Tauri proxies through a custom scheme to the Vite dev server); it is not a dev-session health signal. Use `tmp/android-dev.log` instead (see §Live signals on Android).
+
 ## 3. Error monitor - async subagent
 
 ```
@@ -89,7 +91,9 @@ The monitor reattaches to a new WebView instance automatically after `just andro
 
 `scripts/error-monitor.mjs` and `tmp/observer-latest.json` are **desktop-only**. On Android, OOM kills and process-death events appear in the Android events log buffer, not the main buffer that `error-monitor.mjs` tails. `tmp/observer-latest.json` will show a stale counter from any previous desktop session.
 
-Authoritative Android live-signal source: `tmp/logcat.log`, populated at bootstrap by:
+Dev-session liveness: `tmp/android-dev.log` must contain `connecting to 127.0.0.1:1420` / `connected to 127.0.0.1:1420` from `RustStdoutStderr` within the last 60 seconds, and `[vite] hmr update /src/…` after each JS edit.
+
+Crash/OOM signals: `tmp/logcat.log`, populated at bootstrap by:
 
 ```
 adb logcat -c
