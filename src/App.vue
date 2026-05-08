@@ -434,11 +434,14 @@ async function deleteEntry(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
   const ok = await withDialog(() =>
-    confirm(`Delete "${target.name}"?\n\nThis cannot be undone.`, {
-      title: "Delete file",
-      okLabel: "Delete",
-      kind: "warning",
-    }),
+    confirm(
+      `Remove "${target.name}" from this folder?\n\nThe original file in its source location is not affected.`,
+      {
+        title: "Delete file",
+        okLabel: "Delete",
+        kind: "warning",
+      },
+    ),
   );
   if (!ok) return;
   try {
