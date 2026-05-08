@@ -85,9 +85,6 @@ pub fn list(path: &Path) -> Result<DirListing> {
                     break;
                 }
             }
-            if duration_ms.is_none() {
-                duration_ms = audio::probe_duration_ms(&path);
-            }
             if let Some(m) = audio::meta::load(&path) {
                 if m.trim_start_ms > 0 {
                     trim_start_ms = Some(m.trim_start_ms);

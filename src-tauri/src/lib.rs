@@ -623,6 +623,7 @@ pub fn run() {
             commands::rename_file,
             commands::delete_file,
             commands::export_transcript,
+            commands::probe_duration,
             commands::list_directory,
             commands::default_dir,
             commands::add_to_workdir,

@@ -39,6 +39,7 @@ export const api = {
   logClear: () => invoke<void>("log_clear"),
   resetTranscriptCache: () => invoke<number>("reset_transcript_cache"),
   resetAudioCache: () => invoke<number>("reset_audio_cache"),
+  probeDuration: (path: string) => invoke<number | null>("probe_duration", { path }),
   listDirectory: (path?: string) => invoke<DirListing>("list_directory", { path }),
   defaultDir: () => invoke<string>("default_dir"),
   renameFile: (source: string, newName: string) =>

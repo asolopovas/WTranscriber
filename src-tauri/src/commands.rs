@@ -736,6 +736,11 @@ pub fn history_load(key: String) -> Result<Option<Transcript>> {
 }
 
 #[tauri::command]
+pub fn probe_duration(path: PathBuf) -> Option<u64> {
+    audio::probe_duration_ms(&path)
+}
+
+#[tauri::command]
 pub fn list_directory(path: Option<PathBuf>) -> Result<DirListing> {
     let p = path.unwrap_or_else(browser::home_dir);
     browser::list(&p)

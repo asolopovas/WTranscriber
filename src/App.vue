@@ -141,22 +141,64 @@ async function pickAudio() {
 async function addPathsToWorkdir(paths: string[]) {
   if (!listing.value) return;
   const dir = listing.value.path;
-  let lastAdded = "";
-  for (const p of paths) {
-    if (!hasAudioExt(p)) continue;
+
+  const tryAdd = async (p: string): Promise<string> => {
+    let eRaw: unknown;
     try {
-      lastAdded = await api.addToWorkdir(p, dir);
-    } catch (eRaw) {
-      try {
-        const bytes = await readFile(p);
-        lastAdded = await api.saveRecording(dir, basenameOf(p), bytes);
-      } catch (e2) {
-        error.value = `${eRaw} / ${e2}`;
+      return await api.addToWorkdir(p, dir);
+    } catch (e) {
+      eRaw = e;
+    }
+    try {
+      const bytes = await readFile(p);
+      return await api.saveRecording(dir, basenameOf(p), bytes);
+    } catch (e2) {
+      throw new Error(`${eRaw} / ${e2}`);
+    }
+  };
+
+  const results = await Promise.allSettled(paths.filter(hasAudioExt).map(tryAdd));
+
+  const added: string[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      added.push(r.value);
+      if (listing.value && !listing.value.entries.some((e) => e.path === r.value)) {
+        listing.value.entries.push({
+          name: basenameOf(r.value),
+          path: r.value,
+          is_dir: false,
+          is_audio: true,
+          size_bytes: 0,
+          modified_ms: 0,
+          cache_key: null,
+          utterances: null,
+          duration_ms: null,
+          trim_start_ms: null,
+          trim_end_ms: null,
+        });
       }
+    } else {
+      error.value = String(r.reason);
     }
   }
+
   await refreshListing();
-  if (lastAdded) selectedPath.value = lastAdded;
+  if (added.length) selectedPath.value = added[added.length - 1];
+
+  void (async () => {
+    if (!listing.value) return;
+    const toProbe = listing.value.entries.filter((e) => e.is_audio && e.duration_ms === null);
+    for (let i = 0; i < toProbe.length; i += 10) {
+      await Promise.allSettled(
+        toProbe.slice(i, i + 10).map((e) =>
+          api.probeDuration(e.path).then((ms) => {
+            e.duration_ms = ms ?? null;
+          }),
+        ),
+      );
+    }
+  })();
 }
 
 async function onRecordingSaved(path: string) {
