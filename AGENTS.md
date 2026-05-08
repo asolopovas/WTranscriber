@@ -52,6 +52,59 @@ just release-stable     check + bump + tag + build + publish
 - **HMR + CDP + error monitor**: `docs/dev-loop.md`. Prefer CDP over screenshots for layout/style.
 - **Release**: `docs/release.md`. **Build speed**: `docs/rust-build-speed.md`.
 
+## Orchestrator runbook
+
+The main thread is the coordinator. It never edits without HMR, never greps logs, never runs `just check`, never commits directly. It executes this runbook autonomously — no user prompting required.
+
+### Session bootstrap (run once per dev session)
+
+1. Verify hook: `git config --get core.hooksPath` → must be `.githooks`. If not, set it.
+2. Ensure `tmp/` exists.
+3. Ask user platform if unknown: **desktop** or **android**.
+   - User runs HMR in their own terminal: `just dev` (desktop) or `just android-dev` (android).
+   - Android: after WebView is up, orchestrator runs `just android-debug-attach` to forward CDP `:9222`.
+4. Spawn the monitor as an async subagent (long-running, non-blocking):
+   ```js
+   subagent({
+     agent: "delegate",
+     task: "node scripts/error-monitor.mjs\n\nStream forever. Surface any error/warn line. Ignore inactivity warnings.",
+     async: true,
+     cwd: "C:/Users/asolo/src/WTranscriber",
+     control: { enabled: false },
+   });
+   ```
+5. Record the async run id; report bootstrap status to the user as a checklist.
+
+### Per-turn protocol
+
+Between every user turn — and after every edit batch — the orchestrator:
+
+1. Reads `tmp/error-monitor.log` line count; compares against last seen.
+2. **New lines → spawn `wt-triage`** with the _excerpt only_ (never the whole log):
+   `"Error: <excerpt>. Diagnose and fix. Do not commit."`
+   Triage returns `VERDICT / EVIDENCE / FIX`.
+3. **Fix applied and green → spawn `wt-committer`** with a one-line change summary. Committer runs the pre-commit gate, writes a conventional message, pushes, returns the hash.
+4. **Install / smoke needed → chain `install-and-test`** (`.pi/chains/`). Never call tester directly without installer.
+5. **`just check` failure or regression → `wt-triage`** in parallel; it owns the multi-minute output.
+
+### Decision table
+
+| Signal                                            | Action                                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| New line in `tmp/error-monitor.log`               | `wt-triage` with excerpt                                                                               |
+| Source edits applied, gate not yet hit            | `wt-committer` with summary                                                                            |
+| Need a built artifact (Win GUI/CLI, Android, WSL) | `wt-installer`                                                                                         |
+| Need 30s-clip smoke after install                 | chain `install-and-test`                                                                               |
+| `just check` / CI / regression forensics          | `wt-triage` (parallel, observe-only)                                                                   |
+| User asks to commit / ship                        | `wt-committer` (never `git commit` from main thread)                                                   |
+| User asks to release                              | `wt-committer` → confirm clean → `just release-stable` brief delegated to `wt-installer` for artifacts |
+
+### Hard prohibitions (orchestrator)
+
+- No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log grepping from the main thread.
+- No agent-to-agent calls — workers signal via files under `tmp/`.
+- No raw log dumps in responses to the user — relay `VERDICT / EVIDENCE / FIX` only.
+
 ## Subagents (`.pi/agents/`)
 
 Orchestrator-worker pattern. Main thread = orchestrator (design + code + synthesis). Specialists run in fresh context and return tight summaries.
