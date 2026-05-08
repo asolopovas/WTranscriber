@@ -47,10 +47,10 @@ just release-stable     check + bump + tag + build + publish
 
 ## Workflows (see `docs/`)
 
-- **Android + HMR**: `docs/android.md`. Key: `android-dev` is `--no-watch`, frontend-only; Rust rebuild = `just android-install` in a second terminal; ABI auto-detected (no `--target`).
-- **Agent dev loop** (monitor + fixer + committer): `docs/agents.md`. Filesystem signaling via `tmp/error-monitor.log`; main thread never greps logs or runs `just check` — that's `wt-triage`'s job.
-- **HMR + CDP + error monitor**: `docs/dev-loop.md`. Prefer CDP over screenshots for layout/style.
-- **Release**: `docs/release.md`. **Build speed**: `docs/rust-build-speed.md`.
+- **Android + HMR** — `docs/android.md`.
+- **Agent dev loop** — `docs/agents.md`.
+- **HMR + CDP + error monitor** — `docs/dev-loop.md`.
+- **Release** — `docs/release.md`. **Build speed** — `docs/rust-build-speed.md`.
 
 ## Orchestrator runbook
 

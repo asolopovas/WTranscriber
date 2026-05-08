@@ -2,6 +2,7 @@
 name: wt-scout
 description: Code search reconnaissance. Given a topic or symbol, finds every relevant section across the repo and returns a ranked map of `file:line` citations with one-line annotations. Read-only — never edits, never runs builds.
 tools: bash, read, write
+model: anthropic/claude-haiku-4-5
 systemPromptMode: replace
 inheritProjectContext: true
 inheritSkills: false
@@ -42,3 +43,4 @@ Cap `HITS` at 30. Order by relevance, not file order. Group adjacent lines into 
 - Never dump raw `rg` output — every hit must carry an annotation.
 - If the topic is ambiguous, pick the most likely interpretation, state it in `SUMMARY`, and proceed. Do not ask.
 - Stop the moment the report is written.
+- Max 3 internal retries; then return `FIX: requires X decision`.
