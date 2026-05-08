@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, events } from "./api";
 import type {
-  AudioMeta,
   Config,
   DirEntry,
   DirListing,
@@ -21,14 +20,18 @@ import LogViewer from "./components/LogViewer.vue";
 import Recorder from "./components/Recorder.vue";
 import SlidingPanel from "./components/SlidingPanel.vue";
 import SetupGate from "./components/SetupGate.vue";
+import BottomNav, { type Tab } from "./components/BottomNav.vue";
+import RenameDialog from "./components/dialogs/RenameDialog.vue";
+import ExportDialog from "./components/dialogs/ExportDialog.vue";
+import TrimDialog from "./components/dialogs/TrimDialog.vue";
+import Toggle from "./components/ui/Toggle.vue";
+import SaveIndicator from "./components/ui/SaveIndicator.vue";
 import TranscribeIcon from "./components/icons/TranscribeIcon.vue";
-import SaveIcon from "./components/icons/SaveIcon.vue";
-import CancelIcon from "./components/icons/CancelIcon.vue";
 import Spinner from "./components/icons/Spinner.vue";
-import SettingsIcon from "./components/icons/SettingsIcon.vue";
-import LogIcon from "./components/icons/LogIcon.vue";
-
-type Tab = "transcribe" | "settings" | "logs";
+import { fmtClock, fmtMs as fmt, fmtMsLong as fmtLong, fmtBytes } from "./composables/format";
+import { useDebouncedSave } from "./composables/useDebouncedSave";
+import { useMediaQuery } from "./composables/useMediaQuery";
+import { fieldClass } from "./styles/fields";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
@@ -53,7 +56,6 @@ const transcript = ref<Transcript | null>(null);
 const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
 const dragOver = ref(false);
-const saveState = ref<"idle" | "saving" | "saved">("idle");
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
 const dialogOpen = ref(false);
@@ -139,17 +141,8 @@ watch(configContentEl, (el, _prev, onCleanup) => {
   measure();
   onCleanup(() => ro.disconnect());
 });
-const isMobile = ref(
-  typeof window !== "undefined" && !window.matchMedia("(min-width: 768px)").matches,
-);
-if (typeof window !== "undefined") {
-  const mq = window.matchMedia("(min-width: 768px)");
-  const onChange = (e: MediaQueryListEvent) => {
-    isMobile.value = !e.matches;
-  };
-  mq.addEventListener?.("change", onChange);
-  onUnmounted(() => mq.removeEventListener?.("change", onChange));
-}
+const isDesktop = useMediaQuery("(min-width: 768px)");
+const isMobile = computed(() => !isDesktop.value);
 const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
@@ -203,16 +196,6 @@ function prettyName(name: string): { display: string; timestamp: string | null }
   return { display: noExt, timestamp: null };
 }
 
-function fmtClock(secs: number): string {
-  if (!Number.isFinite(secs) || secs < 0) secs = 0;
-  const total = Math.round(secs);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
 function phaseLabel(p: TranscribeProgress["phase"]): string {
   switch (p) {
     case "cache_check":
@@ -264,14 +247,6 @@ const allLanguageOptions = [
   "ar",
   "tr",
   "hi",
-];
-
-const exportFormats: { value: ExportFormat; label: string }[] = [
-  { value: "txt", label: "Plain text (.txt)" },
-  { value: "csv", label: "CSV (.csv)" },
-  { value: "json", label: "JSON (.json)" },
-  { value: "srt", label: "Subtitles (.srt)" },
-  { value: "vtt", label: "WebVTT (.vtt)" },
 ];
 
 const asrModels = computed(() =>
@@ -562,28 +537,12 @@ watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
 });
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
-  config,
-  (next) => {
-    if (!next) return;
-    if (saveTimer) clearTimeout(saveTimer);
-    saveState.value = "saving";
-    saveTimer = setTimeout(async () => {
-      try {
-        await api.saveConfig(next);
-        saveState.value = "saved";
-        setTimeout(() => {
-          if (saveState.value === "saved") saveState.value = "idle";
-        }, 1500);
-      } catch (e) {
-        error.value = `save failed: ${String(e)}`;
-        saveState.value = "idle";
-      }
-    }, 250);
-  },
-  { deep: true },
+const { state: saveState, error: saveError } = useDebouncedSave(config, (next) =>
+  api.saveConfig(next),
 );
+watch(saveError, (e) => {
+  if (e) error.value = `save failed: ${e}`;
+});
 
 async function runTranscribe(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
@@ -744,315 +703,16 @@ const exporting = ref(false);
 const exportTarget = ref<DirEntry | null>(null);
 const exportFormat = ref<ExportFormat>("txt");
 
-function drawWaveformFallback(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = "#6750a4";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, h / 2);
-  ctx.lineTo(w, h / 2);
-  ctx.stroke();
-}
-
-function drawWaveformPeaks(canvas: HTMLCanvasElement, peaks: number[], startFrac = 0, endFrac = 1) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const step = canvas.width / peaks.length;
-  peaks.forEach((peak, i) => {
-    const amp = Math.max(0.02, Math.min(1, peak));
-    const barHeight = amp * canvas.height;
-    const x = i * step;
-    const y = (canvas.height - barHeight) / 2;
-    const frac = (i + 0.5) / peaks.length;
-    const inside = frac >= startFrac && frac <= endFrac;
-    ctx.fillStyle = inside ? "#6750a4" : "rgba(103, 80, 164, 0.22)";
-    ctx.fillRect(x, y, Math.max(1, step - 1), barHeight);
-  });
-}
-
-const trimming = ref(false);
 const trimTarget = ref<DirEntry | null>(null);
-const trimDuration = ref(0);
-const trimStart = ref(0);
-const trimEnd = ref(0);
-const trimPeaks = ref<number[]>([]);
-const trimCanvas = ref<HTMLCanvasElement | null>(null);
-const trimAudioSrc = ref("");
-const trimError = ref<string | null>(null);
-const trimLoading = ref(false);
-
-const trimStartFrac = computed(() =>
-  trimDuration.value > 0 ? trimStart.value / trimDuration.value : 0,
-);
-const trimEndFrac = computed(() =>
-  trimDuration.value > 0 ? trimEnd.value / trimDuration.value : 1,
-);
-
-const loadingTrimPath = ref<string | null>(null);
-
 function openTrim(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio) return;
-  if (trimming.value || renaming.value || exporting.value) return;
-  if (loadingTrimPath.value) return;
-  loadingTrimPath.value = target.path;
-  trimError.value = null;
-  if (trimAudioSrc.value.startsWith("blob:")) URL.revokeObjectURL(trimAudioSrc.value);
-  trimAudioSrc.value = "";
-  trimPeaks.value = [];
-  setTimeout(() => void doOpenTrim(target), 0);
-}
-
-async function doOpenTrim(target: DirEntry) {
-  let nextDur = 0;
-  let nextStart = 0;
-  let nextEnd = 0;
-  let nextPeaks: number[] = [];
-  try {
-    const [durMs, meta, peaks] = await Promise.all([
-      api.probeAudio(target.path).catch(() => null),
-      api.loadAudioMeta(target.path),
-      api.audioWaveform(target.path, 320),
-    ]);
-    nextDur = Math.max(0, Math.floor((durMs ?? target.duration_ms ?? 0) as number));
-    nextStart = Math.min(meta.trim_start_ms ?? 0, nextDur);
-    nextEnd = Math.min(meta.trim_end_ms ?? nextDur, nextDur);
-    if (nextEnd <= nextStart) nextEnd = nextDur;
-    nextPeaks = peaks;
-  } catch (e) {
-    loadingTrimPath.value = null;
-    error.value = `prepare: ${String(e)}`;
-    return;
-  }
+  if (trimTarget.value || renaming.value || exporting.value) return;
   trimTarget.value = target;
-  trimAudioSrc.value = "";
-  trimDuration.value = nextDur;
-  trimStart.value = nextStart;
-  trimEnd.value = nextEnd;
-  trimPlayOffsetMs = nextStart;
-  trimAudioBuffer = null;
-  trimAudioPath = null;
-  trimPeaks.value = nextPeaks;
-  trimLoading.value = false;
-  trimming.value = true;
-  loadingTrimPath.value = null;
-  await renderTrimWaveform();
 }
-
-async function renderTrimWaveform() {
-  await nextTick();
-  const canvas = trimCanvas.value;
-  if (!canvas) return;
-  if (trimPeaks.value.length === 0) {
-    drawWaveformFallback(canvas);
-    return;
-  }
-  drawWaveformPeaks(canvas, trimPeaks.value, trimStartFrac.value, trimEndFrac.value);
-}
-
-watch([trimStart, trimEnd, trimPeaks], () => {
-  if (trimming.value) void renderTrimWaveform();
-});
-
-const waveformBox = ref<HTMLElement | null>(null);
-const MIN_TRIM_GAP_MS = 3_000;
-const trimPlaying = ref(false);
-const trimPlayheadMs = ref(0);
-const trimPlayheadFrac = computed(() =>
-  trimDuration.value > 0 ? Math.max(0, Math.min(1, trimPlayheadMs.value / trimDuration.value)) : 0,
-);
-let trimPlayheadRaf: number | null = null;
-function stopPlayheadLoop() {
-  if (trimPlayheadRaf !== null) cancelAnimationFrame(trimPlayheadRaf);
-  trimPlayheadRaf = null;
-}
-function startPlayheadLoop() {
-  stopPlayheadLoop();
-  const tick = () => {
-    if (!trimPlaying.value || !trimAudioCtx) {
-      trimPlayheadRaf = null;
-      return;
-    }
-    const ms = trimPlayOffsetMs + (trimAudioCtx.currentTime - trimPlayStartCtx) * 1000;
-    trimPlayheadMs.value = Math.min(trimEnd.value, Math.max(trimStart.value, ms));
-    trimPlayheadRaf = requestAnimationFrame(tick);
-  };
-  trimPlayheadRaf = requestAnimationFrame(tick);
-}
-const trimAudioLoading = ref(false);
-let trimAudioCtx: AudioContext | null = null;
-let trimAudioBuffer: AudioBuffer | null = null;
-let trimAudioSource: AudioBufferSourceNode | null = null;
-let trimPlayStartCtx = 0;
-let trimPlayOffsetMs = 0;
-let trimAudioPath: string | null = null;
-let trimStopTimer: ReturnType<typeof setTimeout> | null = null;
-
-async function ensureTrimBuffer(): Promise<AudioBuffer | null> {
-  const target = trimTarget.value;
-  if (!target) return null;
-  if (trimAudioBuffer && trimAudioPath === target.path) return trimAudioBuffer;
-  trimAudioLoading.value = true;
-  try {
-    const bytes = await api.readAudioBytes(target.path);
-    if (!trimAudioCtx) trimAudioCtx = new AudioContext();
-    const ab = new Uint8Array(bytes).buffer;
-    trimAudioBuffer = await trimAudioCtx.decodeAudioData(ab);
-    trimAudioPath = target.path;
-    return trimAudioBuffer;
-  } finally {
-    trimAudioLoading.value = false;
-  }
-}
-
-function clearTrimSource() {
-  if (trimAudioSource) {
-    try {
-      trimAudioSource.onended = null;
-      trimAudioSource.stop();
-    } catch {}
-    try {
-      trimAudioSource.disconnect();
-    } catch {}
-    trimAudioSource = null;
-  }
-  if (trimStopTimer) clearTimeout(trimStopTimer);
-  trimStopTimer = null;
-}
-
-function stopTrimPlay() {
-  clearTrimSource();
-  trimPlayOffsetMs = trimStart.value;
-  trimPlayheadMs.value = trimStart.value;
-  trimPlaying.value = false;
-  stopPlayheadLoop();
-}
-
-function pauseTrimPlay() {
-  if (trimPlaying.value && trimAudioCtx) {
-    const elapsed = (trimAudioCtx.currentTime - trimPlayStartCtx) * 1000;
-    trimPlayOffsetMs = Math.min(trimEnd.value, trimPlayOffsetMs + elapsed);
-    trimPlayheadMs.value = trimPlayOffsetMs;
-  }
-  clearTrimSource();
-  trimPlaying.value = false;
-  stopPlayheadLoop();
-}
-
-async function toggleTrimPlay() {
-  if (trimPlaying.value) {
-    pauseTrimPlay();
-    return;
-  }
-  const buffer = await ensureTrimBuffer().catch((e) => {
-    trimError.value = `load: ${String(e)}`;
-    return null;
-  });
-  if (!buffer || !trimAudioCtx) return;
-  if (trimAudioCtx.state === "suspended") await trimAudioCtx.resume();
-  let offsetMs = trimPlayOffsetMs;
-  if (offsetMs < trimStart.value || offsetMs >= trimEnd.value) offsetMs = trimStart.value;
-  const durMs = Math.max(0, trimEnd.value - offsetMs);
-  const src = trimAudioCtx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(trimAudioCtx.destination);
-  src.onended = () => {
-    if (trimAudioSource === src) {
-      trimAudioSource = null;
-      trimPlayOffsetMs = trimStart.value;
-      trimPlayheadMs.value = trimStart.value;
-      trimPlaying.value = false;
-      stopPlayheadLoop();
-    }
-  };
-  trimAudioSource = src;
-  trimPlayStartCtx = trimAudioCtx.currentTime;
-  trimPlayOffsetMs = offsetMs;
-  src.start(0, offsetMs / 1000, durMs / 1000);
-  trimPlayheadMs.value = offsetMs;
-  trimPlaying.value = true;
-  startPlayheadLoop();
-  trimStopTimer = setTimeout(() => {
-    if (trimAudioSource === src) clearTrimSource();
-    trimPlayOffsetMs = trimStart.value;
-    trimPlayheadMs.value = trimStart.value;
-    trimPlaying.value = false;
-    stopPlayheadLoop();
-  }, durMs + 200);
-}
-
-function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
-  ev.preventDefault();
-  ev.stopPropagation();
-  const box = waveformBox.value;
-  if (!box || trimDuration.value === 0) return;
-  const dur = trimDuration.value;
-  const gap = Math.min(MIN_TRIM_GAP_MS, Math.max(100, Math.floor(dur / 4)));
-  const move = (e: PointerEvent) => {
-    const rect = box.getBoundingClientRect();
-    const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    const ms = Math.round((x / rect.width) * dur);
-    if (side === "start") {
-      trimStart.value = Math.max(0, Math.min(ms, trimEnd.value - gap));
-    } else {
-      trimEnd.value = Math.min(dur, Math.max(ms, trimStart.value + gap));
-    }
-  };
-  const up = (e: PointerEvent) => {
-    move(e);
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", up);
-  };
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-  window.addEventListener("pointercancel", up);
-}
-
-function resetTrim() {
-  trimStart.value = 0;
-  trimEnd.value = trimDuration.value;
-}
-
-async function commitTrim() {
-  if (!trimTarget.value) return;
-  const target = trimTarget.value;
-  const start = Math.max(0, Math.floor(trimStart.value));
-  const end = Math.min(trimDuration.value, Math.floor(trimEnd.value));
-  const meta: AudioMeta = {
-    trim_start_ms: start,
-    trim_end_ms: end < trimDuration.value ? end : null,
-  };
-  if (start === 0) meta.trim_start_ms = 0;
-  try {
-    await api.saveAudioMeta(target.path, meta);
-    stopTrimPlay();
-    trimAudioBuffer = null;
-    trimAudioPath = null;
-    trimPlayOffsetMs = 0;
-    trimming.value = false;
-    trimTarget.value = null;
-    trimAudioSrc.value = "";
-    await refreshListing();
-  } catch (e) {
-    trimError.value = String(e);
-  }
-}
-
-function closeTrim() {
-  stopTrimPlay();
-  trimAudioBuffer = null;
-  trimAudioPath = null;
-  trimPlayOffsetMs = 0;
-  trimming.value = false;
+async function onTrimSaved() {
   trimTarget.value = null;
-  trimAudioSrc.value = "";
-  trimError.value = null;
+  await refreshListing();
 }
 
 async function openExport(entry?: DirEntry) {
@@ -1096,29 +756,6 @@ async function commitExport() {
     error.value = String(e);
   }
 }
-
-function fmt(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function fmtLong(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const r = s % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
-}
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-const fieldClass =
-  "w-full bg-surface-container-high border border-outline-variant/60 text-on-surface text-bodyMedium px-md py-xs rounded-lg appearance-none focus:outline-none focus:border-primary transition-colors";
 </script>
 
 <template>
@@ -1538,13 +1175,9 @@ const fieldClass =
                               )}`
                             : 'Trim — select range to transcribe'
                         "
-                        :disabled="loadingTrimPath === entry.path"
                         @click="openTrim(entry)"
                       >
-                        <Spinner v-if="loadingTrimPath === entry.path" :size="18" />
-                        <span v-else class="material-symbols-outlined text-[18px]"
-                          >content_cut</span
-                        >
+                        <span class="material-symbols-outlined text-[18px]">content_cut</span>
                       </button>
                       <button
                         class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
@@ -1699,29 +1332,7 @@ const fieldClass =
                 <span class="material-symbols-outlined fill text-[16px]">stop</span>
                 {{ recorderRef?.elapsed }}
               </button>
-              <span
-                v-else
-                class="font-mono text-labelSmall flex items-center gap-unit"
-                :class="
-                  saveState === 'saving'
-                    ? 'text-secondary'
-                    : saveState === 'saved'
-                      ? 'text-tertiary'
-                      : 'text-outline'
-                "
-              >
-                <span
-                  class="w-1.5 h-1.5 rounded-full"
-                  :class="
-                    saveState === 'saving'
-                      ? 'bg-secondary animate-pulse'
-                      : saveState === 'saved'
-                        ? 'bg-tertiary'
-                        : 'bg-outline-variant'
-                  "
-                ></span>
-                {{ saveState === "saving" ? "saving" : saveState === "saved" ? "saved" : "synced" }}
-              </span>
+              <SaveIndicator v-else :state="saveState" />
             </div>
           </div>
 
@@ -1858,40 +1469,11 @@ const fieldClass =
               <div class="flex items-center justify-between gap-xl py-xs">
                 <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
                   <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>
-                  <button
-                    type="button"
-                    class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                    :class="
-                      config.diarize
-                        ? 'bg-primary'
-                        : 'bg-surface-container-highest border border-outline-variant'
-                    "
-                    @click="config.diarize = !config.diarize"
-                  >
-                    <span
-                      class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                      :class="config.diarize ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                    ></span>
-                  </button>
+                  <Toggle v-model="config.diarize" aria-label="Auto-Diarize" />
                 </div>
-
                 <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
                   <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
-                  <button
-                    type="button"
-                    class="w-10 h-6 rounded-full relative shrink-0 transition-colors"
-                    :class="
-                      config.auto_rename
-                        ? 'bg-primary'
-                        : 'bg-surface-container-highest border border-outline-variant'
-                    "
-                    @click="config.auto_rename = !config.auto_rename"
-                  >
-                    <span
-                      class="absolute top-1 w-4 h-4 rounded-full transition-all"
-                      :class="config.auto_rename ? 'right-1 bg-on-primary' : 'left-1 bg-outline'"
-                    ></span>
-                  </button>
+                  <Toggle v-model="config.auto_rename" aria-label="Auto-Rename" />
                 </div>
               </div>
             </div>
@@ -1964,234 +1546,15 @@ const fieldClass =
       <LogViewer v-else-if="tab === 'logs'" />
     </main>
 
-    <nav
-      class="md:hidden flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface"
-    >
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        @click="tab = t.id"
-        class="flex-1 flex flex-col items-center justify-center h-14 transition-colors"
-        :class="tab === t.id ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'"
-        :title="t.label"
-        :aria-label="t.label"
-      >
-        <TranscribeIcon v-if="t.id === 'transcribe'" :size="26" />
-        <SettingsIcon v-else-if="t.id === 'settings'" :size="26" />
-        <LogIcon v-else :size="26" />
-      </button>
-    </nav>
+    <BottomNav v-model="tab" />
 
-    <div
-      v-if="renaming"
-      class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
-      @click.self="renaming = false"
-    >
-      <div
-        class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md"
-      >
-        <h3 class="text-titleSmall text-on-surface">Rename file</h3>
-        <input
-          v-model="renameValue"
-          :class="fieldClass"
-          @keydown.enter="commitRename"
-          @keydown.escape="renaming = false"
-        />
-        <div class="flex justify-end gap-xs">
-          <button
-            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
-            @click="renaming = false"
-          >
-            Cancel
-          </button>
-          <button
-            class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
-            @click="commitRename"
-          >
-            Rename
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="exporting"
-      class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
-      @click.self="exporting = false"
-    >
-      <div
-        class="bg-surface-container rounded-xl border border-outline-variant/40 p-margin w-[420px] max-w-[90vw] space-y-md"
-      >
-        <h3 class="text-titleSmall text-on-surface">Export transcript</h3>
-        <div class="space-y-xs">
-          <label
-            v-for="f in exportFormats"
-            :key="f.value"
-            class="flex items-center gap-xs p-xs rounded hover:bg-surface-container-high cursor-pointer"
-          >
-            <input type="radio" :value="f.value" v-model="exportFormat" />
-            <span class="text-bodyMedium text-on-surface">{{ f.label }}</span>
-          </label>
-        </div>
-        <div class="flex justify-end gap-xs">
-          <button
-            class="px-md py-xs rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high"
-            @click="exporting = false"
-          >
-            Cancel
-          </button>
-          <button
-            class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim"
-            @click="commitExport"
-          >
-            Save…
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div
-      v-if="trimming"
-      class="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-margin"
-      @click.self="closeTrim"
-      @keydown.escape="closeTrim"
-    >
-      <div
-        class="bg-surface-container rounded-xl border border-outline-variant/50 w-full max-w-[768px] flex flex-col overflow-hidden shadow-2xl"
-      >
-        <div
-          class="px-margin py-md border-b border-outline-variant/40 bg-surface-container-low flex items-start gap-md"
-        >
-          <span class="material-symbols-outlined text-primary text-[22px] mt-unit"
-            >content_cut</span
-          >
-          <div class="flex-1 min-w-0">
-            <h3 class="text-titleSmall text-on-surface">Select range to transcribe</h3>
-            <p
-              class="font-mono text-labelSmall text-on-surface-variant truncate"
-              :title="trimTarget?.name"
-            >
-              {{ trimTarget?.name ?? "—" }}
-            </p>
-          </div>
-          <button
-            class="material-symbols-outlined text-[20px] p-xs rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors"
-            title="Close"
-            @click="closeTrim"
-          >
-            close
-          </button>
-        </div>
-
-        <div
-          v-if="trimError"
-          class="mx-margin mt-md p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
-        >
-          {{ trimError }}
-        </div>
-
-        <div class="px-margin py-md space-y-md">
-          <div
-            class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md relative"
-          >
-            <div
-              v-if="trimLoading"
-              class="absolute inset-0 flex items-center justify-center text-on-surface-variant gap-xs"
-            >
-              <span class="material-symbols-outlined text-[20px] animate-pulse">graphic_eq</span>
-              <span class="font-mono text-labelSmall">analysing…</span>
-            </div>
-            <div ref="waveformBox" class="relative select-none touch-none">
-              <canvas
-                ref="trimCanvas"
-                width="720"
-                height="120"
-                class="w-full h-28 block pointer-events-none"
-              ></canvas>
-              <div
-                class="absolute top-0 bottom-0 bg-primary/15 border-l-2 border-r-2 border-primary pointer-events-none"
-                :style="{
-                  left: trimStartFrac * 100 + '%',
-                  right: (1 - trimEndFrac) * 100 + '%',
-                }"
-              ></div>
-              <div
-                class="absolute -top-2 -bottom-2 -ml-7 w-14 cursor-ew-resize flex items-center justify-center touch-none"
-                :style="{ left: trimStartFrac * 100 + '%' }"
-                @pointerdown="(e) => beginHandleDrag('start', e)"
-              >
-                <div class="w-2 h-full bg-primary rounded-full shadow-lg"></div>
-              </div>
-              <div
-                class="absolute -top-2 -bottom-2 -ml-7 w-14 cursor-ew-resize flex items-center justify-center touch-none"
-                :style="{ left: trimEndFrac * 100 + '%' }"
-                @pointerdown="(e) => beginHandleDrag('end', e)"
-              >
-                <div class="w-2 h-full bg-primary rounded-full shadow-lg"></div>
-              </div>
-              <div
-                v-if="trimDuration > 0"
-                class="absolute top-0 bottom-0 w-px bg-tertiary pointer-events-none shadow-[0_0_4px_rgba(255,255,255,0.6)]"
-                :style="{ left: trimPlayheadFrac * 100 + '%' }"
-              >
-                <div
-                  class="absolute -top-1 -translate-x-1/2 left-0 w-2 h-2 rounded-full bg-tertiary"
-                ></div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            class="flex justify-between font-mono text-labelMedium text-on-surface-variant pt-xs border-t border-outline-variant/40"
-          >
-            <span class="text-primary">{{ fmt(trimStart) }}</span>
-            <span class="text-on-surface"
-              >selected {{ fmt(Math.max(0, trimEnd - trimStart)) }}</span
-            >
-            <span class="text-primary">{{ fmt(trimEnd) }}</span>
-          </div>
-        </div>
-
-        <div
-          class="px-margin py-md border-t border-outline-variant/40 bg-surface-container-low flex justify-between items-center gap-xs"
-        >
-          <button
-            class="min-h-12 px-lg rounded-full border border-outline-variant text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
-            @click="resetTrim"
-            title="Reset to full track"
-          >
-            <span class="material-symbols-outlined text-[18px]">restart_alt</span>
-            Full track
-          </button>
-          <div class="flex gap-xs">
-            <button
-              class="min-h-12 w-12 rounded-full border border-outline-variant text-primary hover:bg-surface-container-high transition-colors flex items-center justify-center"
-              :title="trimPlaying ? 'Stop' : 'Play selection'"
-              :disabled="trimAudioLoading || !trimTarget"
-              @click="toggleTrimPlay"
-            >
-              <Spinner v-if="trimAudioLoading" :size="20" />
-              <span v-else class="material-symbols-outlined fill text-[22px]">{{
-                trimPlaying ? "pause" : "play_arrow"
-              }}</span>
-            </button>
-            <button
-              class="min-h-12 w-12 rounded-full border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"
-              title="Cancel"
-              @click="closeTrim"
-            >
-              <CancelIcon :size="20" />
-            </button>
-            <button
-              class="min-h-12 w-12 rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors flex items-center justify-center"
-              title="Save"
-              @click="commitTrim"
-            >
-              <SaveIcon :size="20" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <RenameDialog v-model:open="renaming" v-model:value="renameValue" @commit="commitRename" />
+    <ExportDialog v-model:open="exporting" v-model:format="exportFormat" @commit="commitExport" />
+    <TrimDialog
+      :target="trimTarget"
+      @close="trimTarget = null"
+      @saved="onTrimSaved"
+      @error="(msg) => (error = msg)"
+    />
   </div>
 </template>

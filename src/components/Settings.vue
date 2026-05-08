@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { api, events } from "../api";
 import type { Config, FileProgress, ModelInfo, SystemInfo } from "../types";
+import { fmtBytes } from "../composables/format";
+import { useDebouncedSave } from "../composables/useDebouncedSave";
+import { fieldClass } from "../styles/fields";
+import ModelTable from "./ModelTable.vue";
+import SaveIndicator from "./ui/SaveIndicator.vue";
 
 const config = ref<Config | null>(null);
 const sys = ref<SystemInfo | null>(null);
 const models = ref<ModelInfo[]>([]);
-const status = ref<"idle" | "saving" | "saved" | "error">("idle");
-const error = ref<string | null>(null);
 const maintenanceStatus = ref<string | null>(null);
 const modelProgress = ref<Record<string, FileProgress>>({});
 const unlisten: (() => void)[] = [];
+
+const { state: saveState, error } = useDebouncedSave(config, (next) => api.saveConfig(next));
 
 const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 const persistentEnabled = ref(false);
@@ -84,56 +89,6 @@ async function installModel(id: string) {
   }
 }
 
-function fmtSize(bytes: number): string {
-  if (!bytes) return "—";
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
-  return `${(bytes / 1_048_576).toFixed(0)} MB`;
-}
-
-function pct(p?: FileProgress): number {
-  if (!p || !p.total) return 0;
-  const fileFrac = p.downloaded / p.total;
-  return ((p.file_index + fileFrac) / p.file_count) * 100;
-}
-
-const SIZE_CAP_BYTES = 2_000_000_000;
-function sizePct(m: ModelInfo): number {
-  return Math.min(100, Math.round((m.size_bytes / SIZE_CAP_BYTES) * 100));
-}
-function perfPct(m: ModelInfo): number {
-  const sizeFrac = Math.min(1, m.size_bytes / SIZE_CAP_BYTES);
-  return Math.round((1 - sizeFrac * 0.85) * 100);
-}
-function accPct(m: ModelInfo): number {
-  const buckets: Record<string, number> = {
-    "whisper-onnx": 92,
-    canary: 88,
-    parakeet: 84,
-    "nemo-ctc": 80,
-    zipformer: 75,
-  };
-  if (m.family === "diarizer") return 78;
-  if (m.family === "llm") return 70;
-  return buckets[m.engine] ?? 70;
-}
-
-const groupedModels = computed(() => {
-  const families: Record<string, ModelInfo[]> = { asr: [], diarizer: [], llm: [] };
-  for (const m of models.value) families[m.family]?.push(m);
-  return [
-    { id: "asr", label: "ASR engines", icon: "graphic_eq", items: families.asr },
-    { id: "diarizer", label: "Diarizers", icon: "groups", items: families.diarizer },
-    { id: "llm", label: "Language models", icon: "model_training", items: families.llm },
-  ].filter((g) => g.items.length);
-});
-
-function fmtBytes(n: number): string {
-  if (!n) return "unknown";
-  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(2)} GB`;
-  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(0)} MB`;
-  return `${n} B`;
-}
-
 onMounted(async () => {
   config.value = await api.loadConfig();
   sys.value = await api.systemInfo();
@@ -162,6 +117,7 @@ onUnmounted(() => {
   if (persistentVisibilityHandler && typeof document !== "undefined") {
     document.removeEventListener("visibilitychange", persistentVisibilityHandler);
   }
+  persistentVisibilityHandler = null;
 });
 
 async function resetTranscriptCache() {
@@ -177,30 +133,6 @@ async function resetAudioCache() {
   const removed = await api.resetAudioCache();
   maintenanceStatus.value = `Audio cache reset (${removed} files removed).`;
 }
-
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-watch(
-  config,
-  (next) => {
-    if (!next) return;
-    if (saveTimer) clearTimeout(saveTimer);
-    status.value = "saving";
-    saveTimer = setTimeout(async () => {
-      try {
-        await api.saveConfig(next);
-        status.value = "saved";
-        error.value = null;
-      } catch (e) {
-        status.value = "error";
-        error.value = String(e);
-      }
-    }, 250);
-  },
-  { deep: true },
-);
-
-const fieldClass =
-  "w-full bg-surface-container-high border border-outline-variant/60 text-on-surface text-bodyMedium px-md py-xs rounded-lg appearance-none focus:outline-none focus:border-primary transition-colors";
 </script>
 
 <template>
@@ -219,31 +151,7 @@ const fieldClass =
             Runtime, local models, and storage maintenance.
           </p>
         </div>
-        <div class="flex items-center gap-xs shrink-0 font-mono text-labelMedium">
-          <span
-            class="w-2 h-2 rounded-full"
-            :class="
-              status === 'saving'
-                ? 'bg-secondary animate-pulse'
-                : status === 'error'
-                  ? 'bg-error'
-                  : status === 'saved'
-                    ? 'bg-tertiary'
-                    : 'bg-outline-variant'
-            "
-          ></span>
-          <span class="text-on-surface-variant uppercase tracking-wide">
-            {{
-              status === "saving"
-                ? "saving…"
-                : status === "saved"
-                  ? "saved"
-                  : status === "error"
-                    ? "error"
-                    : "synced"
-            }}
-          </span>
-        </div>
+        <SaveIndicator :state="saveState" />
       </div>
 
       <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
@@ -344,207 +252,7 @@ const fieldClass =
           </div>
         </section>
 
-        <section
-          v-for="g in groupedModels"
-          :key="g.id"
-          class="bg-surface-container rounded-xl border border-outline-variant/50 overflow-hidden"
-        >
-          <div
-            class="p-margin border-b border-outline-variant/40 bg-surface-container-low flex items-center gap-xs"
-          >
-            <span class="material-symbols-outlined text-tertiary">{{ g.icon }}</span>
-            <h2 class="text-titleMedium text-on-surface">{{ g.label }}</h2>
-          </div>
-          <ul class="flex flex-col md:hidden gap-xs p-md">
-            <li
-              v-for="m in g.items"
-              :key="`m-${m.id}`"
-              class="bg-surface-container-low rounded-lg p-md flex flex-col gap-md"
-            >
-              <div class="flex items-center justify-between gap-md">
-                <div class="flex items-center gap-md min-w-0 flex-1">
-                  <span
-                    class="material-symbols-outlined text-[24px] shrink-0"
-                    :class="m.status === 'installed' ? 'text-primary' : 'text-on-surface-variant'"
-                    >deployed_code</span
-                  >
-                  <div class="flex flex-col min-w-0 flex-1">
-                    <span
-                      class="text-bodyMedium truncate"
-                      :class="
-                        m.status === 'installed' ? 'text-on-surface' : 'text-on-surface-variant'
-                      "
-                      :title="m.id"
-                      >{{ m.display_name || m.id }}</span
-                    >
-                    <span class="font-mono text-labelSmall text-secondary">
-                      {{ fmtSize(m.size_bytes) }}
-                      <template v-if="m.status === 'installed'"> · Installed</template>
-                      <template v-else-if="m.default_active"> · Default</template>
-                    </span>
-                  </div>
-                </div>
-                <button
-                  v-if="modelProgress[m.id]"
-                  class="shrink-0 w-9 h-9 rounded-full bg-surface-container-high text-secondary flex items-center justify-center"
-                  disabled
-                  :title="`Downloading \u00b7 ${pct(modelProgress[m.id]).toFixed(0)}%`"
-                >
-                  <span class="material-symbols-outlined text-[20px] animate-pulse"
-                    >progress_activity</span
-                  >
-                </button>
-                <button
-                  v-else-if="m.status === 'not_installed'"
-                  class="shrink-0 w-10 h-10 rounded-full bg-primary-container text-on-primary-container hover:bg-primary transition-colors flex items-center justify-center"
-                  @click="installModel(m.id)"
-                  title="Install"
-                >
-                  <span class="material-symbols-outlined text-[20px]">download</span>
-                </button>
-                <button
-                  v-else
-                  class="shrink-0 w-9 h-9 rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors flex items-center justify-center -mr-unit"
-                  title="More"
-                >
-                  <span class="material-symbols-outlined text-[20px]">more_vert</span>
-                </button>
-              </div>
-              <div v-if="modelProgress[m.id]" class="flex flex-col gap-unit">
-                <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
-                  <div
-                    class="h-full bg-primary transition-all"
-                    :style="{ width: pct(modelProgress[m.id]) + '%' }"
-                  ></div>
-                </div>
-                <span class="font-mono text-labelSmall text-primary"
-                  >{{ pct(modelProgress[m.id]).toFixed(0) }}% · file
-                  {{ modelProgress[m.id].file_index + 1 }}/{{
-                    modelProgress[m.id].file_count
-                  }}</span
-                >
-              </div>
-              <div v-else class="flex flex-col gap-unit">
-                <div class="flex items-center gap-xs">
-                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Perf</span>
-                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
-                    <div class="h-full bg-tertiary" :style="{ width: perfPct(m) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="flex items-center gap-xs">
-                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Acc</span>
-                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
-                    <div class="h-full bg-primary" :style="{ width: accPct(m) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="flex items-center gap-xs">
-                  <span class="font-mono text-[10px] text-on-surface-variant w-8">Size</span>
-                  <div class="h-1 flex-1 bg-surface-variant rounded-full overflow-hidden">
-                    <div class="h-full bg-secondary" :style="{ width: sizePct(m) + '%' }"></div>
-                  </div>
-                </div>
-              </div>
-            </li>
-          </ul>
-          <table class="hidden md:table w-full text-left border-collapse">
-            <thead>
-              <tr class="border-b border-outline-variant/40 bg-surface-container-highest/40">
-                <th class="px-margin py-md text-titleSmall text-on-surface-variant font-medium">
-                  Name
-                </th>
-                <th
-                  class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-28"
-                >
-                  Size
-                </th>
-                <th
-                  class="px-margin py-md text-titleSmall text-on-surface-variant font-medium w-48"
-                >
-                  Status
-                </th>
-                <th
-                  class="px-margin py-md text-titleSmall text-on-surface-variant font-medium text-right w-32"
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="m in g.items"
-                :key="m.id"
-                class="border-b border-outline-variant/30 last:border-b-0 hover:bg-surface-container-high/40 transition-colors"
-              >
-                <td class="px-margin py-md align-top">
-                  <div class="font-mono text-labelMedium text-on-surface">{{ m.id }}</div>
-                  <div class="text-bodyMedium text-on-surface-variant mt-unit">
-                    {{ m.description }}
-                  </div>
-                  <div
-                    v-if="m.default_active"
-                    class="font-mono text-labelSmall text-secondary mt-unit uppercase tracking-wide"
-                  >
-                    default
-                  </div>
-                </td>
-                <td class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap">
-                  {{ fmtSize(m.size_bytes) }}
-                </td>
-                <td class="px-margin py-md align-top">
-                  <div v-if="modelProgress[m.id]" class="flex flex-col gap-unit w-40">
-                    <div class="h-1 bg-surface-container-highest rounded-full overflow-hidden">
-                      <div
-                        class="h-full bg-primary transition-all"
-                        :style="{ width: pct(modelProgress[m.id]) + '%' }"
-                      ></div>
-                    </div>
-                    <span class="font-mono text-labelSmall text-primary"
-                      >{{ pct(modelProgress[m.id]).toFixed(0) }}% · file
-                      {{ modelProgress[m.id].file_index + 1 }}/{{
-                        modelProgress[m.id].file_count
-                      }}</span
-                    >
-                  </div>
-                  <span
-                    v-else-if="m.status === 'installed'"
-                    class="inline-flex items-center gap-unit bg-tertiary-container/30 text-tertiary border border-tertiary/30 px-xs py-unit rounded-full font-mono text-labelSmall"
-                  >
-                    <span class="w-2 h-2 rounded-full bg-tertiary"></span> Installed
-                  </span>
-                  <span
-                    v-else-if="m.status === 'downloading'"
-                    class="inline-flex items-center gap-unit bg-secondary-container/40 text-secondary border border-secondary/30 px-xs py-unit rounded-full font-mono text-labelSmall"
-                  >
-                    <span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-                    Downloading
-                  </span>
-                  <span
-                    v-else
-                    class="inline-flex items-center gap-unit border border-outline-variant text-on-surface-variant px-xs py-unit rounded-full font-mono text-labelSmall"
-                  >
-                    <span class="w-2 h-2 rounded-full bg-outline-variant"></span> Not installed
-                  </span>
-                </td>
-                <td class="px-margin py-md text-right align-top">
-                  <button
-                    v-if="m.status === 'not_installed'"
-                    class="px-md py-xs rounded-full bg-primary text-on-primary text-titleSmall hover:bg-primary-fixed-dim transition-colors inline-flex items-center gap-unit"
-                    @click="installModel(m.id)"
-                  >
-                    <span class="material-symbols-outlined text-[16px]">download</span>
-                    Install
-                  </button>
-                  <span
-                    v-else-if="m.status === 'installed'"
-                    class="text-outline material-symbols-outlined text-[20px] cursor-not-allowed"
-                    title="Installed"
-                    >check</span
-                  >
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
+        <ModelTable :models="models" :progress="modelProgress" show-stats @install="installModel" />
 
         <section
           v-if="isAndroid"

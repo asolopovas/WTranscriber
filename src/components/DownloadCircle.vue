@@ -20,16 +20,15 @@ const offset = computed(() => {
   return circumference.value * (1 - p / 100);
 });
 const center = computed(() => props.size / 2);
-const stroke = computed(() => {
-  if (props.errored) return "var(--md-sys-color-error)";
-  if (props.done) return "var(--md-sys-color-primary)";
-  return "var(--md-sys-color-primary)";
-});
+const stroke = computed(() =>
+  props.errored ? "var(--md-sys-color-error)" : "var(--md-sys-color-primary)",
+);
+const viewBox = computed(() => `0 0 ${props.size} ${props.size}`);
 </script>
 
 <template>
   <div class="dl-circle relative shrink-0" :style="{ width: size + 'px', height: size + 'px' }">
-    <svg :width="size" :height="size" viewBox="0 0 ${size} ${size}" class="rotate-[-90deg]">
+    <svg :width="size" :height="size" :viewBox="viewBox" class="rotate-[-90deg]">
       <circle
         :cx="center"
         :cy="center"
