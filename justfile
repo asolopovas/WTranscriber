@@ -66,6 +66,8 @@ android-init: android-targets android-prebuilts
 
 android-dev target="aarch64":
     cargo xtask android dev --target {{target}}
+android-dev-host target="aarch64":
+    cargo xtask android dev --target {{target}} --host
 
 android-build target="aarch64":
     cargo xtask android build --target {{target}}

@@ -1,5 +1,9 @@
 # Tauri Android Debugging
 
+For live UI development with HMR (no rebuild/reinstall on each edit) see
+`docs/android.md` → "Live UI dev". This file covers inspection of an
+already-running build.
+
 ## Remote WebView DevTools
 
 Tauri 2 enables Chromium WebView remote debugging in **debug builds** automatically (`WebView.setWebContentsDebuggingEnabled(true)`). Production builds need a custom hook (see Tauri docs for details).

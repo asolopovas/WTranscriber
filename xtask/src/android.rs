@@ -55,6 +55,9 @@ pub struct DevArgs {
     pub target: String,
     #[arg(long)]
     pub open: bool,
+    /// Bind dev server to LAN IP and set TAURI_DEV_HOST (required for Wi-Fi / non-USB devices)
+    #[arg(long)]
+    pub host: bool,
 }
 
 #[derive(ClapArgs)]
@@ -69,7 +72,7 @@ pub fn run(c: Cmd) -> Result<()> {
     match c {
         Cmd::Build(a) => cmd_build(&a.target),
         Cmd::Install(a) => cmd_install(&a.target, a.fresh),
-        Cmd::Dev(a) => cmd_dev(&a.target, a.open),
+        Cmd::Dev(a) => cmd_dev(&a.target, a.open, a.host),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
         Cmd::CliPush => cmd_cli_push(),
@@ -360,7 +363,7 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_dev(target: &str, open: bool) -> Result<()> {
+fn cmd_dev(target: &str, open: bool, host: bool) -> Result<()> {
     ensure_prebuilts(target)?;
     let dev = std::process::Command::new("adb").arg("devices").output()?;
     let txt = String::from_utf8_lossy(&dev.stdout);
@@ -374,6 +377,9 @@ fn cmd_dev(target: &str, open: bool) -> Result<()> {
     let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev", "--target", target];
     if open {
         tauri_args.push("--open");
+    }
+    if host {
+        tauri_args.push("--host");
     }
     spawn_with_env("bun", &tauri_args, &env)
 }
