@@ -67,11 +67,11 @@ First run installs the debug APK. Subsequent UI edits stream over HMR.
 `android-dev` passes `--no-watch` to `tauri android dev`, so Tauri's Rust file watcher is **off** by default. This is deliberate:
 
 - Frontend edits (`src/**`) → instant HMR push to the running app. The dev session never restarts.
-- Backend edits (`src-tauri/**`) → do **not** trigger anything automatically. Rebuild on demand from a second terminal:
+- Backend or native Android edits (`src-tauri/**`, `gen/android/**` — kotlin, res XML, AndroidManifest, gradle) → no auto-rebuild. From a second terminal:
   ```
-  just android-install     # rebuild Rust, sign, adb install -r (preserves app data)
+  just android-install
   ```
-  The dev session stays alive; the app relaunches with the new native code and HMR reattaches as soon as the WebView reloads.
+  Rebuilds Rust, signs, `adb install -r` (preserves app data). Dev session stays alive; HMR reattaches on WebView reload. **Never** run `just android-build` (release) or invoke `wt-installer` mid-session — both replace the debug-dev APK with a bundled-asset APK and silently break HMR; the on-device frontend goes stale while config files remain untouched.
 
 Opt back into Tauri's auto-rebuild-on-Rust-save with `cargo xtask android dev --watch` if you really want the old behavior.
 

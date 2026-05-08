@@ -76,10 +76,11 @@ The main thread is the coordinator. It never edits without HMR, never greps logs
    ```
    Same pattern for `node scripts/error-monitor.mjs` → `tmp/error-monitor.log`. Reuse for `just dev` / `just android-dev-host`.
 5. Record the PIDs (`tasklist //FI "PID eq <id>"` to confirm liveness; `taskkill //F //PID <id>` on shutdown).
-6. **HMR sanity check** before declaring bootstrap done:
-   - `curl -s http://localhost:9222/json` → ≥1 target whose URL is `http://tauri.localhost/` (USB) or `http://<LAN>:1420/` (Wi-Fi).
-   - `tail -n 50 tmp/error-monitor.log` → no `WebSocket connection to 'ws://...:1421/' failed` lines in the last minute. If present, the WebView is on a stale HMR config; reload via CDP and re-check.
-   - Touch a frontend file (`src/main.ts` mtime bump is enough) and confirm the device receives an HMR update via CDP console (`[vite] hot updated`). If silent, treat as a **bootstrap failure** — surface to the user, do not proceed.
+6. **HMR sanity check** before declaring bootstrap done (delegate probes to `wt-triage` — never `curl`/`tail`/`adb` from main thread):
+   - CDP target list shows `http://tauri.localhost/` (USB) or `http://<LAN>:1420/` (Wi-Fi).
+   - No `ws://...:1421/ failed` in the last minute of `tmp/error-monitor.log` (stale HMR → reload via CDP).
+   - Touch `src/main.ts`; confirm `[vite] hot updated` on device. Silent → **bootstrap failure**, surface to user.
+   - Before relaunching `just android-dev` after a prior session: ports 1420/1421 must be free (orphaned Vite outlives a killed `just` parent).
 7. Report bootstrap status to the user as a checklist.
 
 ### Per-turn protocol
@@ -96,15 +97,17 @@ Between every user turn — and after every edit batch — the orchestrator:
 
 ### Decision table
 
-| Signal                                            | Action                                                                                                 |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| New line in `tmp/error-monitor.log`               | `wt-triage` with excerpt                                                                               |
-| Source edits applied, gate not yet hit            | `wt-committer` with summary                                                                            |
-| Need a built artifact (Win GUI/CLI, Android, WSL) | `wt-installer`                                                                                         |
-| Need 30s-clip smoke after install                 | chain `install-and-test`                                                                               |
-| `just check` / CI / regression forensics          | `wt-triage` (parallel, observe-only)                                                                   |
-| User asks to commit / ship                        | `wt-committer` (never `git commit` from main thread)                                                   |
-| User asks to release                              | `wt-committer` → confirm clean → `just release-stable` brief delegated to `wt-installer` for artifacts |
+| Signal                                                                | Action                                                                                                                                                |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New line in `tmp/error-monitor.log`                                   | `wt-triage` with excerpt                                                                                                                              |
+| Source edits applied, gate not yet hit                                | `wt-committer` with summary                                                                                                                           |
+| Need a built artifact (Win GUI/CLI, Android, WSL)                     | `wt-installer`                                                                                                                                        |
+| Native edit (Rust / kotlin / res / manifest / gradle) during live dev | `just android-install` from main thread — **never** `wt-installer` or `just android-build` (replaces debug-dev APK with bundled-asset APK, kills HMR) |
+| User reports in-app misbehavior                                       | `wt-triage` with the symptom — never probe via `adb`/`curl`/`tail` directly                                                                           |
+| Need 30s-clip smoke after install                                     | chain `install-and-test`                                                                                                                              |
+| `just check` / CI / regression forensics                              | `wt-triage` (parallel, observe-only)                                                                                                                  |
+| User asks to commit / ship                                            | `wt-committer` (never `git commit` from main thread)                                                                                                  |
+| User asks to release                                                  | `wt-committer` → `just release-stable` artifacts via `wt-installer`                                                                                   |
 
 ### Self-repair (when an agent misbehaves)
 
@@ -125,7 +128,8 @@ For chains in `.pi/chains/`, the same loop applies; patch the chain file when th
 
 ### Hard prohibitions (orchestrator)
 
-- No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log grepping from the main thread.
+- No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log probing (`tail`/`grep`/`adb logcat`/`adb shell`/`curl /json`/`tasklist`) from the main thread — route to `wt-triage`.
+- `wt-installer` ships release artifacts only; never invoke it during a live `just dev`/`just android-dev` session.
 - No agent-to-agent calls — workers signal via files under `tmp/`.
 - No raw log dumps in responses to the user — relay `VERDICT / EVIDENCE / FIX` only.
 
