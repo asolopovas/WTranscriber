@@ -138,9 +138,10 @@ async function pickAudio() {
   await addPathsToWorkdir(paths);
 }
 
-async function addPathsToWorkdir(paths: string[]) {
+function addPathsToWorkdir(paths: string[]) {
   if (!listing.value) return;
   const dir = listing.value.path;
+  const entries = listing.value.entries;
 
   const tryAdd = async (p: string): Promise<string> => {
     let eRaw: unknown;
@@ -157,38 +158,48 @@ async function addPathsToWorkdir(paths: string[]) {
     }
   };
 
-  const allPaths = paths.filter(hasAudioExt);
-  const added: string[] = [];
-  for (let i = 0; i < allPaths.length; i += 2) {
-    const batch = await Promise.allSettled(allPaths.slice(i, i + 2).map(tryAdd));
-    for (const r of batch) {
-      if (r.status === "fulfilled") {
-        added.push(r.value);
-        if (listing.value && !listing.value.entries.some((e) => e.path === r.value)) {
-          listing.value.entries.push({
-            name: basenameOf(r.value),
-            path: r.value,
-            is_dir: false,
-            is_audio: true,
-            size_bytes: 0,
-            modified_ms: 0,
-            cache_key: null,
-            utterances: null,
-            duration_ms: null,
-            trim_start_ms: null,
-            trim_end_ms: null,
-          });
-        }
-      } else {
-        error.value = String(r.reason);
-      }
-    }
+  const audioPaths = paths.filter(hasAudioExt).filter((p) => !entries.some((e) => e.path === p));
+
+  for (const p of audioPaths) {
+    entries.push({
+      name: basenameOf(p),
+      path: p,
+      is_dir: false,
+      is_audio: true,
+      size_bytes: 0,
+      modified_ms: 0,
+      cache_key: null,
+      utterances: null,
+      duration_ms: null,
+      trim_start_ms: null,
+      trim_end_ms: null,
+    });
   }
 
-  await refreshListing();
-  if (added.length) selectedPath.value = added[added.length - 1];
-
   void (async () => {
+    let lastDest: string | null = null;
+    for (const p of audioPaths) {
+      try {
+        const destPath = await tryAdd(p);
+        if (!listing.value) return;
+        const stub = listing.value.entries.find((e) => e.path === p);
+        if (stub) {
+          stub.name = basenameOf(destPath);
+          stub.path = destPath;
+        }
+        lastDest = destPath;
+      } catch (e) {
+        error.value = String(e);
+        if (listing.value) {
+          const idx = listing.value.entries.findIndex((e) => e.path === p);
+          if (idx !== -1) listing.value.entries.splice(idx, 1);
+        }
+      }
+    }
+
+    await refreshListing();
+    if (lastDest !== null) selectedPath.value = lastDest;
+
     if (!listing.value) return;
     const toProbe = listing.value.entries.filter((e) => e.is_audio && e.duration_ms === null);
     for (let i = 0; i < toProbe.length; i += 10) {
