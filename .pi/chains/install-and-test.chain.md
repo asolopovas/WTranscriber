@@ -1,6 +1,6 @@
 ---
 name: install-and-test
-description: Install WTranscriber on Windows (GUI + CLI), Android, and WSL, then verify each platform with a 30-second audio clip.
+description: Install WTranscriber on Windows (GUI + CLI), Android, and WSL, then verify each successfully-installed target with a 30-second audio clip. Both steps run via wt-runner; the second reads tmp/install-report.json and skips any target whose install status is not `pass`.
 steps:
   - agent: wt-runner
     task: |
@@ -8,37 +8,37 @@ steps:
 
       Install WTranscriber on all four targets: Windows GUI (NSIS), Windows CLI (wt.exe), Android (APK to attached device), and WSL Linux CLI (build wt headless binary inside WSL).
 
-      The 30-second test clip is already at tmp/test-30s.m4a. Audio source was C:\Users\asolo\Desktop\fulham-boys-school-admission-interview_260505-161101.m4a.
+      Skip any target whose prerequisite is missing (no APK in releases/dev/, no device attached, no WSL distro). Skip ≠ failure.
 
-      Skip a target gracefully if its prerequisite is missing (no APK file, no device, no WSL distro). Write tmp/install-report.json and print a summary table.
+      Output contract: tmp/install-report.json with `{ branch, results: { win_gui, win_cli, android, wsl_cli: { status, detail, binary|package } } }`. Missing artefact = the run did not happen.
     output: false
 
   - agent: wt-runner
     task: |
       mode: test
 
-      Verify functionality on each target that successfully installed (read tmp/install-report.json).
+      Read tmp/install-report.json. Verify only the targets whose status is `pass`; skip the rest.
 
       Audio: tmp/test-30s.m4a (30.0 s).
-      Reference keywords for CLI assertions (need ≥2 case-insensitive matches): art, music, creative, teachers, sports, draws, practice.
-      Reference text from a known-good Windows CLI run is in tmp/test-30s_sherpa-whisper-turbo_*.json - you may compare against it.
+      Reference keywords for CLI assertions (≥2 case-insensitive matches): art, music, creative, teachers, sports, draws, practice.
+      Optional comparison: tmp/test-30s_sherpa-whisper-turbo_*.json from a known-good Windows CLI run.
 
-      Write tmp/test-report.json and print a summary plus overall PASS/FAIL verdict.
+      Output contract: tmp/test-report.json with per-target `{ status, transcript|screenshot, matched_keywords?, elapsed_s }` plus overall `PASS|FAIL`. Print summary table.
 
-      Failures: do not edit code or commit. Stop with FIX block; orchestrator routes to wt-investigate then wt-edit then wt-ship.
+      Failures: do not edit code or commit. Stop with a FIX block. The orchestrator routes failures to wt-investigate → wt-edit (default mode: edit); commit/push, when wanted, is a separate explicit wt-edit mode: finalise step.
     output: false
 ---
 
 # install-and-test
 
-Install + test cycle for WTranscriber across Windows GUI, Windows CLI, Android, and WSL Linux.
+Install + smoke-test cycle for WTranscriber across Windows GUI, Windows CLI, Android, and WSL Linux. Both steps are `wt-runner`; the handoff is artefact-based via `tmp/install-report.json`.
 
 ## Prerequisites
 
-- `tmp/test-30s.m4a` exists (run `just test-prep` or trim manually)
-- `releases/dev/` populated (run `just release` first if missing APK / .deb)
-- Android device with USB debugging on, plus `adb` on PATH
-- WSL distro with `cargo` and `bun` installed
+- `tmp/test-30s.m4a` exists (run `just test-prep` or trim manually).
+- `releases/dev/` populated (run `just release` first if missing APK / installer).
+- Android device with USB debugging on, plus `adb` on PATH.
+- WSL distro with `cargo` and `bun` installed.
 
 ## Run
 
@@ -46,7 +46,7 @@ Install + test cycle for WTranscriber across Windows GUI, Windows CLI, Android, 
 
 ## Outputs
 
-- `tmp/install-report.json`
-- `tmp/test-report.json`
-- `tmp/win-gui.png` (Windows GUI screenshot)
-- `tmp/android.png` (Android screenshot)
+- `tmp/install-report.json` — install phase artefact (read by step 2).
+- `tmp/test-report.json` — test phase artefact + overall verdict.
+- `tmp/win-gui.png` — Windows GUI screenshot.
+- `tmp/android.png` — Android screenshot.
