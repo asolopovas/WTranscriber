@@ -61,3 +61,11 @@
   --text-labelSmall--letter-spacing: 0.5px;
   --text-labelSmall--font-weight: 500;
 }
+
+@layer base {
+  select,
+  option {
+    font-size: 13px;
+    line-height: 20px;
+  }
+}
