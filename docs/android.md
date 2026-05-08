@@ -39,8 +39,8 @@ just android-doctor          show resolved SDK / NDK / Rust targets
 just android-targets         rustup add the four Android triples
 just android-prebuilts       download + extract sherpa-onnx Android .so
 just android-init            tauri android init (one-time scaffold)
-just android-dev             run on device/emulator (USB, HMR via adb reverse) — ABI auto-detected
-just android-dev-host        same, dev server on LAN IP (Wi-Fi) — ABI auto-detected
+just android-dev             run on device/emulator (USB, HMR via adb reverse) - ABI auto-detected
+just android-dev-host        same, dev server on LAN IP (Wi-Fi) - ABI auto-detected
 just android-build           release APK (default target=aarch64)
 just android-build-debug     debug APK
 ```
@@ -51,7 +51,7 @@ just android-build-debug     debug APK
 
 ## Live UI dev (HMR)
 
-`tauri android dev` keeps the WebView pointed at the Vite dev server. Edits to `src/**` (Vue/TS/CSS) hot-reload over WebSocket — no rebuild, no reinstall, no app relaunch.
+`tauri android dev` keeps the WebView pointed at the Vite dev server. Edits to `src/**` (Vue/TS/CSS) hot-reload over WebSocket - no rebuild, no reinstall, no app relaunch.
 
 `vite.config.ts` reads `TAURI_DEV_HOST`. `src-tauri/tauri.conf.json` uses `devUrl: http://localhost:1420`.
 
@@ -67,11 +67,11 @@ First run installs the debug APK. Subsequent UI edits stream over HMR.
 `android-dev` passes `--no-watch` to `tauri android dev`, so Tauri's Rust file watcher is **off** by default. This is deliberate:
 
 - Frontend edits (`src/**`) → instant HMR push to the running app. The dev session never restarts.
-- Backend or native Android edits (`src-tauri/**`, `gen/android/**` — kotlin, res XML, AndroidManifest, gradle) → no auto-rebuild. From a second terminal:
+- Backend or native Android edits (`src-tauri/**`, `gen/android/**` - kotlin, res XML, AndroidManifest, gradle) → no auto-rebuild. From a second terminal:
   ```
   just android-install
   ```
-  Rebuilds Rust, signs, `adb install -r` (preserves app data). Dev session stays alive; HMR reattaches on WebView reload. **Never** run `just android-build` (release) or invoke `wt-installer` mid-session — both replace the debug-dev APK with a bundled-asset APK and silently break HMR; the on-device frontend goes stale while config files remain untouched.
+  Rebuilds Rust, signs, `adb install -r` (preserves app data). Dev session stays alive; HMR reattaches on WebView reload. **Never** run `just android-build` (release) or invoke `wt-installer` mid-session - both replace the debug-dev APK with a bundled-asset APK and silently break HMR; the on-device frontend goes stale while config files remain untouched.
 
 Opt back into Tauri's auto-rebuild-on-Rust-save with `cargo xtask android dev --watch` if you really want the old behavior.
 
@@ -91,14 +91,14 @@ node scripts/cdp.mjs "getComputedStyle(document.querySelector('header')).height"
 node scripts/cdp.mjs "document.querySelector('header').className"
 ```
 
-This is the preferred diagnostic path — exact computed values, no PNG round-trip. Use `adb exec-out screencap -p > tmp/screen.png` only when a _visual_ judgment is required (font rendering, animation frame, overall composition).
+This is the preferred diagnostic path - exact computed values, no PNG round-trip. Use `adb exec-out screencap -p > tmp/screen.png` only when a _visual_ judgment is required (font rendering, animation frame, overall composition).
 
 ### Design loop
 
 1. `just android-dev` (leave running, ABI auto-detected, frontend-only HMR).
 2. Edit Vue/CSS → changes appear instantly on device.
 3. `node scripts/cdp.mjs "<expr>"` for sizing/style verification.
-4. `chrome://inspect` for full DevTools (DOM tree, network, console, breakpoints) — see skill `tauri-debugging`.
+4. `chrome://inspect` for full DevTools (DOM tree, network, console, breakpoints) - see skill `tauri-debugging`.
 5. Backend change? `just android-install` in another terminal; HMR session keeps running.
 
 Gotchas:
