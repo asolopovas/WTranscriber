@@ -28,10 +28,7 @@ const stroke = computed(() => {
 </script>
 
 <template>
-  <div
-    class="dl-circle relative shrink-0"
-    :style="{ width: size + 'px', height: size + 'px' }"
-  >
+  <div class="dl-circle relative shrink-0" :style="{ width: size + 'px', height: size + 'px' }">
     <svg :width="size" :height="size" viewBox="0 0 ${size} ${size}" class="rotate-[-90deg]">
       <circle
         :cx="center"
@@ -59,17 +56,20 @@ const stroke = computed(() => {
       v-if="done"
       class="absolute inset-0 grid place-items-center material-symbols-outlined text-primary"
       :style="{ fontSize: size * 0.55 + 'px' }"
-    >check</span>
+      >check</span
+    >
     <span
       v-else-if="errored"
       class="absolute inset-0 grid place-items-center material-symbols-outlined text-error"
       :style="{ fontSize: size * 0.55 + 'px' }"
-    >close</span>
+      >close</span
+    >
     <span
       v-else
       class="absolute inset-0 grid place-items-center font-mono text-on-surface/80 tabular-nums"
       :style="{ fontSize: size * 0.28 + 'px' }"
-    >{{ Math.round(percent) }}</span>
+      >{{ Math.round(percent) }}</span
+    >
   </div>
 </template>
 
@@ -83,7 +83,12 @@ const stroke = computed(() => {
   animation: dl-pulse 1.6s ease-in-out infinite;
 }
 @keyframes dl-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 </style>

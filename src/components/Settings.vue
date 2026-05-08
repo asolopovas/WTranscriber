@@ -13,8 +13,7 @@ const maintenanceStatus = ref<string | null>(null);
 const modelProgress = ref<Record<string, FileProgress>>({});
 const unlisten: (() => void)[] = [];
 
-const isAndroid =
-  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 const persistentEnabled = ref(false);
 const persistentGranted = ref(false);
 const persistentBusy = ref<"idle" | "requesting" | "enabling" | "saved">("idle");
@@ -560,21 +559,28 @@ const fieldClass =
           <div class="p-margin flex flex-col gap-md">
             <div class="flex flex-col gap-md">
               <div>
-                <h3 class="text-titleSmall text-on-surface">
-                  Keep AI models when uninstalling
-                </h3>
+                <h3 class="text-titleSmall text-on-surface">Keep AI models when uninstalling</h3>
                 <p class="text-bodyMedium text-on-surface-variant mt-unit">
-                  Mirrors downloaded models to <span class="font-mono">/storage/emulated/0/WTranscriber/models</span> so a future reinstall doesn’t need to re-download ~1&nbsp;GB. Requires <span class="font-medium">All Files Access</span> in Android Settings.
+                  Mirrors downloaded models to
+                  <span class="font-mono">/storage/emulated/0/WTranscriber/models</span> so a future
+                  reinstall doesn’t need to re-download ~1&nbsp;GB. Requires
+                  <span class="font-medium">All Files Access</span> in Android Settings.
                 </p>
               </div>
               <button
                 type="button"
                 class="px-md py-xs rounded-full text-titleSmall transition-colors inline-flex items-center gap-xs w-fit"
-                :class="persistentEnabled ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface border border-outline-variant'"
+                :class="
+                  persistentEnabled
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-surface-container-high text-on-surface border border-outline-variant'
+                "
                 @click="togglePersistent(!persistentEnabled)"
               >
-                <span class="material-symbols-outlined text-[18px]">{{ persistentEnabled ? 'check_circle' : 'shield' }}</span>
-                {{ persistentEnabled ? 'Enabled' : 'Grant access & enable' }}
+                <span class="material-symbols-outlined text-[18px]">{{
+                  persistentEnabled ? "check_circle" : "shield"
+                }}</span>
+                {{ persistentEnabled ? "Enabled" : "Grant access & enable" }}
               </button>
             </div>
             <p
@@ -585,7 +591,14 @@ const fieldClass =
               {{ persistentMessage }}
             </p>
             <p class="text-labelSmall text-on-surface-variant font-mono">
-              Status: {{ persistentEnabled && persistentGranted ? 'enabled' : persistentGranted ? 'permission granted, not enabled' : 'permission not granted' }}
+              Status:
+              {{
+                persistentEnabled && persistentGranted
+                  ? "enabled"
+                  : persistentGranted
+                    ? "permission granted, not enabled"
+                    : "permission not granted"
+              }}
             </p>
           </div>
         </section>

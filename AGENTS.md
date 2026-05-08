@@ -34,8 +34,7 @@ docs/
 - Edition 2024. Use `LazyLock`, `let-else`, etc.
 - Errors returned from Rust to JS must use `error::Error` (implements `Serialize`).
 - `src/types.ts` mirrors Rust structs.
-- Lints: `cargo clippy -- -D warnings` (pedantic + nursery on).
-- `just check` must pass before commit (pre-commit hook enforces).
+- Run `just check` before every commit and fix everything it reports. It runs fmt, clippy (pedantic + nursery, `-D warnings`), vue-tsc, vue lint, tests, dead-deps (`cargo machete`), and security audit (`cargo audit` + `bun audit`). The pre-commit hook enforces it. Bugs are caught here, not later.
 
 ## Commands
 
@@ -43,7 +42,7 @@ docs/
 just dev                desktop (HMR)
 just android-dev        Android over USB (HMR via adb reverse)
 just android-dev-host   Android over LAN (--host)
-just check              fmt + lint + typecheck + test (offline)
+just check              fmt + lint + typecheck + vue-lint + test + dep-check + audit
 just release-stable     check + bump + tag + build + publish
 ```
 

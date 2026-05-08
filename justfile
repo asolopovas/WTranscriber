@@ -126,6 +126,7 @@ fmt-check:
 lint:
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
     bun run typecheck
+    bun run scripts/lint-vue.mjs
 
 test:
     cargo test --manifest-path src-tauri/Cargo.toml --offline
@@ -153,11 +154,11 @@ audit: _ensure-audit
     cargo audit --file src-tauri/Cargo.lock
     bun audit
 
-check: fmt-check lint test
-    @echo "✓ check passed (run 'just check-all' before release for audit + dep-check)"
+check: fmt-check lint test dep-check audit
+    @echo "✓ check passed — fmt, lint, typecheck, vue-lint, test, dead-deps, audit"
 
-check-all: check dep-check audit
-    @echo "✓ check-all passed"
+check-all: check
+    @echo "✓ check-all passed (alias for check)"
 
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml

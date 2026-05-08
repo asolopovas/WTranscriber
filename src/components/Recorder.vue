@@ -208,12 +208,7 @@ defineExpose({
         @click="start"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-error-container text-on-error-container py-md rounded-full font-titleSmall hover:opacity-90 transition-opacity"
       >
-        <span
-          class="material-symbols-outlined text-[18px]"
-          style="font-variation-settings: &quot;FILL&quot; 1"
-        >
-          fiber_manual_record
-        </span>
+        <span class="material-symbols-outlined fill text-[18px]"> fiber_manual_record </span>
         Rec
       </button>
       <button
@@ -221,11 +216,7 @@ defineExpose({
         @click="stop"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-primary text-on-primary py-md rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
       >
-        <span
-          class="material-symbols-outlined text-[18px]"
-          style="font-variation-settings: &quot;FILL&quot; 1"
-          >stop</span
-        >
+        <span class="material-symbols-outlined fill text-[18px]">stop</span>
         Stop · {{ elapsed }}
       </button>
     </div>

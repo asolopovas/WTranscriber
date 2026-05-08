@@ -1686,11 +1686,7 @@ const fieldClass =
                 class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
                 title="Record"
               >
-                <span
-                  class="material-symbols-outlined text-[16px]"
-                  style="font-variation-settings: &quot;FILL&quot; 1"
-                  >fiber_manual_record</span
-                >
+                <span class="material-symbols-outlined fill text-[16px]">fiber_manual_record</span>
                 Rec
               </button>
               <button
@@ -1700,11 +1696,7 @@ const fieldClass =
                 class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
                 :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
               >
-                <span
-                  class="material-symbols-outlined text-[16px]"
-                  style="font-variation-settings: &quot;FILL&quot; 1"
-                  >stop</span
-                >
+                <span class="material-symbols-outlined fill text-[16px]">stop</span>
                 {{ recorderRef?.elapsed }}
               </button>
               <span
@@ -2179,12 +2171,9 @@ const fieldClass =
               @click="toggleTrimPlay"
             >
               <Spinner v-if="trimAudioLoading" :size="20" />
-              <span
-                v-else
-                class="material-symbols-outlined text-[22px]"
-                style="font-variation-settings: &quot;FILL&quot; 1"
-                >{{ trimPlaying ? "pause" : "play_arrow" }}</span
-              >
+              <span v-else class="material-symbols-outlined fill text-[22px]">{{
+                trimPlaying ? "pause" : "play_arrow"
+              }}</span>
             </button>
             <button
               class="min-h-12 w-12 rounded-full border border-outline-variant text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"

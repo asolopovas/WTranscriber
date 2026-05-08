@@ -66,9 +66,9 @@ const totalBytes = computed(() => rows.value.reduce((s, r) => s + r.sizeBytes, 0
 const downloadedBytes = computed(() =>
   rows.value.reduce((s, r) => {
     if (r.status === "installed") return s + r.sizeBytes;
-    if (r.status === "downloading") return s + (r.downloadedMb * 1_048_576);
+    if (r.status === "downloading") return s + r.downloadedMb * 1_048_576;
     return s;
-  }, 0)
+  }, 0),
 );
 
 function fmtSize(bytes: number): string {
@@ -92,9 +92,7 @@ function familyLabel(f: string): string {
     <div class="w-full max-w-md flex flex-col gap-xl">
       <div class="flex flex-col items-center gap-md">
         <DownloadCircle :percent="overall" :size="96" />
-        <h1 class="text-headlineSmall text-on-surface text-center">
-          Setting up WTranscriber
-        </h1>
+        <h1 class="text-headlineSmall text-on-surface text-center">Setting up WTranscriber</h1>
         <p class="text-bodyMedium text-on-surface-variant text-center font-mono">
           {{ fmtSize(downloadedBytes) }} / {{ fmtSize(totalBytes) }}
         </p>
