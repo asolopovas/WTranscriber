@@ -55,6 +55,7 @@ clap = { version = "4", features = ["derive"] }
 rubato = "0.16"
 symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
+base64 = "0.22"
 byteorder = "1.5"
 sherpa-onnx = { version = "1.13", default-features = false }
 

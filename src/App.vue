@@ -157,9 +157,10 @@ function addPathsToWorkdir(paths: string[]) {
     }
     try {
       const bytes = await readFile(p);
-      if (bytes.byteLength > 100 * 1024 * 1024) {
-        throw new Error("file too large for in-process copy fallback");
+      if (bytes.byteLength > 200 * 1024 * 1024) {
+        throw new Error("file exceeds 200 MB limit for in-process copy");
       }
+      await yieldToUI();
       return await api.saveRecording(dir, basenameOf(p), bytes);
     } catch (e2) {
       throw new Error(`${eRaw} / ${e2}`);

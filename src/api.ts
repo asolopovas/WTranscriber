@@ -49,8 +49,14 @@ export const api = {
     invoke<string>("export_transcript", { transcript, dest, format }),
   addToWorkdir: (source: string, workdir: string) =>
     invoke<string>("add_to_workdir", { source, workdir }),
-  saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
-    invoke<string>("save_recording", { workdir, filename, bytes: Array.from(bytes) }),
+  saveRecording: (workdir: string, filename: string, bytes: Uint8Array) => {
+    let s = "";
+    const chunk = 8192;
+    for (let i = 0; i < bytes.byteLength; i += chunk) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
+    }
+    return invoke<string>("save_recording", { workdir, filename, bytes: btoa(s) });
+  },
   readAudioBytes: (path: string) => invoke<number[]>("read_audio_bytes", { path }),
   hasPersistentStorage: () => invoke<boolean>("has_persistent_storage"),
   requestPersistentStorage: () => invoke<void>("request_persistent_storage"),

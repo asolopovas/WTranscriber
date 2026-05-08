@@ -15,6 +15,7 @@ use std::{
     time::Duration,
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::{runtime::Handle, task::JoinHandle};
@@ -818,7 +819,10 @@ pub fn read_audio_bytes(path: PathBuf) -> Result<Vec<u8>> {
 }
 
 #[tauri::command]
-pub fn save_recording(workdir: PathBuf, filename: String, bytes: Vec<u8>) -> Result<PathBuf> {
+pub fn save_recording(workdir: PathBuf, filename: String, bytes: String) -> Result<PathBuf> {
+    let raw = STANDARD
+        .decode(bytes.as_bytes())
+        .map_err(|e| Error::Config(format!("invalid base64 payload: {e}")))?;
     std::fs::create_dir_all(&workdir)?;
     let safe = filename
         .chars()
@@ -857,10 +861,10 @@ pub fn save_recording(workdir: PathBuf, filename: String, bytes: Vec<u8>) -> Res
             "too many copies of {safe:?} in workdir"
         )));
     }
-    std::fs::write(&dst, &bytes)?;
+    std::fs::write(&dst, &raw)?;
     logfile::info(&format!(
         "save_recording {} bytes -> {}",
-        bytes.len(),
+        raw.len(),
         dst.display()
     ));
     Ok(dst)
