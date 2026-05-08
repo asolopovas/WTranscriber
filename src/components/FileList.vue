@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { DirEntry, TranscribeProgress } from "@/types";
-import { decodeName, phaseLabel, prettyName } from "@utils/audio";
+import { decodeName, prettyName } from "@utils/audio";
 import { fmtMs, fmtBytes } from "@composables/format";
 import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
 import Spinner from "@components/icons/Spinner.vue";
@@ -170,19 +170,6 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
           </div>
         </div>
       </div>
-      <div
-        v-if="busy[entry.path]"
-        class="flex items-center gap-xs mt-xs font-mono text-labelSmall text-secondary"
-      >
-        <Icon name="graphic_eq" :size="14" class="animate-pulse" />
-        <span>
-          {{
-            progressByPath[entry.path]
-              ? phaseLabel(progressByPath[entry.path].phase)
-              : "transcribing"
-          }}
-        </span>
-      </div>
     </li>
   </ul>
 
@@ -226,20 +213,8 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
           {{ fmtBytes(entry.size_bytes) }}
         </td>
         <td class="px-xs py-xs">
-          <template v-if="busy[entry.path]">
-            <span class="font-mono text-labelSmall text-secondary flex items-center gap-unit">
-              <Icon name="graphic_eq" :size="14" class="animate-pulse" />
-              <span>
-                {{
-                  progressByPath[entry.path]
-                    ? phaseLabel(progressByPath[entry.path].phase)
-                    : "transcribing"
-                }}
-              </span>
-            </span>
-          </template>
           <span
-            v-else-if="entry.cache_key"
+            v-if="entry.cache_key"
             class="font-mono text-labelSmall text-tertiary flex items-center gap-unit"
           >
             <Icon name="check_circle" :size="14" />
