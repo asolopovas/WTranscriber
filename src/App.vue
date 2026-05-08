@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { api, events } from "./api";
+import { api, events } from "@/api";
 import type {
   Config,
   DirEntry,
@@ -14,42 +14,27 @@ import type {
   SystemInfo,
   TranscribeProgress,
   Transcript,
-} from "./types";
-import Settings from "./components/Settings.vue";
-import LogViewer from "./components/LogViewer.vue";
-import Recorder from "./components/Recorder.vue";
-import SlidingPanel from "./components/SlidingPanel.vue";
-import SetupGate from "./components/SetupGate.vue";
-import BottomNav, { type Tab } from "./components/BottomNav.vue";
-import RenameDialog from "./components/dialogs/RenameDialog.vue";
-import ExportDialog from "./components/dialogs/ExportDialog.vue";
-import TrimDialog from "./components/dialogs/TrimDialog.vue";
-import Toggle from "./components/ui/Toggle.vue";
-import SaveIndicator from "./components/ui/SaveIndicator.vue";
-import TranscribeIcon from "./components/icons/TranscribeIcon.vue";
-import Spinner from "./components/icons/Spinner.vue";
-import { fmtClock, fmtMs as fmt, fmtMsLong as fmtLong, fmtBytes } from "./composables/format";
-import { useDebouncedSave } from "./composables/useDebouncedSave";
-import { useMediaQuery } from "./composables/useMediaQuery";
-import { fieldClass } from "./styles/fields";
+} from "@/types";
+import Settings from "@components/Settings.vue";
+import LogViewer from "@components/LogViewer.vue";
+import SetupGate from "@components/SetupGate.vue";
+import BottomNav, { type Tab } from "@components/BottomNav.vue";
+import AppHeader from "@components/AppHeader.vue";
+import StatusStrip from "@components/StatusStrip.vue";
+import FileList from "@components/FileList.vue";
+import TranscriptPanel from "@components/TranscriptPanel.vue";
+import ConfigPanel from "@components/ConfigPanel.vue";
+import RenameDialog from "@components/dialogs/RenameDialog.vue";
+import ExportDialog from "@components/dialogs/ExportDialog.vue";
+import TrimDialog from "@components/dialogs/TrimDialog.vue";
+import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
+import { useDebouncedSave } from "@composables/useDebouncedSave";
 
 const tab = ref<Tab>("transcribe");
 const version = ref("");
 const sys = ref<SystemInfo | null>(null);
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
-const essentialIds = ref<string[]>([]);
-const essentialProgress = ref<Record<string, FileProgress>>({});
-const essentialErrors = ref<Record<string, true>>({});
-const essentialsForceReady = ref(false);
-const essentialsReady = computed(() => {
-  if (essentialsForceReady.value) return true;
-  if (!essentialIds.value.length) return true;
-  return essentialIds.value.every((id) => {
-    const m = models.value.find((x) => x.id === id);
-    return m?.status === "installed";
-  });
-});
 const listing = ref<DirListing | null>(null);
 const selectedPath = ref<string>("");
 const transcript = ref<Transcript | null>(null);
@@ -58,160 +43,44 @@ const error = ref<string | null>(null);
 const dragOver = ref(false);
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
+
+const essentialIds = ref<string[]>([]);
+const essentialProgress = ref<Record<string, FileProgress>>({});
+const essentialErrors = ref<Record<string, true>>({});
+const essentialsForceReady = ref(false);
+const essentialsReady = computed(() => {
+  if (essentialsForceReady.value) return true;
+  if (!essentialIds.value.length) return true;
+  return essentialIds.value.every(
+    (id) => models.value.find((x) => x.id === id)?.status === "installed",
+  );
+});
+
 const dialogOpen = ref(false);
 const queueActive = ref(false);
 const queueTotal = ref(0);
 const queueDone = ref(0);
-const configOpen = ref(
-  typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches,
-);
-const CONFIG_HEIGHT_KEY = "wt.configHeightPx";
-const CONFIG_HEADER_PX = 56;
-const CONFIG_COLLAPSED_PX = CONFIG_HEADER_PX;
-const CONFIG_OPEN_THRESHOLD_PX = CONFIG_HEADER_PX + 16;
-const configContentEl = ref<HTMLElement | null>(null);
-const configContentHeightPx = ref(0);
-const configHeightPx = ref(
-  (() => {
-    if (typeof window === "undefined") return CONFIG_COLLAPSED_PX;
-    const v = Number(localStorage.getItem(CONFIG_HEIGHT_KEY) ?? "");
-    return Number.isFinite(v) && v >= CONFIG_COLLAPSED_PX ? v : CONFIG_COLLAPSED_PX;
-  })(),
-);
-const configMaxPx = computed(() => CONFIG_COLLAPSED_PX + configContentHeightPx.value);
-watch(configHeightPx, (v) => {
-  if (typeof window !== "undefined") localStorage.setItem(CONFIG_HEIGHT_KEY, String(Math.round(v)));
+
+const configPanelRef = ref<InstanceType<typeof ConfigPanel> | null>(null);
+const fileListRef = ref<InstanceType<typeof FileList> | null>(null);
+
+const selectedEntry = computed<DirEntry | null>(() => {
+  if (!listing.value || !selectedPath.value) return null;
+  return listing.value.entries.find((e) => e.path === selectedPath.value) ?? null;
 });
-const resizingConfig = ref(false);
-function snapConfig(px: number): number {
-  const stops = [CONFIG_COLLAPSED_PX, configMaxPx.value];
-  let best = stops[0];
-  let bestDist = Math.abs(stops[0] - px);
-  for (const s of stops) {
-    const d = Math.abs(s - px);
-    if (d < bestDist) {
-      bestDist = d;
-      best = s;
-    }
-  }
-  return best;
-}
-function beginConfigResize(ev: PointerEvent) {
-  ev.preventDefault();
-  resizingConfig.value = true;
-  const startY = ev.clientY;
-  const startPx = configHeightPx.value;
-  let dragged = false;
-  const move = (e: PointerEvent) => {
-    const deltaPx = startY - e.clientY;
-    if (Math.abs(deltaPx) > 3) dragged = true;
-    configHeightPx.value = Math.max(
-      CONFIG_COLLAPSED_PX,
-      Math.min(configMaxPx.value, startPx + deltaPx),
-    );
-  };
-  const up = () => {
-    resizingConfig.value = false;
-    if (dragged) {
-      configHeightPx.value = snapConfig(configHeightPx.value);
-    } else {
-      configHeightPx.value =
-        startPx > CONFIG_OPEN_THRESHOLD_PX ? CONFIG_COLLAPSED_PX : configMaxPx.value;
-    }
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", up);
-  };
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-  window.addEventListener("pointercancel", up);
-}
-const configExpandedMobile = computed(() => configHeightPx.value > CONFIG_OPEN_THRESHOLD_PX);
-watch(configContentEl, (el, _prev, onCleanup) => {
-  if (!el || typeof window === "undefined") return;
-  const measure = () => {
-    const h = el.scrollHeight;
-    if (h > 0) {
-      configContentHeightPx.value = h;
-      if (configHeightPx.value > configMaxPx.value) configHeightPx.value = configMaxPx.value;
-    }
-  };
-  const ro = new ResizeObserver(measure);
-  ro.observe(el);
-  measure();
-  onCleanup(() => ro.disconnect());
-});
-const isDesktop = useMediaQuery("(min-width: 768px)");
-const isMobile = computed(() => !isDesktop.value);
-const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
-const openMenuPath = ref<string | null>(null);
-function toggleMenu(path: string) {
-  openMenuPath.value = openMenuPath.value === path ? null : path;
-}
-function closeMenus() {
-  openMenuPath.value = null;
-}
 
-function decodeName(name: string): string {
-  try {
-    return decodeURIComponent(name);
-  } catch {
-    return name;
-  }
-}
+const audioEntries = computed<DirEntry[]>(() =>
+  listing.value ? listing.value.entries.filter((e) => e.is_audio) : [],
+);
+const untranscribedEntries = computed<DirEntry[]>(() =>
+  audioEntries.value.filter((e) => !e.cache_key && !busy.value[e.path]),
+);
+const transcribedCount = computed(() => audioEntries.value.filter((e) => !!e.cache_key).length);
 
-function prettyName(name: string): { display: string; timestamp: string | null } {
-  const decoded = decodeName(name);
-  const noExt = decoded.replace(/\.[^.]+$/, "");
-  const patterns: { re: RegExp; full4: boolean }[] = [
-    { re: /[-_](\d{4})-(\d{2})-(\d{2})[-_T](\d{2})-(\d{2})-(\d{2})$/, full4: true },
-    { re: /[-_](\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: true },
-    { re: /[-_](\d{2})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: false },
-  ];
-  for (const { re, full4 } of patterns) {
-    const m = noExt.match(re);
-    if (m && m.index !== undefined) {
-      const display = noExt.slice(0, m.index);
-      const [, a, b, c, d, e] = m;
-      const yy = full4 ? a.slice(2) : a;
-      const months = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-      ];
-      const mi = parseInt(b, 10) - 1;
-      const mon = mi >= 0 && mi < 12 ? months[mi] : b;
-      return { display: display || noExt, timestamp: `${yy}-${mon}-${c} ${d}:${e}` };
-    }
-  }
-  return { display: noExt, timestamp: null };
-}
-
-function phaseLabel(p: TranscribeProgress["phase"]): string {
-  switch (p) {
-    case "cache_check":
-      return "checking cache";
-    case "loading_audio":
-      return "loading audio";
-    case "transcribing":
-      return "transcribing";
-    case "diarizing":
-      return "diarizing";
-    case "writing":
-      return "writing";
-    case "done":
-      return "done";
-  }
-}
+const selectedAsrModel = computed(
+  () => models.value.find((m) => m.family === "asr" && m.id === config.value?.model) ?? null,
+);
+const selectedModelInstalled = computed(() => selectedAsrModel.value?.status === "installed");
 
 async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
   if (dialogOpen.value) return undefined;
@@ -223,133 +92,9 @@ async function withDialog<T>(fn: () => Promise<T>): Promise<T | undefined> {
   }
 }
 
-const tabs: { id: Tab; label: string }[] = [
-  { id: "transcribe", label: "Transcribe" },
-  { id: "settings", label: "Settings" },
-  { id: "logs", label: "Logs" },
-];
-
-const allLanguageOptions = [
-  "auto",
-  "en",
-  "de",
-  "fr",
-  "es",
-  "it",
-  "pt",
-  "nl",
-  "pl",
-  "ru",
-  "uk",
-  "zh",
-  "ja",
-  "ko",
-  "ar",
-  "tr",
-  "hi",
-];
-
-const asrModels = computed(() =>
-  models.value.filter((m) => m.family === "asr" && m.status === "installed"),
-);
-
-const allAsrModels = computed(() => models.value.filter((m) => m.family === "asr"));
-
-const selectedAsrModel = computed(
-  () => allAsrModels.value.find((m) => m.id === config.value?.model) ?? null,
-);
-
-const selectedModelInstalled = computed(() => selectedAsrModel.value?.status === "installed");
-
-const installingSelected = ref(false);
-async function installSelectedModel() {
-  const id = config.value?.model;
-  if (!id) return;
-  installingSelected.value = true;
-  try {
-    await api.installModel(id);
-    models.value = await api.listModels();
-  } catch (e) {
-    console.error("install failed", e);
-  } finally {
-    installingSelected.value = false;
-  }
-}
-
-const speakerOptions = computed<{ value: number; label: string }[]>(() => {
-  const choice = config.value?.diarizer ?? "auto";
-  const cap = choice === "nemo" ? 4 : 10;
-  const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
-  for (let i = 1; i <= cap; i++) opts.push({ value: i, label: String(i) });
-  return opts;
-});
-
-const languageOptions = computed(() => {
-  const m = selectedAsrModel.value;
-  const base = !m || !m.languages || !m.languages.length ? allLanguageOptions : m.languages;
-  return base.includes("auto") ? base : ["auto", ...base];
-});
-
-function syncEngineAndModel(next: Config, preferEngine = false) {
-  const installed = asrModels.value;
-  if (!installed.length) return;
-
-  if (preferEngine) {
-    const engineModel = installed.find((m) => m.engine === next.engine);
-    if (engineModel && !installed.some((m) => m.id === next.model && m.engine === next.engine)) {
-      next.model = engineModel.id;
-    }
-    return;
-  }
-
-  const model = installed.find((m) => m.id === next.model);
-  if (model) {
-    if (next.engine !== model.engine) next.engine = model.engine as Config["engine"];
-    return;
-  }
-
-  const engineModel = installed.find((m) => m.engine === next.engine);
-  const fallback = engineModel ?? installed.find((m) => m.default_active) ?? installed[0];
-  next.engine = fallback.engine as Config["engine"];
-  next.model = fallback.id;
-}
-
-function onModelChanged() {
-  if (!config.value) return;
-  syncEngineAndModel(config.value);
-  const opts = languageOptions.value;
-  if (opts.length && !opts.includes(config.value.language)) {
-    config.value.language = opts.includes("auto") ? "auto" : opts[0];
-  }
-}
-
-const selectedEntry = computed<DirEntry | null>(() => {
-  if (!listing.value || !selectedPath.value) return null;
-  return listing.value.entries.find((e) => e.path === selectedPath.value) ?? null;
-});
-
-const audioEntries = computed<DirEntry[]>(() =>
-  listing.value ? listing.value.entries.filter((e) => e.is_audio) : [],
-);
-
-const untranscribedEntries = computed<DirEntry[]>(() =>
-  audioEntries.value.filter((e) => !e.cache_key && !busy.value[e.path]),
-);
-
-const transcribedCount = computed(() => audioEntries.value.filter((e) => !!e.cache_key).length);
-
-const todayLabel = computed(() =>
-  new Date().toLocaleDateString(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }),
-);
-
 async function reload() {
   config.value = await api.loadConfig();
   models.value = await api.listModels();
-  syncEngineAndModel(config.value);
   if (!listing.value) {
     const start = config.value.last_dir || (await api.defaultDir());
     await openDir(start);
@@ -379,25 +124,13 @@ async function openDir(path: string) {
   }
 }
 
-const audioExtensions = ["wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma"];
-
 async function pickAudio() {
   const selected = await withDialog(() =>
-    open({
-      multiple: true,
-      filters: [{ name: "Audio", extensions: audioExtensions }],
-    }),
+    open({ multiple: true, filters: [{ name: "Audio", extensions: [...audioExtensions] }] }),
   );
   if (!selected) return;
   const paths = Array.isArray(selected) ? selected : [selected];
   await addPathsToWorkdir(paths);
-}
-
-function basenameOf(p: string): string {
-  const cleaned = p.replace(/\\/g, "/");
-  const idx = cleaned.lastIndexOf("/");
-  const tail = idx === -1 ? cleaned : cleaned.slice(idx + 1);
-  return tail.split("?")[0] || "audio";
 }
 
 async function addPathsToWorkdir(paths: string[]) {
@@ -421,11 +154,6 @@ async function addPathsToWorkdir(paths: string[]) {
   if (lastAdded) selectedPath.value = lastAdded;
 }
 
-function hasAudioExt(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return audioExtensions.includes(ext);
-}
-
 async function onRecordingSaved(path: string) {
   await refreshListing();
   selectedPath.value = path;
@@ -444,9 +172,7 @@ function chooseEntry(entry: DirEntry) {
   selectedPath.value = entry.path;
   transcript.value = null;
   error.value = null;
-  if (entry.cache_key) {
-    void loadCached(entry.cache_key);
-  }
+  if (entry.cache_key) void loadCached(entry.cache_key);
 }
 
 async function loadCached(key: string) {
@@ -457,6 +183,13 @@ async function loadCached(key: string) {
     error.value = String(e);
   }
 }
+
+let unlistenDrop: (() => void) | null = null;
+let unlistenProgress: (() => void) | null = null;
+let unlistenModelDone: (() => void) | null = null;
+let unlistenModelError: (() => void) | null = null;
+let unlistenModelProgress: (() => void) | null = null;
+let unlistenEssentialsDone: (() => void) | null = null;
 
 onMounted(async () => {
   version.value = await api.appVersion();
@@ -518,12 +251,6 @@ onMounted(async () => {
   });
 });
 
-let unlistenDrop: (() => void) | null = null;
-let unlistenProgress: (() => void) | null = null;
-let unlistenModelDone: (() => void) | null = null;
-let unlistenModelError: (() => void) | null = null;
-let unlistenModelProgress: (() => void) | null = null;
-let unlistenEssentialsDone: (() => void) | null = null;
 onUnmounted(() => {
   unlistenDrop?.();
   unlistenProgress?.();
@@ -546,8 +273,7 @@ watch(saveError, (e) => {
 
 async function runTranscribe(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target || !config.value) return;
-  if (!target.is_audio) return;
+  if (!target || !config.value || !target.is_audio) return;
   if (!selectedModelInstalled.value) {
     error.value = `Model "${selectedAsrModel.value?.display_name ?? config.value.model}" is not installed. Download it in Configuration.`;
     tab.value = "transcribe";
@@ -606,8 +332,7 @@ async function transcribeAll() {
 const autoRenamingPath = ref<string | null>(null);
 async function autoRename(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target || !target.is_audio) return;
-  if (autoRenamingPath.value) return;
+  if (!target || !target.is_audio || autoRenamingPath.value) return;
   autoRenamingPath.value = target.path;
   try {
     await runAutoRename(target);
@@ -617,11 +342,7 @@ async function autoRename(entry?: DirEntry) {
 }
 async function runAutoRename(target: DirEntry) {
   let t = transcript.value;
-  if (!t) {
-    if (target.cache_key) {
-      t = await api.historyLoad(target.cache_key);
-    }
-  }
+  if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
   if (!t) {
     await message("Transcribe first to enable auto-rename.", {
       title: "Auto-rename",
@@ -654,8 +375,7 @@ const renameValue = ref("");
 
 function openRename(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target) return;
-  if (renaming.value || exporting.value) return;
+  if (!target || renaming.value || exporting.value) return;
   renameTarget.value = target;
   renameValue.value = target.name;
   renaming.value = true;
@@ -717,8 +437,7 @@ async function onTrimSaved() {
 
 async function openExport(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target) return;
-  if (renaming.value || exporting.value) return;
+  if (!target || renaming.value || exporting.value) return;
   let t = transcript.value;
   if (!t || (selectedEntry.value && selectedEntry.value.path !== target.path)) {
     if (target.cache_key) t = await api.historyLoad(target.cache_key);
@@ -756,6 +475,10 @@ async function commitExport() {
     error.value = String(e);
   }
 }
+
+const selectedProgress = computed(() =>
+  selectedEntry.value ? (progressByPath.value[selectedEntry.value.path] ?? null) : null,
+);
 </script>
 
 <template>
@@ -767,135 +490,34 @@ async function commitExport() {
     :errors="essentialErrors"
   />
   <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
-    <header
-      class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
-    >
-      <div class="flex items-center gap-xs">
-        <span class="material-symbols-outlined text-primary text-[24px]">graphic_eq</span>
-        <span
-          class="font-mono tracking-tighter font-bold text-primary text-labelMedium ml-xs uppercase"
-          >wt</span
-        >
-      </div>
-      <nav
-        class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0"
-      >
-        <button
-          v-for="t in tabs"
-          :key="t.id"
-          @click="tab = t.id"
-          class="h-full flex items-center text-titleSmall border-b-2 px-unit transition-colors whitespace-nowrap shrink-0"
-          :class="
-            tab === t.id
-              ? 'border-primary text-on-surface'
-              : 'border-transparent text-on-surface-variant hover:text-on-surface'
-          "
-        >
-          {{ t.label }}
-        </button>
-      </nav>
-      <div class="flex items-center gap-xs shrink-0">
-        <button
-          v-if="tab === 'transcribe' && untranscribedEntries.length > 0"
-          class="w-11 h-11 inline-flex items-center justify-center rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          :disabled="queueActive"
-          @click="transcribeAll"
-          :title="
-            queueActive
-              ? `Transcribing ${queueDone + 1}/${queueTotal}`
-              : `Transcribe all (${untranscribedEntries.length})`
-          "
-          aria-label="Transcribe all untranscribed files"
-        >
-          <span class="material-symbols-outlined text-[22px]">playlist_play</span>
-        </button>
-        <button
-          v-if="tab === 'transcribe'"
-          class="w-11 h-11 inline-flex items-center justify-center rounded-full bg-primary text-on-primary hover:bg-primary-fixed-dim transition-colors"
-          @click="pickAudio"
-          title="Add audio file(s) to working folder"
-          aria-label="Add audio files"
-        >
-          <span class="material-symbols-outlined text-[22px]">add</span>
-        </button>
-        <button
-          class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs"
-          aria-label="More options"
-        >
-          <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
-          <span class="material-symbols-outlined text-[22px]">more_vert</span>
-        </button>
-      </div>
-    </header>
+    <AppHeader
+      v-model:tab="tab"
+      :version="version"
+      :show-transcribe-actions="tab === 'transcribe'"
+      :pending-count="untranscribedEntries.length"
+      :queue-active="queueActive"
+      :queue-done="queueDone"
+      :queue-total="queueTotal"
+      @transcribe-all="transcribeAll"
+      @pick-audio="pickAudio"
+    />
 
-    <div
+    <StatusStrip
       v-if="tab === 'transcribe'"
-      class="shrink-0 border-b border-outline-variant/40 bg-surface-container-low px-margin py-xs flex items-center gap-xs font-mono text-labelSmall overflow-hidden"
-    >
-      <template v-if="recorderRef?.recording">
-        <span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse shrink-0"></span>
-        <span class="text-error uppercase tracking-wide">REC</span>
-        <span class="text-on-surface ml-auto">{{ recorderRef?.elapsed }}</span>
-      </template>
-      <template
-        v-else-if="selectedEntry && progressByPath[selectedEntry.path] && status === 'running'"
-      >
-        <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
-        <span class="text-on-surface-variant shrink-0">{{
-          phaseLabel(progressByPath[selectedEntry.path].phase)
-        }}</span>
-        <span class="text-secondary shrink-0 ml-auto">
-          <template
-            v-if="
-              progressByPath[selectedEntry.path].phase === 'transcribing' ||
-              progressByPath[selectedEntry.path].phase === 'diarizing'
-            "
-          >
-            {{ progressByPath[selectedEntry.path].displayPct.toFixed(0) }}% ·
-            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }} / ETA
-            {{ fmtClock(progressByPath[selectedEntry.path].etaSec) }}
-          </template>
-          <template v-else>
-            {{ fmtClock(progressByPath[selectedEntry.path].elapsedSec) }}
-          </template>
-        </span>
-      </template>
-      <template v-else-if="transcript">
-        <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0"
-          >check_circle</span
-        >
-        <span class="text-on-surface-variant shrink-0">ready</span>
-        <span class="text-on-surface-variant shrink-0 ml-auto"
-          >{{ fmtLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
-          {{ transcript.speakers_detected }} spk</span
-        >
-      </template>
-      <template v-else-if="selectedEntry">
-        <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0"
-          >graphic_eq</span
-        >
-        <span class="text-on-surface truncate min-w-0">{{
-          decodeName(prettyName(selectedEntry.name).display)
-        }}</span>
-        <span class="text-on-surface-variant shrink-0 ml-auto">
-          {{ selectedEntry.duration_ms ? fmt(selectedEntry.duration_ms) : "—" }} ·
-          {{ fmtBytes(selectedEntry.size_bytes) }}
-          <template v-if="selectedEntry.cache_key"> · transcribed </template>
-        </span>
-      </template>
-      <template v-else>
-        <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0"
-          >today</span
-        >
-        <span class="text-on-surface-variant shrink-0">{{ todayLabel }}</span>
-        <span class="text-on-surface-variant shrink-0 ml-auto">
-          {{ audioEntries.length }} {{ audioEntries.length === 1 ? "file" : "files" }}
-          <template v-if="transcribedCount > 0"> · {{ transcribedCount }} transcribed </template>
-        </span>
-      </template>
-    </div>
+      :recording="configPanelRef?.recording ?? false"
+      :rec-elapsed="configPanelRef?.elapsed ?? ''"
+      :status="status"
+      :selected-entry="selectedEntry"
+      :progress="selectedProgress"
+      :transcript="transcript"
+      :audio-count="audioEntries.length"
+      :transcribed-count="transcribedCount"
+    />
 
-    <main class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0" @click="closeMenus">
+    <main
+      class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0"
+      @click="fileListRef?.closeMenus()"
+    >
       <template v-if="tab === 'transcribe'">
         <section
           class="flex-1 flex flex-col overflow-hidden bg-surface relative"
@@ -930,616 +552,44 @@ async function commitExport() {
           </div>
 
           <div class="flex-1 overflow-y-auto scroll-thin">
-            <div
-              v-if="!listing || audioEntries.length === 0"
-              class="h-full flex flex-col items-center justify-center gap-md text-center px-xl text-on-surface-variant"
-            >
-              <span
-                class="material-symbols-outlined text-[48px]"
-                :class="dragOver ? 'text-primary' : 'text-outline-variant'"
-              >
-                {{ dragOver ? "download" : "library_music" }}
-              </span>
-              <p class="text-bodyMedium">
-                {{ dragOver ? "Drop to add" : "No audio in this folder" }}
-              </p>
-              <p class="font-mono text-labelSmall text-outline">
-                Drag files here or click Add audio
-              </p>
-            </div>
-
-            <ul v-else class="flex flex-col md:hidden">
-              <li
-                v-for="entry in audioEntries"
-                :key="`m-${entry.path}`"
-                class="border-b border-outline-variant/20 px-margin py-md cursor-pointer transition-colors"
-                :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
-                @click="chooseEntry(entry)"
-              >
-                <div class="flex items-center gap-xs">
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-xs">
-                      <div
-                        class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words"
-                        :title="decodeName(entry.name)"
-                      >
-                        {{ prettyName(entry.name).display }}
-                      </div>
-                      <div class="flex items-center gap-unit shrink-0 -mr-xs" @click.stop>
-                        <button
-                          v-if="busy[entry.path]"
-                          class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-error hover:bg-error-container/40 transition-colors"
-                          title="Stop"
-                          @click="stopTranscribe(entry)"
-                        >
-                          stop
-                        </button>
-                        <button
-                          v-else
-                          class="w-10 h-10 flex items-center justify-center rounded-full text-primary hover:bg-surface-container-highest transition-colors"
-                          title="Transcribe"
-                          @click="runTranscribe(entry)"
-                        >
-                          <TranscribeIcon :size="20" />
-                        </button>
-                        <div class="relative">
-                          <button
-                            class="material-symbols-outlined w-10 h-10 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-highest transition-colors"
-                            title="More"
-                            @click="toggleMenu(entry.path)"
-                          >
-                            more_vert
-                          </button>
-                          <div
-                            v-if="openMenuPath === entry.path"
-                            class="absolute right-0 top-full mt-unit z-30 min-w-[180px] bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
-                          >
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
-                              @click="
-                                closeMenus();
-                                openTrim(entry);
-                              "
-                            >
-                              <span class="material-symbols-outlined text-[18px]">content_cut</span>
-                              Cut / select range
-                            </button>
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-50"
-                              :disabled="autoRenamingPath === entry.path"
-                              @click="
-                                closeMenus();
-                                autoRename(entry);
-                              "
-                            >
-                              <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-                              <span v-else class="material-symbols-outlined text-[18px]"
-                                >auto_awesome</span
-                              >
-                              {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
-                            </button>
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
-                              @click="
-                                closeMenus();
-                                openRename(entry);
-                              "
-                            >
-                              <span class="material-symbols-outlined text-[18px]"
-                                >drive_file_rename_outline</span
-                              >
-                              Rename
-                            </button>
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30"
-                              :disabled="!entry.cache_key"
-                              @click="
-                                closeMenus();
-                                openExport(entry);
-                              "
-                            >
-                              <span class="material-symbols-outlined text-[18px]">download</span>
-                              Export
-                            </button>
-                            <div class="my-unit border-t border-outline-variant/40"></div>
-                            <button
-                              class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-error hover:bg-error-container/40 transition-colors"
-                              @click="
-                                closeMenus();
-                                deleteEntry(entry);
-                              "
-                            >
-                              <span class="material-symbols-outlined text-[18px]">delete</span>
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  v-if="busy[entry.path]"
-                  class="flex items-center gap-xs mt-xs font-mono text-labelSmall text-secondary"
-                >
-                  <span class="material-symbols-outlined text-[14px] animate-pulse"
-                    >graphic_eq</span
-                  >
-                  <span>{{
-                    progressByPath[entry.path]
-                      ? phaseLabel(progressByPath[entry.path].phase)
-                      : "transcribing"
-                  }}</span>
-                </div>
-              </li>
-            </ul>
-
-            <table v-if="audioEntries.length" class="hidden md:table w-full text-bodyMedium">
-              <thead class="sticky top-0 bg-surface z-10 border-b border-outline-variant/40">
-                <tr
-                  class="text-left font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                >
-                  <th class="px-margin py-xs w-8"></th>
-                  <th class="px-xs py-xs">Name</th>
-                  <th class="px-xs py-xs w-24">Duration</th>
-                  <th class="px-xs py-xs w-24">Size</th>
-                  <th class="px-xs py-xs w-28">Status</th>
-                  <th class="px-margin py-xs w-[200px]"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="entry in audioEntries"
-                  :key="entry.path"
-                  class="border-b border-outline-variant/20 hover:bg-surface-container-high/40 cursor-pointer transition-colors"
-                  :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
-                  @click="chooseEntry(entry)"
-                  @dblclick="runTranscribe(entry)"
-                >
-                  <td class="px-margin py-xs">
-                    <span class="material-symbols-outlined text-[20px] text-on-surface-variant"
-                      >graphic_eq</span
-                    >
-                  </td>
-                  <td class="px-xs py-xs truncate max-w-0">
-                    <span class="text-on-surface" :title="decodeName(entry.name)">{{
-                      prettyName(entry.name).display
-                    }}</span>
-                    <span
-                      v-if="prettyName(entry.name).timestamp"
-                      class="font-mono text-labelSmall text-secondary ml-xs"
-                      >{{ prettyName(entry.name).timestamp }}</span
-                    >
-                  </td>
-                  <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
-                    {{ entry.duration_ms ? fmt(entry.duration_ms) : "—" }}
-                  </td>
-                  <td class="px-xs py-xs font-mono text-labelMedium text-on-surface-variant">
-                    {{ fmtBytes(entry.size_bytes) }}
-                  </td>
-                  <td class="px-xs py-xs">
-                    <template v-if="busy[entry.path]">
-                      <div class="flex flex-col gap-unit">
-                        <span
-                          class="font-mono text-labelSmall text-secondary flex items-center gap-unit"
-                        >
-                          <span class="material-symbols-outlined text-[14px] animate-pulse"
-                            >graphic_eq</span
-                          >
-                          <span>{{
-                            progressByPath[entry.path]
-                              ? phaseLabel(progressByPath[entry.path].phase)
-                              : "transcribing"
-                          }}</span>
-                        </span>
-                      </div>
-                    </template>
-                    <span
-                      v-else-if="entry.cache_key"
-                      class="font-mono text-labelSmall text-tertiary flex items-center gap-unit"
-                    >
-                      <span class="material-symbols-outlined text-[14px]">check_circle</span>
-                      transcribed
-                    </span>
-                    <span v-else class="font-mono text-labelSmall text-outline">—</span>
-                  </td>
-                  <td class="px-margin py-xs text-right">
-                    <div class="inline-flex gap-unit" @click.stop>
-                      <button
-                        v-if="busy[entry.path]"
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-error transition-colors"
-                        title="Stop transcription"
-                        @click="stopTranscribe(entry)"
-                      >
-                        stop
-                      </button>
-                      <button
-                        v-else
-                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-primary transition-colors"
-                        title="Transcribe"
-                        @click="runTranscribe(entry)"
-                      >
-                        <TranscribeIcon :size="18" />
-                      </button>
-                      <button
-                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant transition-colors"
-                        :class="
-                          entry.trim_start_ms || entry.trim_end_ms
-                            ? 'text-primary'
-                            : 'hover:text-primary'
-                        "
-                        :title="
-                          entry.trim_start_ms || entry.trim_end_ms
-                            ? `Trim: ${fmt(entry.trim_start_ms ?? 0)} – ${fmt(
-                                entry.trim_end_ms ?? entry.duration_ms ?? 0,
-                              )}`
-                            : 'Trim — select range to transcribe'
-                        "
-                        @click="openTrim(entry)"
-                      >
-                        <span class="material-symbols-outlined text-[18px]">content_cut</span>
-                      </button>
-                      <button
-                        class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
-                        :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
-                        :disabled="autoRenamingPath === entry.path"
-                        @click="autoRename(entry)"
-                      >
-                        <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-                        <span v-else class="material-symbols-outlined text-[18px]"
-                          >auto_awesome</span
-                        >
-                      </button>
-                      <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                        title="Rename"
-                        @click="openRename(entry)"
-                      >
-                        drive_file_rename_outline
-                      </button>
-                      <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                        title="Export transcript"
-                        :disabled="!entry.cache_key"
-                        :class="!entry.cache_key ? 'opacity-30 cursor-not-allowed' : ''"
-                        @click="openExport(entry)"
-                      >
-                        download
-                      </button>
-                      <button
-                        class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error transition-colors"
-                        title="Delete"
-                        @click="deleteEntry(entry)"
-                      >
-                        delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <FileList
+              ref="fileListRef"
+              :entries="audioEntries"
+              :selected-path="selectedPath"
+              :busy="busy"
+              :progress-by-path="progressByPath"
+              :auto-renaming-path="autoRenamingPath"
+              :drag-over="dragOver"
+              :has-listing="!!listing"
+              @choose="chooseEntry"
+              @transcribe="runTranscribe"
+              @stop="stopTranscribe"
+              @trim="openTrim"
+              @auto-rename="autoRename"
+              @rename="openRename"
+              @export="openExport"
+              @delete="deleteEntry"
+            />
           </div>
 
-          <SlidingPanel
-            v-if="transcript"
-            storage-key="wt.transcriptHeightPx"
-            :initial-height="360"
-            :auto-max="true"
-          >
-            <template #header>
-              <h3 class="text-titleSmall text-on-surface flex items-center gap-xs pl-md">
-                <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
-                Transcript
-              </h3>
-              <button
-                @pointerdown.stop
-                @click.stop="closeTranscript"
-                class="mr-md w-9 h-9 inline-flex items-center justify-center rounded-full bg-surface-container-highest text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors"
-                title="Close transcript"
-                aria-label="Close transcript"
-              >
-                <span class="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </template>
-            <article
-              v-for="(u, i) in transcript.utterances"
-              :key="i"
-              class="flex gap-xs items-start group hover:bg-surface-container-high/30 -mx-xs px-xs py-unit rounded transition-colors"
-            >
-              <span class="font-mono text-labelSmall text-secondary w-12 shrink-0 pt-unit">{{
-                fmt(u.start_ms)
-              }}</span>
-              <div class="flex-1 min-w-0">
-                <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
-                  {{ u.speaker }}
-                </div>
-                <p
-                  class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
-                >
-                  {{ u.text }}
-                </p>
-              </div>
-            </article>
-          </SlidingPanel>
+          <TranscriptPanel v-if="transcript" :transcript="transcript" @close="closeTranscript" />
         </section>
 
-        <aside
-          class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto relative"
-          :class="resizingConfig ? '' : 'transition-[max-height,height] duration-200 ease-out'"
-          :style="{
-            maxHeight: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
-            height: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
-          }"
-        >
-          <Recorder
-            v-if="config && listing?.path"
-            ref="recorderRef"
-            :workdir="listing.path"
-            :headless="true"
-            @saved="onRecordingSaved"
-          />
-          <div
-            v-if="config"
-            class="shrink-0 h-14 w-full flex items-center justify-between relative select-none cursor-row-resize md:cursor-pointer touch-none md:touch-auto transition-colors"
-            :class="resizingConfig ? 'bg-primary/15' : 'active:bg-primary/10'"
-            role="button"
-            :aria-expanded="isMobile ? configExpandedMobile : configOpen"
-            :aria-label="
-              isMobile && configExpandedMobile
-                ? 'Drag or tap to collapse configuration'
-                : isMobile
-                  ? 'Drag or tap to expand configuration'
-                  : configOpen
-                    ? 'Collapse configuration'
-                    : 'Expand configuration'
-            "
-            @pointerdown="(e: PointerEvent) => isMobile && beginConfigResize(e)"
-            @click="
-              () => {
-                if (!isMobile) configOpen = !configOpen;
-              }
-            "
-          >
-            <span
-              v-if="isMobile"
-              class="absolute top-1 left-1/2 -translate-x-1/2 w-12 h-1 rounded-full transition-colors pointer-events-none"
-              :class="
-                resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'
-              "
-            ></span>
-            <h3 class="text-titleSmall text-on-surface flex items-center gap-unit pl-md">
-              <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
-              Configuration
-            </h3>
-            <div class="flex items-center gap-xs pr-md">
-              <button
-                v-if="recorderRef && !recorderRef.recording"
-                @pointerdown.stop
-                @click.stop.prevent="recorderRef?.start()"
-                class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
-                title="Record"
-              >
-                <span class="material-symbols-outlined fill text-[16px]">fiber_manual_record</span>
-                Rec
-              </button>
-              <button
-                v-else-if="recorderRef"
-                @pointerdown.stop
-                @click.stop.prevent="recorderRef?.stop()"
-                class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
-                :title="`Stop recording \u00b7 ${recorderRef?.elapsed}`"
-              >
-                <span class="material-symbols-outlined fill text-[16px]">stop</span>
-                {{ recorderRef?.elapsed }}
-              </button>
-              <SaveIndicator v-else :state="saveState" />
-            </div>
-          </div>
-
-          <div
-            v-if="config"
-            class="flex-1 min-h-0 overflow-hidden"
-            :style="{
-              maxHeight: isMobile
-                ? `${Math.max(0, configHeightPx - CONFIG_HEADER_PX)}px`
-                : configOpen
-                  ? 'none'
-                  : '0px',
-            }"
-          >
-            <div
-              ref="configContentEl"
-              class="px-md md:px-margin pt-md pb-md md:py-margin space-y-md overflow-y-auto scroll-thin"
-            >
-              <label class="block">
-                <span
-                  class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                  >Model</span
-                >
-                <select
-                  v-model="config.model"
-                  :class="[fieldClass, 'mt-unit']"
-                  @change="onModelChanged"
-                >
-                  <option v-for="m in allAsrModels" :key="m.id" :value="m.id">
-                    {{ m.display_name
-                    }}{{ m.status === "installed" ? "" : " \u2014 not installed" }}
-                  </option>
-                </select>
-              </label>
-
-              <div
-                v-if="selectedAsrModel && !selectedModelInstalled"
-                class="flex items-center gap-md p-md rounded-lg bg-error-container/40 border border-error/40"
-              >
-                <span class="material-symbols-outlined text-error">cloud_download</span>
-                <div class="flex-1 min-w-0">
-                  <div class="text-bodyMedium text-on-surface">Model not installed</div>
-                  <div class="text-labelSmall text-on-surface-variant truncate">
-                    {{ selectedAsrModel.display_name }} ·
-                    {{ (selectedAsrModel.size_bytes / 1048576).toFixed(0) }} MB
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="px-md h-9 rounded-md bg-primary text-on-primary text-labelLarge inline-flex items-center gap-xs disabled:opacity-50"
-                  :disabled="installingSelected || selectedAsrModel.status === 'downloading'"
-                  @click="installSelectedModel"
-                >
-                  <Spinner
-                    v-if="installingSelected || selectedAsrModel.status === 'downloading'"
-                    :size="16"
-                  />
-                  <span v-else class="material-symbols-outlined text-[18px]">download</span>
-                  {{
-                    selectedAsrModel.status === "downloading"
-                      ? "Downloading…"
-                      : installingSelected
-                        ? "Starting…"
-                        : "Download"
-                  }}
-                </button>
-              </div>
-
-              <div class="grid grid-cols-2 gap-md">
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Language</span
-                  >
-                  <select v-model="config.language" :class="[fieldClass, 'mt-unit']">
-                    <option v-for="l in languageOptions" :key="l" :value="l">
-                      {{ l === "auto" ? "Auto" : l }}
-                    </option>
-                  </select>
-                </label>
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Device</span
-                  >
-                  <select v-model="config.device" :class="[fieldClass, 'mt-unit']">
-                    <option value="cpu">CPU</option>
-                    <option v-if="sys?.cuda_available" value="cuda">CUDA</option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="grid grid-cols-2 gap-md">
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Diarizer</span
-                  >
-                  <select
-                    v-model="config.diarizer"
-                    :disabled="!config.diarize"
-                    :class="[fieldClass, 'mt-unit', !config.diarize ? 'opacity-50' : '']"
-                  >
-                    <option value="auto">Auto</option>
-                    <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-                    <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
-                    <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
-                  </select>
-                </label>
-                <label class="block">
-                  <span
-                    class="font-mono text-labelSmall text-on-surface-variant uppercase tracking-wide"
-                    >Speakers</span
-                  >
-                  <select
-                    :value="config.speakers ?? 0"
-                    :class="[fieldClass, 'mt-unit']"
-                    @change="
-                      (e) => {
-                        const n = Number((e.target as HTMLSelectElement).value);
-                        if (!config) return;
-                        config.speakers = n > 0 ? n : null;
-                        if (n > 0 && !config.diarize) config.diarize = true;
-                      }
-                    "
-                  >
-                    <option v-for="o in speakerOptions" :key="o.value" :value="o.value">
-                      {{ o.label }}
-                    </option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="flex items-center justify-between gap-xl py-xs">
-                <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
-                  <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>
-                  <Toggle v-model="config.diarize" aria-label="Auto-Diarize" />
-                </div>
-                <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
-                  <div class="text-bodyMedium text-on-surface truncate">Auto-Rename</div>
-                  <Toggle v-model="config.auto_rename" aria-label="Auto-Rename" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="hidden md:block">
-            <h3 class="text-titleSmall text-on-surface mb-md">Selection</h3>
-            <div
-              class="bg-surface-container-high p-md rounded-lg space-y-xs font-mono text-labelMedium"
-            >
-              <div class="flex justify-between items-center">
-                <span class="text-on-surface-variant">File</span>
-                <span
-                  class="text-on-surface truncate ml-md max-w-[180px]"
-                  :title="selectedEntry ? decodeName(selectedEntry.name) : ''"
-                >
-                  {{ selectedEntry ? decodeName(selectedEntry.name) : "—" }}
-                </span>
-              </div>
-              <div class="flex justify-between items-center">
-                <span class="text-on-surface-variant">Status</span>
-                <span
-                  :class="
-                    status === 'error'
-                      ? 'text-error'
-                      : status === 'idle'
-                        ? 'text-tertiary'
-                        : 'text-secondary'
-                  "
-                >
-                  <template
-                    v-if="
-                      selectedEntry && progressByPath[selectedEntry.path] && status === 'running'
-                    "
-                  >
-                    {{ phaseLabel(progressByPath[selectedEntry.path].phase) }}
-                    <span
-                      v-if="
-                        progressByPath[selectedEntry.path].phase === 'transcribing' ||
-                        progressByPath[selectedEntry.path].phase === 'diarizing'
-                      "
-                    >
-                      · {{ progressByPath[selectedEntry.path].displayPct.toFixed(1) }}%
-                    </span>
-                  </template>
-                  <template v-else>{{
-                    status === "idle" && transcript ? "ready" : status
-                  }}</template>
-                </span>
-              </div>
-              <div class="flex justify-between items-center">
-                <span class="text-on-surface-variant">Duration</span>
-                <span class="text-on-surface">{{
-                  transcript ? fmtLong(transcript.duration_ms) : "—"
-                }}</span>
-              </div>
-              <div v-if="transcript" class="flex justify-between items-center">
-                <span class="text-on-surface-variant">Utterances · Speakers</span>
-                <span class="text-on-surface">
-                  {{ transcript.utterances.length }} ·
-                  <span class="text-primary">{{ transcript.speakers_detected }}</span>
-                </span>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <ConfigPanel
+          v-if="config && listing?.path"
+          ref="configPanelRef"
+          :config="config"
+          :sys="sys"
+          :models="models"
+          :workdir="listing.path"
+          :selected-entry="selectedEntry"
+          :progress="selectedProgress"
+          :transcript="transcript"
+          :status="status"
+          :save-state="saveState"
+          @models-changed="(m) => (models = m)"
+          @recording-saved="onRecordingSaved"
+        />
       </template>
 
       <Settings v-else-if="tab === 'settings'" />
