@@ -187,7 +187,7 @@ defineExpose({
   <section class="flex flex-col gap-md">
     <div
       v-if="recording"
-      class="bg-surface-container rounded-lg border border-outline-variant/40 h-[120px] flex items-end px-xs py-md gap-[2px] overflow-hidden"
+      class="bg-surface-container rounded-lg border border-outline-variant/40 h-30 flex items-end px-xs py-md gap-0.5 overflow-hidden"
     >
       <div
         v-for="(h, i) in bars"

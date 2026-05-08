@@ -106,7 +106,7 @@ function familyLabel(f: string): string {
             :errored="r.status === 'error'"
           />
           <div class="flex-1 min-w-0">
-            <div class="text-titleSmall text-on-surface leading-tight break-words">
+            <div class="text-titleSmall text-on-surface leading-tight wrap-break-word">
               {{ r.name }}
             </div>
             <div class="text-labelSmall text-on-surface-variant font-mono">

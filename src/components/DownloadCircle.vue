@@ -28,7 +28,7 @@ const viewBox = computed(() => `0 0 ${props.size} ${props.size}`);
 
 <template>
   <div class="dl-circle relative shrink-0" :style="{ width: size + 'px', height: size + 'px' }">
-    <svg :width="size" :height="size" :viewBox="viewBox" class="rotate-[-90deg]">
+    <svg :width="size" :height="size" :viewBox="viewBox" class="-rotate-90">
       <circle
         :cx="center"
         :cy="center"

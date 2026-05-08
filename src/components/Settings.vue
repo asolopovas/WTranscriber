@@ -144,9 +144,7 @@ async function resetAudioCache() {
         class="flex flex-col md:flex-row md:items-end justify-between gap-margin pb-md border-b border-outline-variant/50"
       >
         <div>
-          <h1
-            class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface"
-          >
+          <h1 class="text-[20px] md:text-[24px] leading-7 md:leading-8 font-bold text-on-surface">
             Settings
           </h1>
           <p class="text-bodyMedium text-on-surface-variant mt-unit">

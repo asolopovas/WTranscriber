@@ -71,7 +71,10 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
       <div class="flex items-center gap-xs">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-xs">
-            <div class="flex-1 min-w-0 text-bodyMedium text-on-surface break-words" :title="title">
+            <div
+              class="flex-1 min-w-0 text-bodyMedium text-on-surface wrap-break-word"
+              :title="title"
+            >
               {{ pretty.display }}
             </div>
             <div class="flex items-center gap-unit shrink-0 -mr-xs" @click.stop>
@@ -107,7 +110,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
                 />
                 <div
                   v-if="openMenuPath === entry.path"
-                  class="absolute right-0 top-full mt-unit z-30 min-w-[180px] bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
+                  class="absolute right-0 top-full mt-unit z-30 min-w-45 bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
                 >
                   <MenuItem
                     icon="content_cut"
@@ -193,7 +196,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         <th class="px-xs py-xs w-24">Duration</th>
         <th class="px-xs py-xs w-24">Size</th>
         <th class="px-xs py-xs w-28">Status</th>
-        <th class="px-margin py-xs w-[200px]"></th>
+        <th class="px-margin py-xs w-50"></th>
       </tr>
     </thead>
     <tbody>
