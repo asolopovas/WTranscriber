@@ -49,7 +49,7 @@ const NAME_PATTERNS: { re: RegExp; full4: boolean }[] = [
 ];
 
 export function prettyName(name: string): { display: string; timestamp: string | null } {
-  const decoded = decodeName(name);
+  const decoded = basenameOf(decodeName(name));
   const noExt = decoded.replace(/\.[^.]+$/, "");
   for (const { re, full4 } of NAME_PATTERNS) {
     const m = noExt.match(re);
