@@ -4,11 +4,13 @@ use crate::{
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
-    process::quiet_command,
     runtimes::extract,
 };
 
 pub const VERSION: &str = "9.21.1.3";
+
+#[cfg(windows)]
+use crate::process::quiet_command;
 
 pub const fn target_dll() -> &'static str {
     "cudnn64_9.dll"

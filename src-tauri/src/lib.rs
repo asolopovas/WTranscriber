@@ -158,7 +158,7 @@ mod android_jni {
 
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_asolopovas_wtranscriber_MainActivity_wtSetActivity(
-        mut env: JNIEnv,
+        env: JNIEnv,
         _class: JClass,
         activity: JObject,
     ) {

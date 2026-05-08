@@ -243,6 +243,8 @@ fn build_env(target: &str) -> Result<Vec<(String, String)>> {
 fn cmd_build(target: &str) -> Result<()> {
     ensure_prebuilts(target)?;
     let _ = sign_patch_inline()?;
+    patch_gradle_build_config()?;
+    patch_gradle_properties()?;
     copy_llama_jni(target)?;
     patch_manifest()?;
     let env = build_env(target)?;
@@ -277,6 +279,8 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
     let t0 = std::time::Instant::now();
     ensure_prebuilts(target)?;
     let _ = sign_patch_inline()?;
+    patch_gradle_build_config()?;
+    patch_gradle_properties()?;
     copy_llama_jni(target)?;
     patch_manifest()?;
     let mut env = build_env(target)?;
@@ -324,6 +328,77 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
             " (data preserved)"
         }
     );
+    Ok(())
+}
+
+fn patch_gradle_properties() -> Result<()> {
+    let path = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("gradle.properties");
+    if !path.exists() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&path)?;
+    let mut next = raw
+        .lines()
+        .filter(|line| {
+            let line = line.trim_start();
+            !line.starts_with("org.gradle.configureondemand=")
+                && !line.starts_with("org.gradle.warning.mode=")
+                && !line.starts_with("org.gradle.problems.report=")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    next.push_str("\norg.gradle.warning.mode=none\norg.gradle.problems.report=false\n");
+    if next != raw {
+        fs::write(path, next)?;
+    }
+    Ok(())
+}
+
+fn patch_gradle_build_config() -> Result<()> {
+    let gradle = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("app")
+        .join("build.gradle.kts");
+    if !gradle.exists() {
+        return Ok(());
+    }
+    let mut raw = fs::read_to_string(&gradle)?;
+    if !raw.contains("val wtDevApk =") {
+        raw = raw.replace(
+            "val tauriProperties = Properties().apply {\n    val propFile = file(\"tauri.properties\")\n    if (propFile.exists()) {\n        propFile.inputStream().use { load(it) }\n    }\n}",
+            "val tauriProperties = Properties().apply {\n    val propFile = file(\"tauri.properties\")\n    if (propFile.exists()) {\n        propFile.inputStream().use { load(it) }\n    }\n}\n\nval wtDevApk = (project.findProperty(\"wtDevApk\") as? String == \"true\") || (System.getenv(\"WT_DEV_APK\") == \"1\")",
+        );
+    }
+    raw = raw.replace(
+        "isDebuggable = (project.findProperty(\"wtDevApk\") as? String == \"true\") || (System.getenv(\"WT_DEV_APK\") == \"1\")",
+        "isDebuggable = wtDevApk",
+    );
+    raw = raw.replace("isMinifyEnabled = true", "isMinifyEnabled = !wtDevApk");
+    if !raw.contains("sourceCompatibility = JavaVersion.VERSION_17") {
+        raw = raw.replace(
+            "    kotlinOptions {\n        jvmTarget = \"1.8\"\n    }",
+            "    compileOptions {\n        sourceCompatibility = JavaVersion.VERSION_17\n        targetCompatibility = JavaVersion.VERSION_17\n    }\n    kotlinOptions {\n        jvmTarget = \"17\"\n        suppressWarnings = true\n    }",
+        );
+    }
+    if raw.contains("jvmTarget = \"17\"") && !raw.contains("suppressWarnings = true") {
+        raw = raw.replace(
+            "        jvmTarget = \"17\"",
+            "        jvmTarget = \"17\"\n        suppressWarnings = true",
+        );
+    }
+    if !raw.contains("jniLibs.useLegacyPackaging = true") {
+        raw = raw.replace(
+            "    buildFeatures {\n        buildConfig = true\n    }",
+            "    buildFeatures {\n        buildConfig = true\n    }\n    packaging {\n        jniLibs.useLegacyPackaging = true\n    }",
+        );
+    }
+    fs::write(&gradle, raw)?;
     Ok(())
 }
 
@@ -384,6 +459,8 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
 
 fn cmd_dev(target: &str, open: bool, host: bool) -> Result<()> {
     ensure_prebuilts(target)?;
+    patch_gradle_build_config()?;
+    patch_gradle_properties()?;
     let dev = std::process::Command::new("adb").arg("devices").output()?;
     let txt = String::from_utf8_lossy(&dev.stdout);
     let has_device = txt.lines().any(|l| l.trim().ends_with("\tdevice"));
@@ -426,7 +503,7 @@ fn cmd_cli(target: &str, debug: bool) -> Result<()> {
         .join("target")
         .join(abi.triple)
         .join(variant)
-        .join(exe("wt"));
+        .join("wt");
     if bin.exists() {
         let mb = fs::metadata(&bin)?.len() as f64 / 1024.0 / 1024.0;
         println!("\nbinary: {}\nsize: {:.1} MB", bin.display(), mb);
@@ -441,7 +518,7 @@ fn cmd_cli_push() -> Result<()> {
         .join("target")
         .join("aarch64-linux-android")
         .join("debug")
-        .join(exe("wt"));
+        .join("wt");
     if !bin.exists() {
         bail!("wt binary missing at {}", bin.display());
     }
@@ -570,12 +647,7 @@ fn patch_manifest() -> Result<()> {
         return Ok(());
     }
     let mut raw = fs::read_to_string(&p)?;
-    if !raw.contains("android:extractNativeLibs") {
-        raw = raw.replace(
-            "<application",
-            "<application\n        android:extractNativeLibs=\"true\"",
-        );
-    }
+    raw = raw.replace("\n        android:extractNativeLibs=\"true\"", "");
     if !raw.contains("android.permission.WAKE_LOCK") {
         let perms = concat!(
             "    <uses-permission android:name=\"android.permission.WAKE_LOCK\" />\n",
@@ -632,6 +704,30 @@ fn apply_android_overlay() -> Result<()> {
         TRANSCRIPTION_SERVICE_KT,
     )?;
     write_if_changed(&res_dir.join("strings.xml"), STRINGS_XML)?;
+    apply_android_icons(&main.join("res"))?;
+    Ok(())
+}
+
+fn apply_android_icons(res: &Path) -> Result<()> {
+    let icons = root().join("src-tauri").join("icons").join("android");
+    if !icons.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&icons)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let dir = entry.file_name();
+        let dst_dir = res.join(&dir);
+        fs::create_dir_all(&dst_dir)?;
+        for file in fs::read_dir(entry.path())? {
+            let file = file?;
+            if file.file_type()?.is_file() {
+                copy_if_changed(&file.path(), &dst_dir.join(file.file_name()))?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -645,6 +741,16 @@ fn write_if_changed(path: &Path, content: &str) -> Result<()> {
         return Ok(());
     }
     fs::write(path, content)?;
+    Ok(())
+}
+
+fn copy_if_changed(src: &Path, dst: &Path) -> Result<()> {
+    if let (Ok(src_bytes), Ok(dst_bytes)) = (fs::read(src), fs::read(dst))
+        && src_bytes == dst_bytes
+    {
+        return Ok(());
+    }
+    fs::copy(src, dst)?;
     Ok(())
 }
 
