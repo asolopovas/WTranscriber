@@ -11,7 +11,7 @@ const emit = defineEmits<{ (e: "close"): void }>();
   <SlidingPanel storage-key="wt.transcriptHeightPx" :initial-height="360" :auto-max="true">
     <template #header>
       <h3 class="text-titleSmall text-on-surface flex items-center gap-xs pl-md">
-        <span class="material-symbols-outlined text-primary text-[18px]">subtitles</span>
+        <Icon name="subtitles" :size="18" class="text-primary" />
         Transcript
       </h3>
       <button
@@ -21,7 +21,7 @@ const emit = defineEmits<{ (e: "close"): void }>();
         title="Close transcript"
         aria-label="Close transcript"
       >
-        <span class="material-symbols-outlined text-[18px]">close</span>
+        <Icon name="close" :size="18" />
       </button>
     </template>
     <article

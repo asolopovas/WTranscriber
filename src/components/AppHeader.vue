@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { TABS, type Tab } from "@components/nav-tabs";
+import Icon from "@components/ui/Icon.vue";
 
 defineProps<{
   version: string;
@@ -23,7 +24,7 @@ const tab = defineModel<Tab>("tab", { required: true });
     class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
   >
     <div class="flex items-center gap-xs">
-      <span class="material-symbols-outlined text-primary text-[24px]">graphic_eq</span>
+      <Icon name="graphic_eq" :size="24" class="text-primary" />
       <span
         class="font-mono tracking-tighter font-bold text-primary text-labelMedium ml-xs uppercase"
       >
@@ -60,7 +61,7 @@ const tab = defineModel<Tab>("tab", { required: true });
         "
         aria-label="Transcribe all untranscribed files"
       >
-        <span class="material-symbols-outlined text-[22px]">playlist_play</span>
+        <Icon name="playlist_play" :size="22" />
       </button>
       <button
         v-if="showTranscribeActions"
@@ -69,14 +70,14 @@ const tab = defineModel<Tab>("tab", { required: true });
         title="Add audio file(s) to working folder"
         aria-label="Add audio files"
       >
-        <span class="material-symbols-outlined text-[22px]">add</span>
+        <Icon name="add" :size="22" />
       </button>
       <button
         class="flex items-center justify-center w-11 h-11 -mr-xs text-on-surface-variant shrink-0 gap-xs"
         aria-label="More options"
       >
         <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
-        <span class="material-symbols-outlined text-[22px]">more_vert</span>
+        <Icon name="more_vert" :size="22" />
       </button>
     </div>
   </header>

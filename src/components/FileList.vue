@@ -5,6 +5,8 @@ import { decodeName, phaseLabel, prettyName } from "@utils/audio";
 import { fmtMs, fmtBytes } from "@composables/format";
 import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
 import Spinner from "@components/icons/Spinner.vue";
+import Icon from "@components/ui/Icon.vue";
+import MenuItem from "@components/ui/MenuItem.vue";
 
 const props = defineProps<{
   entries: DirEntry[];
@@ -100,62 +102,58 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
                   v-if="openMenuPath === entry.path"
                   class="absolute right-0 top-full mt-unit z-30 min-w-[180px] bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
                 >
-                  <button
-                    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
+                  <MenuItem
+                    icon="content_cut"
                     @click="
                       openMenuPath = null;
                       emit('trim', entry);
                     "
                   >
-                    <span class="material-symbols-outlined text-[18px]">content_cut</span>
                     Cut / select range
-                  </button>
-                  <button
-                    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-50"
+                  </MenuItem>
+                  <MenuItem
                     :disabled="autoRenamingPath === entry.path"
                     @click="
                       openMenuPath = null;
                       emit('auto-rename', entry);
                     "
                   >
-                    <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-                    <span v-else class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                    <template #icon>
+                      <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
+                      <Icon v-else name="auto_awesome" :size="18" />
+                    </template>
                     {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
-                  </button>
-                  <button
-                    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors"
+                  </MenuItem>
+                  <MenuItem
+                    icon="drive_file_rename_outline"
                     @click="
                       openMenuPath = null;
                       emit('rename', entry);
                     "
                   >
-                    <span class="material-symbols-outlined text-[18px]">
-                      drive_file_rename_outline
-                    </span>
                     Rename
-                  </button>
-                  <button
-                    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-on-surface hover:bg-surface-container-highest transition-colors disabled:opacity-30"
+                  </MenuItem>
+                  <MenuItem
+                    icon="download"
                     :disabled="!entry.cache_key"
                     @click="
                       openMenuPath = null;
                       emit('export', entry);
                     "
                   >
-                    <span class="material-symbols-outlined text-[18px]">download</span>
                     Export
-                  </button>
+                  </MenuItem>
                   <div class="my-unit border-t border-outline-variant/40"></div>
-                  <button
-                    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-error hover:bg-error-container/40 transition-colors"
+                  <MenuItem
+                    icon="delete"
+                    tone="danger"
                     @click="
                       openMenuPath = null;
                       emit('delete', entry);
                     "
                   >
-                    <span class="material-symbols-outlined text-[18px]">delete</span>
                     Delete
-                  </button>
+                  </MenuItem>
                 </div>
               </div>
             </div>
@@ -166,7 +164,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         v-if="busy[entry.path]"
         class="flex items-center gap-xs mt-xs font-mono text-labelSmall text-secondary"
       >
-        <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+        <Icon name="graphic_eq" :size="14" class="animate-pulse" />
         <span>
           {{
             progressByPath[entry.path]
@@ -201,9 +199,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         @dblclick="emit('transcribe', entry)"
       >
         <td class="px-margin py-xs">
-          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">
-            graphic_eq
-          </span>
+          <Icon name="graphic_eq" :size="20" class="text-on-surface-variant" />
         </td>
         <td class="px-xs py-xs truncate max-w-0">
           <span class="text-on-surface" :title="title">
@@ -222,7 +218,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         <td class="px-xs py-xs">
           <template v-if="busy[entry.path]">
             <span class="font-mono text-labelSmall text-secondary flex items-center gap-unit">
-              <span class="material-symbols-outlined text-[14px] animate-pulse">graphic_eq</span>
+              <Icon name="graphic_eq" :size="14" class="animate-pulse" />
               <span>
                 {{
                   progressByPath[entry.path]
@@ -236,7 +232,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
             v-else-if="entry.cache_key"
             class="font-mono text-labelSmall text-tertiary flex items-center gap-unit"
           >
-            <span class="material-symbols-outlined text-[14px]">check_circle</span>
+            <Icon name="check_circle" :size="14" />
             transcribed
           </span>
           <span v-else class="font-mono text-labelSmall text-outline">—</span>
@@ -273,7 +269,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               "
               @click="emit('trim', entry)"
             >
-              <span class="material-symbols-outlined text-[18px]">content_cut</span>
+              <Icon name="content_cut" :size="18" />
             </button>
             <button
               class="p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-secondary transition-colors disabled:opacity-50"
@@ -282,7 +278,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               @click="emit('auto-rename', entry)"
             >
               <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-              <span v-else class="material-symbols-outlined text-[18px]">auto_awesome</span>
+              <Icon v-else name="auto_awesome" :size="18" />
             </button>
             <button
               class="material-symbols-outlined text-[18px] p-unit rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"

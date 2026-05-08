@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import { api } from "../api";
+import Icon from "./ui/Icon.vue";
 
 const props = defineProps<{ workdir: string; headless?: boolean }>();
 const emit = defineEmits<{ (e: "saved", path: string): void }>();
@@ -208,7 +209,7 @@ defineExpose({
         @click="start"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-error-container text-on-error-container py-md rounded-full font-titleSmall hover:opacity-90 transition-opacity"
       >
-        <span class="material-symbols-outlined fill text-[18px]"> fiber_manual_record </span>
+        <Icon name="fiber_manual_record" :size="18" fill />
         Rec
       </button>
       <button
@@ -216,7 +217,7 @@ defineExpose({
         @click="stop"
         class="flex-1 min-h-12 inline-flex items-center justify-center gap-xs bg-primary text-on-primary py-md rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
       >
-        <span class="material-symbols-outlined fill text-[18px]">stop</span>
+        <Icon name="stop" :size="18" fill />
         Stop · {{ elapsed }}
       </button>
     </div>

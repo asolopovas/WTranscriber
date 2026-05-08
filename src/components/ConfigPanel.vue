@@ -16,6 +16,7 @@ import { useMediaQuery } from "@composables/useMediaQuery";
 import Toggle from "@components/ui/Toggle.vue";
 import SaveIndicator from "@components/ui/SaveIndicator.vue";
 import FormField from "@components/ui/FormField.vue";
+import Icon from "@components/ui/Icon.vue";
 import Spinner from "@components/icons/Spinner.vue";
 import type { SaveState } from "@composables/useDebouncedSave";
 
@@ -231,7 +232,7 @@ const headerAriaLabel = computed(() => {
         :class="resizingConfig ? 'bg-primary' : 'bg-outline-variant group-hover:bg-primary/60'"
       ></span>
       <h3 class="text-titleSmall text-on-surface flex items-center gap-unit pl-md">
-        <span class="material-symbols-outlined text-[18px] md:hidden">tune</span>
+        <Icon name="tune" :size="18" class="md:hidden" />
         Configuration
       </h3>
       <div class="flex items-center gap-xs pr-md">
@@ -242,7 +243,7 @@ const headerAriaLabel = computed(() => {
           class="min-h-9 px-md inline-flex items-center gap-unit bg-error-container text-on-error-container rounded-full font-titleSmall hover:opacity-90 transition-opacity"
           title="Record"
         >
-          <span class="material-symbols-outlined fill text-[16px]">fiber_manual_record</span>
+          <Icon name="fiber_manual_record" :size="16" fill />
           Rec
         </button>
         <button
@@ -252,7 +253,7 @@ const headerAriaLabel = computed(() => {
           class="min-h-9 px-md inline-flex items-center gap-unit bg-primary text-on-primary rounded-full font-titleSmall font-bold hover:opacity-90 transition-opacity"
           :title="`Stop recording \u00b7 ${recElapsed}`"
         >
-          <span class="material-symbols-outlined fill text-[16px]">stop</span>
+          <Icon name="stop" :size="16" fill />
           {{ recElapsed }}
         </button>
         <SaveIndicator :state="saveState" />
@@ -285,7 +286,7 @@ const headerAriaLabel = computed(() => {
           v-if="selectedAsrModel && !selectedModelInstalled"
           class="flex items-center gap-md p-md rounded-lg bg-error-container/40 border border-error/40"
         >
-          <span class="material-symbols-outlined text-error">cloud_download</span>
+          <Icon name="cloud_download" class="text-error" />
           <div class="flex-1 min-w-0">
             <div class="text-bodyMedium text-on-surface">Model not installed</div>
             <div class="text-labelSmall text-on-surface-variant truncate">
@@ -303,7 +304,7 @@ const headerAriaLabel = computed(() => {
               v-if="installingSelected || selectedAsrModel.status === 'downloading'"
               :size="16"
             />
-            <span v-else class="material-symbols-outlined text-[18px]">download</span>
+            <Icon v-else name="download" :size="18" />
             {{
               selectedAsrModel.status === "downloading"
                 ? "Downloading…"

@@ -26,6 +26,8 @@ import FileList from "@components/FileList.vue";
 import TranscriptPanel from "@components/TranscriptPanel.vue";
 import ConfigPanel from "@components/ConfigPanel.vue";
 import Recorder from "@components/Recorder.vue";
+import ErrorBanner from "@components/ui/ErrorBanner.vue";
+import Icon from "@components/ui/Icon.vue";
 import RenameDialog from "@components/dialogs/RenameDialog.vue";
 import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
@@ -537,25 +539,24 @@ const selectedProgress = computed(() =>
             queue {{ queueDone + 1 }}/{{ queueTotal }}
           </div>
 
-          <div
-            v-if="error"
-            class="m-margin p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium flex items-start gap-xs"
-          >
-            <span class="material-symbols-outlined text-[18px] mt-[1px] shrink-0">error</span>
-            <span class="flex-1 break-words font-mono text-labelMedium">{{ error }}</span>
-            <button
-              class="text-titleSmall underline hover:opacity-80 shrink-0"
-              @click="tab = 'logs'"
-            >
-              View log
-            </button>
-            <button
-              class="material-symbols-outlined text-[18px] hover:opacity-70"
-              @click="error = null"
-            >
-              close
-            </button>
-          </div>
+          <ErrorBanner v-if="error" icon="error" layout="inline" class="m-margin">
+            <span class="break-words text-labelMedium">{{ error }}</span>
+            <template #actions>
+              <button
+                class="text-titleSmall underline hover:opacity-80 shrink-0"
+                @click="tab = 'logs'"
+              >
+                View log
+              </button>
+              <button
+                class="shrink-0 hover:opacity-70"
+                aria-label="Dismiss error"
+                @click="error = null"
+              >
+                <Icon name="close" :size="18" />
+              </button>
+            </template>
+          </ErrorBanner>
 
           <div class="flex-1 overflow-y-auto scroll-thin">
             <FileList

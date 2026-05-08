@@ -8,6 +8,8 @@ import { useDebouncedSave } from "../composables/useDebouncedSave";
 import { fieldClass } from "../styles/fields";
 import ModelTable from "./ModelTable.vue";
 import Card from "./ui/Card.vue";
+import DefRow from "./ui/DefRow.vue";
+import Icon from "./ui/Icon.vue";
 import PillButton from "./ui/PillButton.vue";
 import SaveIndicator from "./ui/SaveIndicator.vue";
 
@@ -163,58 +165,31 @@ async function resetAudioCache() {
           <dl
             class="p-margin grid grid-cols-1 md:grid-cols-2 gap-x-margin gap-y-md text-bodyMedium"
           >
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">OS</dt>
-              <dd class="text-on-surface font-mono">{{ sys.os }}</dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">Architecture</dt>
-              <dd class="text-on-surface font-mono">{{ sys.arch }}</dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">CPU threads</dt>
-              <dd class="text-on-surface font-mono">{{ sys.cpu_threads }}</dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">Memory</dt>
-              <dd class="text-on-surface font-mono">{{ fmtBytes(sys.total_memory_bytes) }}</dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">Form factor</dt>
-              <dd class="text-on-surface font-mono">{{ sys.is_mobile ? "mobile" : "desktop" }}</dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">Acceleration</dt>
-              <dd class="text-on-surface font-mono">
-                <span v-if="sys.cuda_available">CUDA</span>
-                <span v-else-if="sys.nnapi_available">NNAPI (experimental)</span>
-                <span v-else>CPU only</span>
-              </dd>
-            </div>
-            <div class="flex justify-between gap-md">
-              <dt class="text-on-surface-variant">App version</dt>
-              <dd class="text-on-surface font-mono">{{ sys.app_version }}</dd>
-            </div>
+            <DefRow label="OS">{{ sys.os }}</DefRow>
+            <DefRow label="Architecture">{{ sys.arch }}</DefRow>
+            <DefRow label="CPU threads">{{ sys.cpu_threads }}</DefRow>
+            <DefRow label="Memory">{{ fmtBytes(sys.total_memory_bytes) }}</DefRow>
+            <DefRow label="Form factor">{{ sys.is_mobile ? "mobile" : "desktop" }}</DefRow>
+            <DefRow label="Acceleration">
+              <span v-if="sys.cuda_available">CUDA</span>
+              <span v-else-if="sys.nnapi_available">NNAPI (experimental)</span>
+              <span v-else>CPU only</span>
+            </DefRow>
+            <DefRow label="App version">{{ sys.app_version }}</DefRow>
             <div
               v-if="sys.workdir"
               class="col-span-1 md:col-span-2 flex flex-col gap-xs border-t border-outline-variant/30 pt-md"
             >
-              <div class="flex justify-between gap-md">
-                <dt class="text-on-surface-variant">Workdir</dt>
-                <dd class="text-on-surface font-mono text-right break-all">{{ sys.workdir }}</dd>
-              </div>
-              <div v-if="sys.models_dir" class="flex justify-between gap-md">
-                <dt class="text-on-surface-variant">Models</dt>
-                <dd class="text-on-surface font-mono text-right break-all">{{ sys.models_dir }}</dd>
-              </div>
-              <div v-if="sys.cache_dir" class="flex justify-between gap-md">
-                <dt class="text-on-surface-variant">Cache</dt>
-                <dd class="text-on-surface font-mono text-right break-all">{{ sys.cache_dir }}</dd>
-              </div>
-              <div v-if="sys.config_dir" class="flex justify-between gap-md">
-                <dt class="text-on-surface-variant">Config</dt>
-                <dd class="text-on-surface font-mono text-right break-all">{{ sys.config_dir }}</dd>
-              </div>
+              <DefRow label="Workdir" align="right" break-all>{{ sys.workdir }}</DefRow>
+              <DefRow v-if="sys.models_dir" label="Models" align="right" break-all>
+                {{ sys.models_dir }}
+              </DefRow>
+              <DefRow v-if="sys.cache_dir" label="Cache" align="right" break-all>
+                {{ sys.cache_dir }}
+              </DefRow>
+              <DefRow v-if="sys.config_dir" label="Config" align="right" break-all>
+                {{ sys.config_dir }}
+              </DefRow>
             </div>
           </dl>
         </Card>
@@ -261,9 +236,7 @@ async function resetAudioCache() {
                 "
                 @click="togglePersistent(!persistentEnabled)"
               >
-                <span class="material-symbols-outlined text-[18px]">{{
-                  persistentEnabled ? "check_circle" : "shield"
-                }}</span>
+                <Icon :name="persistentEnabled ? 'check_circle' : 'shield'" :size="18" />
                 {{ persistentEnabled ? "Enabled" : "Grant access & enable" }}
               </button>
             </div>

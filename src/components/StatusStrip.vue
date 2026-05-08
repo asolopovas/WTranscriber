@@ -3,6 +3,7 @@ import { computed } from "vue";
 import type { DirEntry, TranscribeProgress, Transcript } from "@/types";
 import { phaseLabel, prettyName } from "@utils/audio";
 import { fmtClock, fmtMs, fmtMsLong, fmtBytes } from "@composables/format";
+import Icon from "@components/ui/Icon.vue";
 
 const props = defineProps<{
   recording: boolean;
@@ -53,7 +54,7 @@ const isLiveProgress = computed(
       </span>
     </template>
     <template v-else-if="transcript">
-      <span class="material-symbols-outlined text-[14px] text-tertiary shrink-0">check_circle</span>
+      <Icon name="check_circle" :size="14" class="text-tertiary shrink-0" />
       <span class="text-on-surface-variant shrink-0">ready</span>
       <span class="text-on-surface-variant shrink-0 ml-auto">
         {{ fmtMsLong(transcript.duration_ms) }} · {{ transcript.utterances.length }} utt ·
@@ -61,9 +62,7 @@ const isLiveProgress = computed(
       </span>
     </template>
     <template v-else-if="selectedEntry">
-      <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0">
-        graphic_eq
-      </span>
+      <Icon name="graphic_eq" :size="14" class="text-on-surface-variant shrink-0" />
       <span class="text-on-surface truncate min-w-0">
         {{ prettyName(selectedEntry.name).display }}
       </span>
@@ -74,9 +73,7 @@ const isLiveProgress = computed(
       </span>
     </template>
     <template v-else>
-      <span class="material-symbols-outlined text-[14px] text-on-surface-variant shrink-0">
-        today
-      </span>
+      <Icon name="today" :size="14" class="text-on-surface-variant shrink-0" />
       <span class="text-on-surface-variant shrink-0">{{ todayLabel }}</span>
       <span class="text-on-surface-variant shrink-0 ml-auto">
         {{ audioCount }} {{ audioCount === 1 ? "file" : "files" }}

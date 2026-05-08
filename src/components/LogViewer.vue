@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
+import ErrorBanner from "./ui/ErrorBanner.vue";
+import Icon from "./ui/Icon.vue";
 import PillButton from "./ui/PillButton.vue";
 
 const tail = ref<string>("");
@@ -115,7 +117,7 @@ function levelClass(line: string): string {
               @click="refresh"
               class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall hover:bg-surface-container-high transition-colors flex items-center gap-unit"
             >
-              <span class="material-symbols-outlined text-[18px] md:text-[16px]">refresh</span>
+              <Icon name="refresh" :size="18" class="md:text-[16px]" />
               Refresh
             </button>
             <PillButton variant="danger" mobile-tall icon="delete" @click="clear">
@@ -124,7 +126,7 @@ function levelClass(line: string): string {
           </div>
         </div>
         <div class="flex items-center gap-xs text-on-surface-variant min-w-0">
-          <span class="material-symbols-outlined text-[16px] shrink-0">description</span>
+          <Icon name="description" :size="16" class="shrink-0" />
           <code class="font-mono text-labelSmall truncate">{{ path || "—" }}</code>
           <button
             v-if="path"
@@ -137,12 +139,7 @@ function levelClass(line: string): string {
         </div>
       </div>
 
-      <div
-        v-if="error"
-        class="p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
-      >
-        {{ error }}
-      </div>
+      <ErrorBanner v-if="error">{{ error }}</ErrorBanner>
 
       <section
         class="flex-1 flex flex-col overflow-hidden bg-surface-container rounded-xl border border-outline-variant/50"

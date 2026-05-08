@@ -4,6 +4,7 @@ import { api } from "../../api";
 import type { AudioMeta, DirEntry } from "../../types";
 import { fmtMs } from "../../composables/format";
 import Modal from "../ui/Modal.vue";
+import ErrorBanner from "../ui/ErrorBanner.vue";
 import Icon from "../ui/Icon.vue";
 import Spinner from "../icons/Spinner.vue";
 import CancelIcon from "../icons/CancelIcon.vue";
@@ -316,12 +317,7 @@ function close() {
       </button>
     </template>
 
-    <div
-      v-if="localError"
-      class="p-md rounded-lg bg-error-container/30 border border-error/40 text-error text-bodyMedium font-mono"
-    >
-      {{ localError }}
-    </div>
+    <ErrorBanner v-if="localError">{{ localError }}</ErrorBanner>
 
     <div class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md relative">
       <div
