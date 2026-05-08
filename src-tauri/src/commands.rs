@@ -60,9 +60,7 @@ pub struct SystemInfo {
 pub fn system_info() -> SystemInfo {
     let os = std::env::consts::OS;
     let is_mobile = matches!(os, "android" | "ios");
-    let cpu_threads = std::thread::available_parallelism()
-        .map(std::num::NonZero::get)
-        .unwrap_or(1) as u32;
+    let cpu_threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get) as u32;
     let cuda_available = !is_mobile && cfg!(feature = "cuda");
     let nnapi_available = os == "android";
     SystemInfo {
@@ -88,7 +86,6 @@ fn read_total_memory() -> u64 {
         for line in s.lines() {
             if let Some(rest) = line.strip_prefix("MemTotal:") {
                 let kb: u64 = rest
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|n| n.parse().ok())
@@ -167,11 +164,7 @@ pub fn delete_model(id: String) -> Result<()> {
         }
     }
     let dir = models::model_dir(&id)?;
-    if dir.exists()
-        && std::fs::read_dir(&dir)
-            .map(|r| r.count() == 0)
-            .unwrap_or(false)
-    {
+    if dir.exists() && std::fs::read_dir(&dir).is_ok_and(|r| r.count() == 0) {
         std::fs::remove_dir(&dir).ok();
     }
     logfile::info(&format!("delete_model {id} ok"));

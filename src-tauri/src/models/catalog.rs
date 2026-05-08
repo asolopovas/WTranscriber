@@ -48,7 +48,7 @@ static CATALOG: LazyLock<Vec<Entry>> = LazyLock::new(default_catalog);
 
 const IS_ANDROID: bool = cfg!(target_os = "android");
 
-fn visible(e: &Entry) -> bool {
+const fn visible(e: &Entry) -> bool {
     !(IS_ANDROID && e.desktop_only)
 }
 
@@ -106,6 +106,7 @@ pub fn paths_for(entry: &Entry) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+#[allow(clippy::too_many_lines)]
 fn default_catalog() -> Vec<Entry> {
     vec![
         Entry {

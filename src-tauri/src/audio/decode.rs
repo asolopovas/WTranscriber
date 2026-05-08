@@ -15,7 +15,7 @@ use symphonia::core::{
     codecs::DecoderOptions,
     errors::Error as SymphoniaError,
     formats::FormatOptions,
-    io::MediaSourceStream,
+    io::{MediaSourceStream, MediaSourceStreamOptions},
     meta::MetadataOptions,
     probe::Hint,
 };
@@ -27,7 +27,7 @@ use crate::{
 
 pub fn probe_duration_ms(input: &Path) -> Option<u64> {
     let file = File::open(input).ok()?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(ext) = input.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
@@ -79,7 +79,7 @@ pub fn decode_to_pcm_f32(input: &Path, target_sr: i32) -> Result<Vec<f32>> {
 fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
     let file = File::open(input)
         .map_err(|e| Error::Transcribe(format!("open {}: {e}", input.display())))?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
 
     let mut hint = Hint::new();
     if let Some(ext) = input.extension().and_then(|e| e.to_str()) {
@@ -104,7 +104,10 @@ fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
     let sample_rate = codec_params
         .sample_rate
         .ok_or_else(|| Error::Transcribe("missing sample rate".into()))?;
-    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(1).max(1);
+    let channels = codec_params
+        .channels
+        .map_or(1, symphonia::core::audio::Channels::count)
+        .max(1);
 
     let mut decoder = symphonia::default::get_codecs()
         .make(&codec_params, &DecoderOptions::default())
@@ -125,7 +128,7 @@ fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
         }
         match decoder.decode(&packet) {
             Ok(buf) => append_samples(&mut samples, buf, channels),
-            Err(SymphoniaError::DecodeError(_)) => continue,
+            Err(SymphoniaError::DecodeError(_)) => {}
             Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
             }
@@ -187,20 +190,20 @@ fn resample(input: &[f32], from: u32, to: u32) -> Result<Vec<f32>> {
     let mut pos = 0;
     while pos + chunk <= input.len() {
         let frame = &input[pos..pos + chunk];
-        let resampled = resampler
+        let processed = resampler
             .process(&[frame], None)
             .map_err(|e| Error::Transcribe(format!("resample: {e}")))?;
-        out.extend_from_slice(&resampled[0]);
+        out.extend_from_slice(&processed[0]);
         pos += chunk;
     }
     if pos < input.len() {
         let mut tail = input[pos..].to_vec();
         tail.resize(chunk, 0.0);
-        let resampled = resampler
+        let processed = resampler
             .process(&[tail], None)
             .map_err(|e| Error::Transcribe(format!("resample tail: {e}")))?;
         let keep = ((input.len() - pos) as f64 * ratio) as usize;
-        out.extend_from_slice(&resampled[0][..keep.min(resampled[0].len())]);
+        out.extend_from_slice(&processed[0][..keep.min(processed[0].len())]);
     }
     Ok(out)
 }

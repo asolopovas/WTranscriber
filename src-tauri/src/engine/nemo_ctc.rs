@@ -8,7 +8,6 @@ use crate::{
         sherpa::{find_binary, parse_json, run_cmd},
     },
     error::{Error, Result},
-    paths,
     transcriber::Segment,
 };
 

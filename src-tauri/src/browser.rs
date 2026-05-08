@@ -142,9 +142,10 @@ pub fn home_dir() -> PathBuf {
     {
         return dir.clone();
     }
-    let fallback = crate::paths::data_dir()
-        .map(|d| d.join("WTranscribe"))
-        .unwrap_or_else(|_| std::env::temp_dir().join("WTranscribe"));
+    let fallback = crate::paths::data_dir().map_or_else(
+        |_| std::env::temp_dir().join("WTranscribe"),
+        |d| d.join("WTranscribe"),
+    );
     let _ = std::fs::create_dir_all(&fallback);
     fallback
 }

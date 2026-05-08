@@ -171,9 +171,9 @@ pub fn rename_source(old_path: &Path, new_path: &Path) -> Result<()> {
     let mut changed = false;
     for e in &mut entries {
         if e.source_path == old_abs {
-            e.source_path = new_abs.clone();
+            e.source_path.clone_from(&new_abs);
             if !new_name.is_empty() {
-                e.source_name = new_name.clone();
+                e.source_name.clone_from(&new_name);
             }
             changed = true;
         }

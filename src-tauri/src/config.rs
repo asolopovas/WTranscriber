@@ -124,7 +124,10 @@ fn default_asr() -> (String, Engine) {
     if let Some(id) = default_id(Family::Asr)
         && let Some(entry) = by_id(id)
     {
-        let engine = entry.engine.parse::<Engine>().unwrap_or(Engine::WhisperOnnx);
+        let engine = entry
+            .engine
+            .parse::<Engine>()
+            .unwrap_or(Engine::WhisperOnnx);
         return (id.to_string(), engine);
     }
     ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
@@ -137,7 +140,9 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
     let mut dirty = false;
     if let Some(p) = cfg.last_dir.as_ref() {
         let s = p.to_string_lossy();
-        if s.starts_with("/sdcard/Documents/WTranscriber") || s.starts_with("/storage/emulated/0/Documents/WTranscriber") {
+        if s.starts_with("/sdcard/Documents/WTranscriber")
+            || s.starts_with("/storage/emulated/0/Documents/WTranscriber")
+        {
             cfg.last_dir = None;
             dirty = true;
         }
@@ -148,9 +153,8 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
         && target_id != cfg.model
         && let Some(target) = by_id(target_id)
     {
-        let installed = crate::models::paths_for(target)
-            .map(|paths| paths.iter().all(|p| p.exists()))
-            .unwrap_or(false);
+        let installed =
+            crate::models::paths_for(target).is_ok_and(|paths| paths.iter().all(|p| p.exists()));
         if installed {
             cfg.model = target_id.to_string();
             if let Ok(eng) = target.engine.parse::<Engine>() {

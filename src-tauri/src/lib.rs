@@ -131,8 +131,6 @@ fn progress_emitter(
     }
 }
 
-
-
 #[cfg(target_os = "android")]
 const PERSISTENT_MODELS_DIR: &str = "/storage/emulated/0/WTranscriber/models";
 
@@ -141,7 +139,11 @@ const PERSISTENT_MODELS_DIR: &str = "/storage/emulated/0/WTranscriber/models";
 mod android_jni {
     use std::sync::OnceLock;
 
-    use jni::{JNIEnv, JavaVM, objects::{GlobalRef, JClass, JObject}, sys::{JNI_VERSION_1_6, jint}};
+    use jni::{
+        JNIEnv, JavaVM,
+        objects::{GlobalRef, JClass, JObject},
+        sys::{JNI_VERSION_1_6, jint},
+    };
 
     static JVM: OnceLock<JavaVM> = OnceLock::new();
     static ACTIVITY: OnceLock<GlobalRef> = OnceLock::new();
@@ -170,8 +172,12 @@ mod android_jni {
         F: FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>,
     {
         let Some(vm) = JVM.get() else { return default };
-        let Some(activity) = ACTIVITY.get() else { return default };
-        let Ok(mut env) = vm.attach_current_thread() else { return default };
+        let Some(activity) = ACTIVITY.get() else {
+            return default;
+        };
+        let Ok(mut env) = vm.attach_current_thread() else {
+            return default;
+        };
         match f(&mut env, activity.as_obj()) {
             Ok(v) => v,
             Err(e) => {
@@ -185,7 +191,8 @@ mod android_jni {
 #[cfg(target_os = "android")]
 fn android_has_all_files_access() -> bool {
     android_jni::with_activity(false, |env, activity| {
-        env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?.z()
+        env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?
+            .z()
     })
 }
 
@@ -209,7 +216,9 @@ fn restore_models_from_persistent(internal: &std::path::Path) {
     let mut restored: u64 = 0;
     for e in entries.flatten() {
         let src = e.path();
-        let Some(name) = src.file_name() else { continue };
+        let Some(name) = src.file_name() else {
+            continue;
+        };
         let dst = internal.join(name);
         if dst.exists() {
             continue;
@@ -244,7 +253,9 @@ fn backup_models_to_persistent(internal: &std::path::Path) {
     let mut backed: u64 = 0;
     for e in entries.flatten() {
         let src = e.path();
-        let Some(name) = src.file_name() else { continue };
+        let Some(name) = src.file_name() else {
+            continue;
+        };
         let dst = public.join(name);
         if dst.exists() {
             continue;
@@ -268,6 +279,7 @@ fn backup_models_to_persistent(internal: &std::path::Path) {
 }
 
 #[tauri::command]
+#[allow(clippy::missing_const_for_fn)]
 fn has_persistent_storage() -> bool {
     #[cfg(target_os = "android")]
     {
@@ -280,6 +292,7 @@ fn has_persistent_storage() -> bool {
 }
 
 #[tauri::command]
+#[allow(clippy::missing_const_for_fn)]
 fn request_persistent_storage() {
     #[cfg(target_os = "android")]
     {
@@ -288,6 +301,7 @@ fn request_persistent_storage() {
 }
 
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
 fn enable_persistent_storage() -> std::result::Result<bool, String> {
     #[cfg(target_os = "android")]
     {
@@ -336,7 +350,9 @@ fn migrate_legacy_android_data(new_data_dir: &std::path::Path, _workdir: &std::p
     };
     for e in entries.flatten() {
         let src = e.path();
-        let Some(name) = src.file_name() else { continue };
+        let Some(name) = src.file_name() else {
+            continue;
+        };
         let dst = new_models.join(name);
         match copy_recursive(&src, &dst) {
             Ok(bytes) if bytes > 0 => {
@@ -351,10 +367,7 @@ fn migrate_legacy_android_data(new_data_dir: &std::path::Path, _workdir: &std::p
             }
             Err(e) => {
                 let _ = remove_recursive(&dst);
-                logfile::error(&format!(
-                    "android: migrate {} failed: {e}",
-                    src.display()
-                ));
+                logfile::error(&format!("android: migrate {} failed: {e}", src.display()));
             }
         }
     }
@@ -377,7 +390,9 @@ fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Resu
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let from = entry.path();
-        let Some(name) = from.file_name() else { continue };
+        let Some(name) = from.file_name() else {
+            continue;
+        };
         total = total.saturating_add(copy_recursive(&from, &dst.join(name))?);
     }
     Ok(total)
@@ -395,6 +410,7 @@ fn remove_recursive(p: &std::path::Path) -> std::io::Result<()> {
     }
 }
 
+#[must_use]
 pub fn essential_model_ids() -> Vec<String> {
     [
         models::Family::Asr,
@@ -470,6 +486,7 @@ fn auto_install_essentials(app: tauri::AppHandle) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -487,9 +504,8 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "android")]
             {
-                let data_dir = std::path::PathBuf::from(
-                    "/data/user/0/com.asolopovas.wtranscriber/files",
-                );
+                let data_dir =
+                    std::path::PathBuf::from("/data/user/0/com.asolopovas.wtranscriber/files");
                 let writable = std::fs::create_dir_all(&data_dir).is_ok()
                     && std::fs::create_dir_all(data_dir.join("models")).is_ok();
                 let data_dir = if writable {

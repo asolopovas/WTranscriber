@@ -14,7 +14,7 @@ use sherpa_onnx::{
 use crate::{
     config::{Config, Device, Engine},
     error::{Error, Result},
-    logfile, paths,
+    logfile,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -134,7 +134,7 @@ fn build(config: &Config) -> Result<OfflineRecognizer> {
 }
 
 fn model_dir(model_id: &str) -> Result<PathBuf> {
-    Ok(crate::models::model_dir(model_id)?)
+    crate::models::model_dir(model_id)
 }
 
 fn locate_three(
