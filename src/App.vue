@@ -157,29 +157,31 @@ async function addPathsToWorkdir(paths: string[]) {
     }
   };
 
-  const results = await Promise.allSettled(paths.filter(hasAudioExt).map(tryAdd));
-
+  const allPaths = paths.filter(hasAudioExt);
   const added: string[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") {
-      added.push(r.value);
-      if (listing.value && !listing.value.entries.some((e) => e.path === r.value)) {
-        listing.value.entries.push({
-          name: basenameOf(r.value),
-          path: r.value,
-          is_dir: false,
-          is_audio: true,
-          size_bytes: 0,
-          modified_ms: 0,
-          cache_key: null,
-          utterances: null,
-          duration_ms: null,
-          trim_start_ms: null,
-          trim_end_ms: null,
-        });
+  for (let i = 0; i < allPaths.length; i += 2) {
+    const batch = await Promise.allSettled(allPaths.slice(i, i + 2).map(tryAdd));
+    for (const r of batch) {
+      if (r.status === "fulfilled") {
+        added.push(r.value);
+        if (listing.value && !listing.value.entries.some((e) => e.path === r.value)) {
+          listing.value.entries.push({
+            name: basenameOf(r.value),
+            path: r.value,
+            is_dir: false,
+            is_audio: true,
+            size_bytes: 0,
+            modified_ms: 0,
+            cache_key: null,
+            utterances: null,
+            duration_ms: null,
+            trim_start_ms: null,
+            trim_end_ms: null,
+          });
+        }
+      } else {
+        error.value = String(r.reason);
       }
-    } else {
-      error.value = String(r.reason);
     }
   }
 
