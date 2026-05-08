@@ -99,6 +99,23 @@ Between every user turn — and after every edit batch — the orchestrator:
 | User asks to commit / ship                        | `wt-committer` (never `git commit` from main thread)                                                   |
 | User asks to release                              | `wt-committer` → confirm clean → `just release-stable` brief delegated to `wt-installer` for artifacts |
 
+### Self-repair (when an agent misbehaves)
+
+Agents fail in two distinct ways. Treat them differently.
+
+- **Code failure** (the work product is wrong: tests red, gate red, fix breaks build) → re-delegate to the same agent with a sharper task; the agent prompt is fine.
+- **Agent failure** (the agent itself misbehaves: no `VERDICT/EVIDENCE/FIX` block, returns scratchpad, hangs, ignores file-signal contract, dumps raw logs, bypasses the gate, calls another agent, edits outside its scope, or repeatedly returns "completed without making edits" while the work was in fact done) → **repair the agent definition.**
+
+#### Repair loop
+
+1. **Detect.** Per-turn checks: did the worker return the contract block? Did the expected `tmp/*.json` / `tmp/*.md` artifact land? Did `git log` / build output reflect the claimed action? Two consecutive deviations from the same agent = repair trigger.
+2. **Diagnose.** Read `.pi/agents/<name>.md`. Identify the missing or ambiguous instruction that allowed the deviation. Cross-check against the [agent instruction quality bar](#agent-instruction-quality-bar).
+3. **Patch.** Edit `.pi/agents/<name>.md` with the **smallest** change that closes the gap — prefer tightening the output contract or adding one explicit prohibition over rewriting prose. Never grow the file just to add safety belts.
+4. **Verify.** Re-run the same task. If the agent now conforms, route the patch through `wt-committer` as `chore(agents): tighten <name> <one-line reason>`. If it still deviates, escalate to the user with a one-paragraph diagnosis — do **not** loop more than twice.
+5. **Record.** Every repair is its own commit so the history shows when and why an agent's prompt drifted.
+
+For chains in `.pi/chains/`, the same loop applies; patch the chain file when the bug is in step wiring, not in a single agent.
+
 ### Hard prohibitions (orchestrator)
 
 - No `git commit`, `git push`, `--no-verify`, `cargo`, `bun`, `just check`, or log grepping from the main thread.
@@ -126,3 +143,19 @@ Return contract for `wt-committer` and `wt-triage`: `VERDICT` / `EVIDENCE` / `FI
 4. **Fresh context per worker** (`defaultContext: fresh`). The orchestrator carries project state; workers re-derive what they need.
 5. **Orchestrator never** greps logs, runs `just check`, or commits directly. Delegate to `wt-triage` or `wt-committer`.
 6. **Chains** live in `.pi/chains/`. Current: `install-and-test` (installer → tester).
+
+### Agent instruction quality bar
+
+Every `.pi/agents/*.md` file must hold this bar. The orchestrator enforces it during self-repair.
+
+- **One job per agent.** The first sentence of the description names the single responsibility. If you cannot, the agent is misfactored — split it.
+- **Frontmatter is load-bearing.** `name`, `description`, `tools`, `systemPromptMode: replace`, `inheritProjectContext: true`, `inheritSkills: false`, `defaultContext: fresh`. Tools list is minimal — grant nothing the job doesn't need.
+- **Output contract first.** State the exact return shape (`VERDICT / EVIDENCE / FIX`, a JSON path, a commit hash) before describing the work. Workers regress to chatty prose without this anchor.
+- **Inputs are files, not stdout.** Name the `tmp/*` artifacts the agent reads and writes. No "the previous agent told you" phrasing.
+- **Prohibitions are explicit and short.** One bullet per prohibition (`Never bypass with --no-verify.`, `Never call another agent.`). Imperative, present tense, no hedging.
+- **No project lore.** Reference `AGENTS.md` and `docs/` rather than restating rules — `inheritProjectContext: true` already pulls them in. Restating creates drift.
+- **Compactness target.** Body under ~60 lines. If it grows, the agent is doing too much or repeating context.
+- **Terse voice.** Skip preamble, no "Sure, I can help", no apologies, no meta-commentary on the task. Names carry intent.
+- **No comments in code blocks** inside agent prompts — same rule as production code.
+
+When editing an agent file: read it, change the smallest unique span, never reorder unrelated sections, run `bunx prettier --write` on the file, then route through `wt-committer`.
