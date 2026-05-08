@@ -62,6 +62,17 @@ just android-build-debug     debug APK
 
 First run installs the debug APK. Subsequent UI edits stream over HMR.
 
+Multi-NIC USB hosts (Tailscale, extra LAN adapters): tauri-cli auto-picks a non-loopback IP and Vite binds there, breaking `adb reverse`. Pin loopback explicitly:
+
+```
+set TAURI_DEV_HOST=127.0.0.1
+adb reverse tcp:1420 tcp:1420
+adb reverse tcp:1421 tcp:1421
+just android-dev
+```
+
+`xtask android dev` forwards `TAURI_DEV_HOST` to `tauri android dev --host`. `Info Replacing devUrl host with 127.0.0.1` is then expected; only a non-loopback substitution indicates a misbind.
+
 ### Frontend / backend separation
 
 `android-dev` passes `--no-watch` to `tauri android dev`, so Tauri's Rust file watcher is **off** by default. This is deliberate:

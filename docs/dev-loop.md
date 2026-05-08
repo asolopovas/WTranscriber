@@ -27,6 +27,22 @@ powershell -Command "Start-Process -FilePath 'just' -ArgumentList 'android-dev' 
 
 Confirm liveness with `tasklist //FI "PID eq <id>"`; shut down with `taskkill //F //PID <id>`. Same pattern for the error monitor (`tmp/error-monitor.log`).
 
+`Start-Process` does **not** propagate the parent's `$env:VAR` to the child. To pass env vars (e.g. `TAURI_DEV_HOST=127.0.0.1`), wrap via `cmd /c` and a one-shot `.cmd` file:
+
+```
+# tmp/_dev.cmd
+set TAURI_DEV_HOST=127.0.0.1 && just android-dev
+```
+
+```bash
+powershell -Command "Start-Process cmd.exe -ArgumentList '/c','tmp\_dev.cmd' \
+  -RedirectStandardOutput 'tmp\android-dev.log' \
+  -RedirectStandardError  'tmp\android-dev.err.log' \
+  -WindowStyle Hidden -PassThru | Select-Object Id"
+```
+
+The returned PID is the `cmd.exe` wrapper and exits as soon as the inner pipeline launches. Track the long-running server via the port owner: `netstat -ano | findstr :1420`.
+
 ## 2. CDP attach - once, after launch
 
 ```

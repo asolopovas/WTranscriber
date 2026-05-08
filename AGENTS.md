@@ -50,8 +50,8 @@ Main thread coordinates only: design + delegate + synthesise. Never edits source
 2. Ask platform if unknown (desktop / android USB / android Wi-Fi). Recipe is fixed per transport; switching mid-session strands HMR (reload via CDP first):
    - Desktop: `just dev`. Android USB: `just android-dev`. Android Wi-Fi: `just android-dev-host`.
    - Android: after WebView is up, `just android-debug-attach` forwards CDP `:9222`.
-3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs.
-4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed`, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
+3. Spawn dev server + monitor as detached Windows processes (PowerShell `Start-Process`, see `docs/dev-loop.md`). Record PIDs; when a `cmd /c` wrapper is used the wrapper PID exits immediately, so track the port-owning PID via `netstat -ano | findstr :1420`.
+4. HMR sanity check via `wt-triage`: CDP target URL correct, `tmp/error-monitor.log` clean of `:1421 failed`, no `Replacing devUrl host` substitution to a non-loopback address, touched `src/main.ts` triggers `[vite] hot updated`. Ports 1420/1421 must be free before relaunch.
 5. Report bootstrap as a checklist.
 
 Never instruct the user to run a dev command; the orchestrator launches it.
