@@ -319,7 +319,11 @@ impl DiarizeSmoother {
         let now = Instant::now();
         let rate = self.current_rate();
         let since_last = now.duration_since(self.last_pct_at).as_secs_f64();
-        let predicted = rate * since_last * DIARIZE_PREDICT_DAMP;
+        let predicted = if self.rate_init {
+            rate * since_last * DIARIZE_PREDICT_DAMP
+        } else {
+            0.0
+        };
         let mut display = self.last_pct + predicted;
         if display > 99.0 {
             display = 99.0;
