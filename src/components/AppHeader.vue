@@ -66,15 +66,6 @@ const tab = defineModel<Tab>("tab", { required: true });
         title="Add audio file(s) to working folder"
         aria-label="Add audio files"
       />
-      <Button
-        variant="ghost"
-        shape="circle"
-        size="md"
-        icon="more_vert"
-        :icon-size="22"
-        class="-mr-xs"
-        aria-label="More options"
-      />
     </div>
   </header>
 </template>
