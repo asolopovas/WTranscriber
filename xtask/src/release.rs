@@ -75,6 +75,15 @@ pub fn run(args: Args) -> Result<()> {
         let skip = args.skip_rebuild;
         tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
     }
+    if !is_windows() {
+        let l = lock.clone();
+        let skip = args.skip_rebuild;
+        let dev = args.dev;
+        tasks.push((
+            "win",
+            Box::new(move |_| build_windows_vm(skip, dev, &l).unwrap_or(127)),
+        ));
+    }
 
     println!(
         "→ launching {} build(s) {}",
@@ -129,6 +138,22 @@ pub fn run(args: Args) -> Result<()> {
             eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb");
         } else if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
             artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
+        }
+    }
+
+    if !is_windows()
+        && let Some(&rc) = results.get("win")
+    {
+        if rc == -1 {
+            eprintln!("⚠  windows-vm SSH unreachable — skipping Windows build");
+        } else if rc != 0 {
+            eprintln!("⚠  windows-vm build failed (exit {rc}); continuing without .exe");
+        } else {
+            match fetch_windows_vm_exe(&ver, &branch, args.dev, &out_channel_dir) {
+                Ok(Some(p)) => artifacts.push(p),
+                Ok(None) => eprintln!("⚠  windows-vm produced no -setup.exe"),
+                Err(e) => eprintln!("⚠  windows-vm scp failed: {e:#}"),
+            }
         }
     }
 
@@ -304,6 +329,116 @@ fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i32> {
     )
 }
 
+fn ssh_alive() -> bool {
+    std::process::Command::new("ssh")
+        .args([
+            "-o",
+            "ConnectTimeout=5",
+            "-o",
+            "BatchMode=yes",
+            "windows-vm",
+            "true",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Result<i32> {
+    if skip {
+        println!("[win] --skip-rebuild, leaving existing artefact alone");
+        return Ok(0);
+    }
+    if !ssh_alive() {
+        println!(
+            "[win] windows-vm SSH unreachable on localhost:2222 — skipping Windows build.\n\
+             [win]   bring up: cd ~/os/windows-vm && make up   (then run shared/enable-ssh.ps1 inside VM once)"
+        );
+        return Ok(-1);
+    }
+    let sha = git_short_sha()?;
+    let push = run_streamed(
+        "win",
+        "git",
+        &["push", "origin", "HEAD"],
+        &[],
+        lock,
+    )?;
+    if push != 0 {
+        eprintln!("[win] git push origin HEAD failed (exit {push}) — VM cannot fetch latest commit");
+        return Ok(push);
+    }
+    let script = format!(
+        "set -e\n\
+         export PATH=\"$HOME/.cargo/bin:$HOME/.bun/bin:/c/Program Files/just:/c/Program Files/nodejs:/c/Program Files/Git/cmd:$PATH\"\n\
+         if ! command -v just >/dev/null 2>&1; then\n\
+             echo '[win] just missing in VM — run scripts/bootstrap-windows.ps1 inside the VM first' >&2\n\
+             exit 91\n\
+         fi\n\
+         cd /c\n\
+         if [ ! -d WTranscriber ]; then git clone https://github.com/asolopovas/WTranscriber.git WTranscriber; fi\n\
+         cd /c/WTranscriber\n\
+         git fetch --prune --force --tags origin\n\
+         git reset --hard {sha}\n\
+         git clean -fdx src-tauri/target/release/bundle/nsis 2>/dev/null || true\n\
+         just bootstrap\n\
+         bun install --frozen-lockfile --no-progress 2>&1 | tail -5\n\
+         just build-cpu\n\
+         ls src-tauri/target/release/bundle/nsis/*-setup.exe\n"
+    );
+    run_streamed_stdin(
+        "win",
+        "ssh",
+        &["windows-vm", "bash", "-l"],
+        &script,
+        &[],
+        lock,
+    )
+}
+
+fn fetch_windows_vm_exe(
+    ver: &str,
+    branch: &str,
+    dev: bool,
+    out_channel_dir: &Path,
+) -> Result<Option<PathBuf>> {
+    let probe = std::process::Command::new("ssh")
+        .args([
+            "windows-vm",
+            "bash",
+            "-lc",
+            "ls /c/WTranscriber/src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null | head -1",
+        ])
+        .output()?;
+    let remote_path = String::from_utf8_lossy(&probe.stdout).trim().to_string();
+    if remote_path.is_empty() {
+        return Ok(None);
+    }
+    fs::create_dir_all(out_channel_dir)?;
+    let dst_name = if dev {
+        format!("wtranscriber-setup-{branch}.exe")
+    } else {
+        format!("wtranscriber-setup-{ver}.exe")
+    };
+    let dst = out_channel_dir.join(&dst_name);
+    let scp_src = if let Some(stripped) = remote_path.strip_prefix("/c/") {
+        format!("windows-vm:/C:/{stripped}")
+    } else {
+        format!("windows-vm:{remote_path}")
+    };
+    let st = std::process::Command::new("scp")
+        .args([&scp_src, dst.to_string_lossy().as_ref()])
+        .status()?;
+    if !st.success() {
+        bail!("scp from windows-vm failed (exit {:?})", st.code());
+    }
+    let size = fs::metadata(&dst)?.len() as f64 / 1024.0 / 1024.0;
+    println!("  + {} ({:.1} MB) (windows-vm)", dst.display(), size);
+    Ok(Some(dst))
+}
+
 fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
         println!("[wsl] --skip-rebuild, looking for existing .deb");
@@ -462,6 +597,18 @@ fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
         return Ok(None);
     }
 
+    if std::env::var_os("ANDROID_HOME").is_none() && !is_windows() {
+        if let Some(home) = std::env::var_os("HOME") {
+            let candidate = Path::new(&home).join("Android").join("Sdk");
+            if candidate.exists() {
+                unsafe { std::env::set_var("ANDROID_HOME", &candidate) };
+                eprintln!(
+                    "[and] defaulting ANDROID_HOME={} for apk signing",
+                    candidate.display()
+                );
+            }
+        }
+    }
     let ks_props = root()
         .join("src-tauri")
         .join("gen")

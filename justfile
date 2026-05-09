@@ -36,7 +36,7 @@ bootstrap:
 
 [windows]
 bootstrap:
-    @echo "windows bootstrap: run 'bun install' and the install-*.ps1 scripts under scripts/"
+    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
 
 install-hooks:
     git config core.hooksPath .githooks
