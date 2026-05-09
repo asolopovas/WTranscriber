@@ -373,6 +373,7 @@ async function runTranscribe(entry?: DirEntry) {
   selectedPath.value = target.path;
   status.value = "running";
   error.value = null;
+  transcript.value = null;
   recordSet(busy, target.path, true);
   try {
     transcript.value = await api.transcribeFile(target.path, config.value);

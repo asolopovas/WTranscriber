@@ -351,7 +351,14 @@ const headerAriaLabel = computed(() => {
                   : 'text-secondary'
             "
           >
-            <template v-if="selectedEntry && progress && status === 'running'">
+            <template
+              v-if="
+                selectedEntry &&
+                progress &&
+                progress.path === selectedEntry.path &&
+                progress.phase !== 'done'
+              "
+            >
               {{ phaseLabel(progress.phase) }}
               <span v-if="progress.phase === 'transcribing' || progress.phase === 'diarizing'">
                 · {{ progress.displayPct.toFixed(1) }}%

@@ -26,10 +26,10 @@ const todayLabel = computed(() =>
 
 const isLiveProgress = computed(
   () =>
-    props.status === "running" &&
     !!props.progress &&
     !!props.selectedEntry &&
-    props.progress.path === props.selectedEntry.path,
+    props.progress.path === props.selectedEntry.path &&
+    props.progress.phase !== "done",
 );
 </script>
 
