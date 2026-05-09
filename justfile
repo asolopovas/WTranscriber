@@ -181,17 +181,10 @@ check-all: check
 clean-temp *args:
     bun scripts/clean-temp.mjs {{args}}
 
-[windows]
 _clean-build:
     cargo clean --manifest-path src-tauri/Cargo.toml
     cargo clean --manifest-path xtask/Cargo.toml
-    pwsh -NoLogo -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist, node_modules"
-
-[unix]
-_clean-build:
-    cargo clean --manifest-path src-tauri/Cargo.toml
-    cargo clean --manifest-path xtask/Cargo.toml
-    rm -rf dist node_modules
+    node -e "const{rmSync}=require('fs');for(const p of ['dist','node_modules']){try{rmSync(p,{recursive:true,force:true,maxRetries:3,retryDelay:100});console.log('removed '+p)}catch(e){console.error(p+': '+e.message);process.exit(1)}}"
 
 clean: clean-temp _clean-build
 
