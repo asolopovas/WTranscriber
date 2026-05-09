@@ -21,6 +21,8 @@ pub struct Config {
     pub diarizer: DiarizerChoice,
     pub auto_rename: bool,
     #[serde(default)]
+    pub llm_model: Option<String>,
+    #[serde(default)]
     pub last_dir: Option<std::path::PathBuf>,
     #[serde(default)]
     pub use_persistent_models: bool,
@@ -117,6 +119,7 @@ impl Default for Config {
             speakers: None,
             diarizer: DiarizerChoice::default(),
             auto_rename: false,
+            llm_model: None,
             last_dir: None,
             use_persistent_models: false,
         }

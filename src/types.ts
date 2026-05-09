@@ -29,6 +29,7 @@ export interface Config {
   speakers: number | null;
   diarizer: DiarizerChoice;
   auto_rename: boolean;
+  llm_model?: string | null;
   last_dir?: string | null;
   use_persistent_models: boolean;
 }

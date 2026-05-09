@@ -4,8 +4,9 @@ use std::{
 };
 
 use crate::{
+    config::Config,
     error::{Error, Result},
-    models::{Family, by_family, paths_for},
+    models::{Family, by_family, by_id, paths_for},
     paths,
     process::{find_executable, quiet_command},
 };
@@ -42,12 +43,29 @@ fn find_binary() -> Result<PathBuf> {
     })
 }
 
-fn first_installed_llm() -> Option<PathBuf> {
+fn installed_path_for(id: &str) -> Option<PathBuf> {
+    let entry = by_id(id)?;
+    if entry.family != Family::Llm {
+        return None;
+    }
+    let p = paths_for(entry).ok()?;
+    let first = p.first()?;
+    first.exists().then(|| first.clone())
+}
+
+fn preferred_llm() -> Option<PathBuf> {
     if let Ok(env_path) = std::env::var("WT_LLM_MODEL") {
         let p = PathBuf::from(env_path);
         if p.exists() {
             return Some(p);
         }
+    }
+    if let Ok(cfg) = Config::load()
+        && let Some(id) = cfg.llm_model.as_deref()
+        && !id.is_empty()
+        && let Some(p) = installed_path_for(id)
+    {
+        return Some(p);
     }
     for entry in by_family(Family::Llm) {
         if let Ok(p) = paths_for(entry)
@@ -72,7 +90,7 @@ fn default_threads() -> u32 {
 impl Runner {
     pub fn new() -> Result<Self> {
         let binary = find_binary()?;
-        let model = first_installed_llm()
+        let model = preferred_llm()
             .ok_or_else(|| Error::Transcribe("no LLM installed (download one in Models)".into()))?;
         Ok(Self {
             binary,

@@ -6,6 +6,7 @@ import type { Config, FileProgress, ModelInfo, SystemInfo } from "@/types";
 import { fmtBytes } from "@composables/format";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { recordOmit, recordSet } from "@composables/records";
+import { computed } from "vue";
 import { fieldClass } from "@styles/fields";
 import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
@@ -83,6 +84,10 @@ async function applyPersistentGrantIfReady() {
 async function refreshModels() {
   models.value = await api.listModels();
 }
+
+const llmModels = computed(() =>
+  models.value.filter((m) => m.family === "llm" && m.status === "installed"),
+);
 
 async function installModel(id: string) {
   try {
@@ -190,7 +195,7 @@ async function resetAudioCache() {
         </Card>
 
         <Card icon="memory" icon-color="text-secondary" title="Runtime">
-          <div class="p-margin">
+          <div class="p-margin flex flex-col gap-margin">
             <label class="flex flex-col gap-unit max-w-sm">
               <span class="text-titleSmall text-on-surface">Threads</span>
               <input
@@ -202,6 +207,29 @@ async function resetAudioCache() {
               />
               <span class="text-bodyMedium text-on-surface-variant">
                 CPU worker threads (1–{{ sys?.cpu_threads ?? 32 }}). 0 = auto.
+              </span>
+            </label>
+            <label class="flex flex-col gap-unit max-w-sm">
+              <span class="text-titleSmall text-on-surface">Auto-rename model</span>
+              <select
+                :value="config.llm_model ?? ''"
+                :class="fieldClass"
+                :disabled="!llmModels.length"
+                @change="
+                  (e) => {
+                    if (!config) return;
+                    const v = (e.target as HTMLSelectElement).value;
+                    config.llm_model = v ? v : null;
+                  }
+                "
+              >
+                <option value="">Auto (first installed)</option>
+                <option v-for="m in llmModels" :key="m.id" :value="m.id">
+                  {{ m.display_name }}
+                </option>
+              </select>
+              <span class="text-bodyMedium text-on-surface-variant">
+                LLM used for auto-rename suggestions. Install more models below.
               </span>
             </label>
           </div>
