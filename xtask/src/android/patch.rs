@@ -256,10 +256,28 @@ pub fn sign_patch_inline() -> Result<i32> {
         );
         return Ok(0);
     }
-    let marker = "// wtranscriber: keystore-signing-patch v1";
+    let marker = "// wtranscriber: keystore-signing-patch v2";
     let raw = fs::read_to_string(&gradle)?;
     if raw.contains(marker) {
         println!("sign-patch: already patched");
+        return Ok(0);
+    }
+    let raw = if raw.contains("// wtranscriber: keystore-signing-patch v1") {
+        println!("sign-patch: superseding v1 patch");
+        raw.replace(
+            "val keystoreProperties = java.util.Properties()",
+            "val keystoreProperties = Properties()",
+        )
+        .replace(
+            "// wtranscriber: keystore-signing-patch v1",
+            "// wtranscriber: keystore-signing-patch v2",
+        )
+    } else {
+        raw
+    };
+    if raw.contains("// wtranscriber: keystore-signing-patch v2") {
+        fs::write(&gradle, &raw)?;
+        println!("sign-patch: refreshed to v2");
         return Ok(0);
     }
     let eol = if raw.contains("\r\n") { "\r\n" } else { "\n" };

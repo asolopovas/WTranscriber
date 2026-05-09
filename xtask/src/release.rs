@@ -319,6 +319,7 @@ fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i32> {
     if rc != 0 {
         return Ok(rc);
     }
+    ensure_dev_keystore_properties(dev)?;
     let mut env_vars: Vec<(&str, &str)> = vec![("CARGO_INCREMENTAL", "1")];
     if dev {
         env_vars.push(("WT_DEV_APK", "1"));
@@ -440,6 +441,44 @@ fn fetch_windows_vm_exe(
     let size = fs::metadata(&dst)?.len() as f64 / 1024.0 / 1024.0;
     println!("  + {} ({:.1} MB) (windows-vm)", dst.display(), size);
     Ok(Some(dst))
+}
+
+fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
+    let ks_props = root()
+        .join("src-tauri")
+        .join("gen")
+        .join("android")
+        .join("keystore.properties");
+    if ks_props.exists() {
+        return Ok(());
+    }
+    if !dev {
+        return Ok(());
+    }
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let debug_ks = Path::new(&home).join(".android").join("debug.keystore");
+    if !debug_ks.exists() {
+        eprintln!(
+            "[and] no debug.keystore at {} — dev APK will be unsigned",
+            debug_ks.display()
+        );
+        return Ok(());
+    }
+    if let Some(parent) = ks_props.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let store_path = debug_ks.to_string_lossy().replace('\\', "/");
+    let body = format!(
+        "storeFile={store_path}\nstorePassword=android\nkeyAlias=androiddebugkey\nkeyPassword=android\n"
+    );
+    fs::write(&ks_props, body)?;
+    eprintln!(
+        "[and] generated {} pointing at debug.keystore",
+        ks_props.display()
+    );
+    Ok(())
 }
 
 fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
