@@ -4,7 +4,6 @@ import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 
 defineProps<{
-  version: string;
   showTranscribeActions: boolean;
   pendingCount: number;
   queueActive: boolean;
@@ -67,10 +66,15 @@ const tab = defineModel<Tab>("tab", { required: true });
         title="Add audio file(s) to working folder"
         aria-label="Add audio files"
       />
-      <Button variant="ghost" shape="circle" size="md" class="-mr-xs" aria-label="More options">
-        <span class="font-mono text-labelSmall hidden sm:inline">v{{ version }}</span>
-        <Icon name="more_vert" :size="22" />
-      </Button>
+      <Button
+        variant="ghost"
+        shape="circle"
+        size="md"
+        icon="more_vert"
+        :icon-size="22"
+        class="-mr-xs"
+        aria-label="More options"
+      />
     </div>
   </header>
 </template>

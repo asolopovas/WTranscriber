@@ -171,7 +171,6 @@ async function resetAudioCache() {
               <span v-else-if="sys.nnapi_available">NNAPI (experimental)</span>
               <span v-else>CPU only</span>
             </DefRow>
-            <DefRow label="App version">{{ sys.app_version }}</DefRow>
             <div
               v-if="sys.workdir"
               class="col-span-1 md:col-span-2 flex flex-col gap-xs border-t border-outline-variant/30 pt-md"
@@ -287,6 +286,10 @@ async function resetAudioCache() {
           </div>
         </Card>
       </div>
+
+      <p v-if="sys" class="font-mono text-labelSmall text-on-surface-variant text-center pt-xl">
+        WTranscriber v{{ sys.app_version }}
+      </p>
     </div>
   </main>
 </template>

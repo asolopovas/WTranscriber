@@ -36,7 +36,6 @@ import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { recordOmit, recordSet } from "@composables/records";
 
 const tab = ref<Tab>("transcribe");
-const version = ref("");
 const sys = ref<SystemInfo | null>(null);
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
@@ -331,7 +330,6 @@ onMounted(async () => {
   document.addEventListener("keydown", onKeyDown);
   unlisten.push(() => document.removeEventListener("keydown", onKeyDown));
 
-  version.value = await api.appVersion();
   sys.value = await api.systemInfo();
   await reload();
   if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
@@ -641,7 +639,6 @@ const selectedProgress = computed(() =>
   <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
     <AppHeader
       v-model:tab="tab"
-      :version="version"
       :show-transcribe-actions="tab === 'transcribe'"
       :pending-count="untranscribedEntries.length"
       :queue-active="queueActive"
