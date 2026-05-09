@@ -169,7 +169,16 @@ check: fmt-check lint test dep-check audit
 check-all: check
     @echo "✓ check-all passed (alias for check)"
 
-clean:
+clean-temp *args:
+    bun scripts/clean-temp.mjs {{args}}
+
+clean: clean-temp
+    cargo clean --manifest-path src-tauri/Cargo.toml
+    cargo clean --manifest-path xtask/Cargo.toml
+    rm -rf dist node_modules
+
+clean-force:
+    bun scripts/clean-temp.mjs --force
     cargo clean --manifest-path src-tauri/Cargo.toml
     cargo clean --manifest-path xtask/Cargo.toml
     rm -rf dist node_modules
