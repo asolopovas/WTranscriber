@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { FileProgress, ModelInfo } from "@/types";
+import type { Family, FileProgress, ModelInfo } from "@/types";
 import { fmtModelSize, progressPct } from "@composables/format";
 import Card from "@components/ui/Card.vue";
 import Icon from "@components/ui/Icon.vue";
@@ -11,9 +11,17 @@ const props = defineProps<{
   models: ModelInfo[];
   progress: Record<string, FileProgress>;
   showStats?: boolean;
+  selected?: Partial<Record<Family, string | null | undefined>>;
 }>();
 
-defineEmits<{ (e: "install", id: string): void }>();
+const emit = defineEmits<{
+  (e: "install", id: string): void;
+  (e: "select", payload: { family: Family; id: string }): void;
+}>();
+
+function isSelected(m: ModelInfo): boolean {
+  return props.selected?.[m.family] === m.id;
+}
 
 const SIZE_CAP_BYTES = 2_000_000_000;
 
@@ -99,8 +107,26 @@ function accPct(m: ModelInfo): number {
             :icon-size="20"
             class="shrink-0"
             title="Install"
-            @click="$emit('install', m.id)"
+            @click="emit('install', m.id)"
           />
+          <button
+            v-else-if="m.status === 'installed'"
+            type="button"
+            class="shrink-0 inline-flex items-center justify-center w-11 h-11 rounded-full hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
+            :class="isSelected(m) ? 'text-primary' : 'text-on-surface-variant'"
+            :aria-pressed="isSelected(m)"
+            :aria-label="
+              isSelected(m)
+                ? `${m.display_name} is the default`
+                : `Set ${m.display_name} as default`
+            "
+            :title="isSelected(m) ? 'Default' : 'Set as default'"
+            @click="emit('select', { family: m.family, id: m.id })"
+          >
+            <span class="material-symbols-outlined text-[24px]">
+              {{ isSelected(m) ? "radio_button_checked" : "radio_button_unchecked" }}
+            </span>
+          </button>
         </div>
         <div v-if="progress[m.id]" class="flex flex-col gap-unit">
           <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
@@ -160,10 +186,16 @@ function accPct(m: ModelInfo): number {
             <div class="font-mono text-labelMedium text-on-surface">{{ m.id }}</div>
             <div class="text-bodyMedium text-on-surface-variant mt-unit">{{ m.description }}</div>
             <div
-              v-if="m.default_active"
-              class="font-mono text-labelSmall text-secondary mt-unit uppercase tracking-wide"
+              v-if="isSelected(m)"
+              class="font-mono text-labelSmall text-primary mt-unit uppercase tracking-wide"
             >
               default
+            </div>
+            <div
+              v-else-if="m.default_active"
+              class="font-mono text-labelSmall text-secondary mt-unit uppercase tracking-wide"
+            >
+              recommended
             </div>
           </td>
           <td class="px-margin py-md text-on-surface-variant align-top whitespace-nowrap">
@@ -192,17 +224,32 @@ function accPct(m: ModelInfo): number {
             <Button
               v-if="m.status === 'not_installed'"
               variant="primary"
+              shape="circle"
+              size="md"
               icon="download"
-              @click="$emit('install', m.id)"
-            >
-              Install
-            </Button>
-            <Icon
-              v-else-if="m.status === 'installed'"
-              name="check"
-              :size="20"
-              class="text-outline cursor-not-allowed"
+              :icon-size="20"
+              title="Install"
+              aria-label="Install"
+              @click="emit('install', m.id)"
             />
+            <button
+              v-else-if="m.status === 'installed'"
+              type="button"
+              class="inline-flex items-center justify-center w-10 h-10 rounded-full hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
+              :class="isSelected(m) ? 'text-primary' : 'text-on-surface-variant'"
+              :aria-pressed="isSelected(m)"
+              :aria-label="
+                isSelected(m)
+                  ? `${m.display_name} is the default`
+                  : `Set ${m.display_name} as default`
+              "
+              :title="isSelected(m) ? 'Default' : 'Set as default'"
+              @click="emit('select', { family: m.family, id: m.id })"
+            >
+              <span class="material-symbols-outlined text-[24px]">
+                {{ isSelected(m) ? "radio_button_checked" : "radio_button_unchecked" }}
+              </span>
+            </button>
           </td>
         </tr>
       </tbody>

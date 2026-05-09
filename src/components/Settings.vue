@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { api, events } from "@/api";
-import type { Config, FileProgress, ModelInfo, SystemInfo } from "@/types";
+import type {
+  Config,
+  DiarizerChoice,
+  Engine,
+  Family,
+  FileProgress,
+  ModelInfo,
+  SystemInfo,
+} from "@/types";
 import { fmtBytes } from "@composables/format";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { recordOmit, recordSet } from "@composables/records";
-import { computed } from "vue";
 import { fieldClass } from "@styles/fields";
 import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
@@ -85,9 +92,38 @@ async function refreshModels() {
   models.value = await api.listModels();
 }
 
-const llmModels = computed(() =>
-  models.value.filter((m) => m.family === "llm" && m.status === "installed"),
-);
+const DIARIZER_BY_ID: Record<string, DiarizerChoice> = {
+  "nemo-sortformer-v2": "nemo",
+  "diar-eres2net-base": "eres2net",
+  "sherpa-pyannote-titanet": "titanet",
+};
+
+const diarizerSelectedId = computed<string | null>(() => {
+  if (!config.value) return null;
+  const choice = config.value.diarizer;
+  for (const [id, c] of Object.entries(DIARIZER_BY_ID)) if (c === choice) return id;
+  return null;
+});
+
+const selectedByFamily = computed<Partial<Record<Family, string | null>>>(() => ({
+  asr: config.value?.model ?? null,
+  diarizer: diarizerSelectedId.value,
+  llm: config.value?.llm_model ?? null,
+}));
+
+function onSelectDefault(payload: { family: Family; id: string }) {
+  if (!config.value) return;
+  const m: ModelInfo | undefined = models.value.find((x) => x.id === payload.id);
+  if (payload.family === "asr") {
+    config.value.model = payload.id;
+    if (m && m.engine) config.value.engine = m.engine as Engine;
+  } else if (payload.family === "diarizer") {
+    const choice = DIARIZER_BY_ID[payload.id];
+    if (choice) config.value.diarizer = choice;
+  } else if (payload.family === "llm") {
+    config.value.llm_model = payload.id;
+  }
+}
 
 async function installModel(id: string) {
   try {
@@ -209,33 +245,17 @@ async function resetAudioCache() {
                 CPU worker threads (1–{{ sys?.cpu_threads ?? 32 }}). 0 = auto.
               </span>
             </label>
-            <label class="flex flex-col gap-unit max-w-sm">
-              <span class="text-titleSmall text-on-surface">Auto-rename model</span>
-              <select
-                :value="config.llm_model ?? ''"
-                :class="fieldClass"
-                :disabled="!llmModels.length"
-                @change="
-                  (e) => {
-                    if (!config) return;
-                    const v = (e.target as HTMLSelectElement).value;
-                    config.llm_model = v ? v : null;
-                  }
-                "
-              >
-                <option value="">Auto (first installed)</option>
-                <option v-for="m in llmModels" :key="m.id" :value="m.id">
-                  {{ m.display_name }}
-                </option>
-              </select>
-              <span class="text-bodyMedium text-on-surface-variant">
-                LLM used for auto-rename suggestions. Install more models below.
-              </span>
-            </label>
           </div>
         </Card>
 
-        <ModelTable :models="models" :progress="modelProgress" show-stats @install="installModel" />
+        <ModelTable
+          :models="models"
+          :progress="modelProgress"
+          :selected="selectedByFamily"
+          show-stats
+          @install="installModel"
+          @select="onSelectDefault"
+        />
 
         <Card v-if="isAndroid" icon="save" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">
