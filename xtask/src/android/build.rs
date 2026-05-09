@@ -164,7 +164,7 @@ pub(super) fn cmd_cli(target: &str, debug: bool) -> Result<()> {
         "--manifest-path",
         "src-tauri/Cargo.toml",
         "--bin",
-        "wt",
+        "wtr",
         "--target",
         abi.triple,
     ];
@@ -177,7 +177,7 @@ pub(super) fn cmd_cli(target: &str, debug: bool) -> Result<()> {
         .join("target")
         .join(abi.triple)
         .join(if debug { "debug" } else { "release" })
-        .join("wt");
+        .join("wtr");
     if bin.exists() {
         let mb = fs::metadata(&bin)?.len() as f64 / 1024.0 / 1024.0;
         println!("\nbinary: {}\nsize: {:.1} MB", bin.display(), mb);
@@ -192,23 +192,23 @@ pub(super) fn cmd_cli_push() -> Result<()> {
         .join("target")
         .join("aarch64-linux-android")
         .join("debug")
-        .join("wt");
+        .join("wtr");
     if !bin.exists() {
-        bail!("wt binary missing at {}", bin.display());
+        bail!("wtr binary missing at {}", bin.display());
     }
     sh(
         "adb",
-        &["push", &bin.to_string_lossy(), "/data/local/tmp/wt"],
+        &["push", &bin.to_string_lossy(), "/data/local/tmp/wtr"],
     )?;
-    sh("adb", &["shell", "chmod", "755", "/data/local/tmp/wt"])?;
-    println!("pushed to /data/local/tmp/wt");
+    sh("adb", &["shell", "chmod", "755", "/data/local/tmp/wtr"])?;
+    println!("pushed to /data/local/tmp/wtr");
     Ok(())
 }
 
 pub(super) fn cmd_cli_run(args: &[String]) -> Result<()> {
     sh(
         "adb",
-        &["shell", &format!("/data/local/tmp/wt {}", args.join(" "))],
+        &["shell", &format!("/data/local/tmp/wtr {}", args.join(" "))],
     )
 }
 

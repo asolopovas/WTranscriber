@@ -63,7 +63,7 @@ If compile times become painful, split `src-tauri/src/`:
 - `wtranscriber-tauri`: `commands.rs`, `lib.rs`.
 - `wt` CLI: depends on core only.
 
-Then `cargo check -p wtranscriber-core` and `cargo run --bin wt` skip the Tauri graph.
+Then `cargo check -p wtranscriber-core` and `cargo run --bin wtr` skip the Tauri graph.
 
 Diagnose generic bloat with `cargo llvm-lines` if a module shows hot in `--timings`.
 

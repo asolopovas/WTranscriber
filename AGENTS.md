@@ -6,7 +6,7 @@ Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `
 
 ```
 src/                  Vue 3 frontend (api.ts, types.ts mirrors Rust)
-src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
+src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wtr.rs (CLI), config/models/paths/error/transcriber/
 src-tauri/            tauri.conf.json, capabilities/default.json, Cargo.toml, gen/android/
 xtask/src/            build / release / android orchestration
 scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1

@@ -13,7 +13,7 @@ use wtranscriber_lib::{
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "wt",
+    name = "wtr",
     version,
     about = "Audio transcription CLI (sherpa-onnx + pyannote)",
     arg_required_else_help = true
