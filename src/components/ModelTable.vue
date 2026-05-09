@@ -170,7 +170,7 @@ function accPct(m: ModelInfo): number {
             Status
           </th>
           <th
-            class="px-margin py-md text-titleSmall text-on-surface-variant font-medium text-right w-32"
+            class="px-margin py-md text-titleSmall text-on-surface-variant font-medium text-center w-32"
           >
             Actions
           </th>
@@ -220,7 +220,7 @@ function accPct(m: ModelInfo): number {
             </StatusPill>
             <StatusPill v-else tone="muted">Not installed</StatusPill>
           </td>
-          <td class="px-margin py-md text-right align-top">
+          <td class="px-margin py-md align-middle text-center">
             <Button
               v-if="m.status === 'not_installed'"
               variant="primary"
