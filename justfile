@@ -2,9 +2,18 @@ set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
 set dotenv-load := false
 
 _sep := if os() == 'windows' { ';' } else { ':' }
-export PATH := env_var('USERPROFILE') / '.cargo' / 'bin' + _sep + env_var('PATH')
+_home := if os() == 'windows' { env_var('USERPROFILE') } else { env_var('HOME') }
+_android_sdk_default := if os() == 'windows' {
+    _home / 'AppData' / 'Local' / 'Android' / 'Sdk'
+} else if os() == 'macos' {
+    _home / 'Library' / 'Android' / 'sdk'
+} else {
+    _home / 'Android' / 'Sdk'
+}
 
-_android_sdk := env_var_or_default('ANDROID_HOME', env_var('USERPROFILE') / 'AppData' / 'Local' / 'Android' / 'Sdk')
+export PATH := _home / '.cargo' / 'bin' + _sep + env_var('PATH')
+
+_android_sdk := env_var_or_default('ANDROID_HOME', _android_sdk_default)
 _android_ndk := env_var_or_default('NDK_HOME', _android_sdk / 'ndk' / '27.2.12479018')
 export ANDROID_HOME := _android_sdk
 export NDK_HOME := _android_ndk
@@ -172,29 +181,51 @@ check-all: check
 clean-temp *args:
     bun scripts/clean-temp.mjs {{args}}
 
-clean: clean-temp
+[windows]
+_clean-build:
+    cargo clean --manifest-path src-tauri/Cargo.toml
+    cargo clean --manifest-path xtask/Cargo.toml
+    pwsh -NoLogo -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue dist, node_modules"
+
+[unix]
+_clean-build:
     cargo clean --manifest-path src-tauri/Cargo.toml
     cargo clean --manifest-path xtask/Cargo.toml
     rm -rf dist node_modules
 
+clean: clean-temp _clean-build
+
 clean-force:
     bun scripts/clean-temp.mjs --force
-    cargo clean --manifest-path src-tauri/Cargo.toml
-    cargo clean --manifest-path xtask/Cargo.toml
-    rm -rf dist node_modules
+    @just _clean-build
 
 icons source="src-tauri/icons/icon.png":
     bun run tauri icon {{source}}
 
 # windows-only runtime deps (CUDA, cuDNN, NeMo)
+[windows]
 cudnn version="9.21.1.3":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
 
+[unix]
+cudnn version="9.21.1.3":
+    @echo "cudnn install is windows-only (CUDA / cuDNN runtime)" >&2 ; exit 1
+
+[windows]
 sherpa-cuda version="v1.13.0":
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1 -Version {{version}}
 
+[unix]
+sherpa-cuda version="v1.13.0":
+    @echo "sherpa-cuda install is windows-only (CUDA runtime)" >&2 ; exit 1
+
+[windows]
 nemo-deps:
     pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
+
+[unix]
+nemo-deps:
+    @echo "nemo-deps install is windows-only (NeMo / CUDA runtime)" >&2 ; exit 1
 
 # release
 release:
