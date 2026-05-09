@@ -1,116 +1,29 @@
 # Dev loop
 
-Edit → see it on the device instantly → get told the moment something breaks. Three concurrent processes.
+Use the automated Android tasks; do not recreate bootstrap steps by hand.
 
-## 1. HMR dev session - user's terminal
-
-```
-just android-dev          # USB / emulator
-just android-dev-host     # Wi-Fi / LAN
-```
-
-Frontend-only watcher (`--no-watch`). Vue/TS/CSS push live. Rust edits require restarting `just android-dev` — it rebuilds and reinstalls the debug-dev APK that loads the Vite dev URL. Never run `just android-install` during a dev session; it installs a bundled-assets APK and silently strands all subsequent JS edits.
-
-Run in the user's own terminal. Spawning through a subagent on Windows pops an empty conhost (`CREATE_NEW_PROCESS_GROUP` quirk).
-
-### Detached spawn (orchestrator)
-
-When the orchestrator launches `just dev` / `just android-dev[-host]` or `node scripts/error-monitor.mjs`, use PowerShell `Start-Process` so the child outlives the agent turn:
+## Android
 
 ```bash
-powershell -Command "Start-Process -FilePath 'just' -ArgumentList 'android-dev' \
-  -RedirectStandardOutput 'C:\Users\asolo\src\WTranscriber\tmp\android-dev.log' \
-  -RedirectStandardError  'C:\Users\asolo\src\WTranscriber\tmp\android-dev.err.log' \
-  -WorkingDirectory       'C:\Users\asolo\src\WTranscriber' \
-  -WindowStyle Hidden -PassThru | Select-Object Id"
+just android-bootstrap usb     # USB / emulator
+just android-bootstrap host    # Wi-Fi / LAN
+just android-status            # bounded health check: adb, reverse, Vite, CDP, IPC
+just android-smoke             # fail-fast end-to-end probe
+just android-stop              # stop detached dev session and forwards
+just android-debug-eval "document.title"
 ```
 
-Confirm liveness with `tasklist //FI "PID eq <id>"`; shut down with `taskkill //F //PID <id>`. Same pattern for the error monitor (`tmp/error-monitor.log`).
+`android-bootstrap` is implemented in `cargo xtask android bootstrap`. It validates the selected adb device, starts logcat, configures `adb reverse` for USB mode, starts Tauri Android dev, waits for Vite and the WebView connection, attaches CDP, and probes Tauri IPC through the live app.
 
-`Start-Process` does **not** propagate the parent's `$env:VAR` to the child. To pass env vars (e.g. `TAURI_DEV_HOST=127.0.0.1`), wrap via `cmd /c` and a one-shot `.cmd` file:
+Frontend edits (`src/**`) HMR in place. Backend/native/config edits require `just android-stop && just android-bootstrap usb` so the debug-dev APK and Vite dev URL stay paired.
 
-```
-# tmp/_dev.cmd
-set TAURI_DEV_HOST=127.0.0.1 && just android-dev
-```
+Never run `just android-install`, `just android-build`, `cargo tauri build`, or release installers while `tmp/_pids.json` exists and Vite owns `:1420`.
 
-```bash
-powershell -Command "Start-Process cmd.exe -ArgumentList '/c','tmp\_dev.cmd' \
-  -RedirectStandardOutput 'tmp\android-dev.log' \
-  -RedirectStandardError  'tmp\android-dev.err.log' \
-  -WindowStyle Hidden -PassThru | Select-Object Id"
-```
+## Signals
 
-The returned PID is the `cmd.exe` wrapper and exits as soon as the inner pipeline launches. Track the long-running server via the port owner: `netstat -ano | findstr :1420`.
+- Health: `just android-status-json`
+- Live WebView eval: `just android-debug-eval "<expr>"`
+- HMR proof after JS/CSS edits: `[vite] hmr update /src/...` in `tmp/android-dev.log`
+- Crash/OOM proof: app-specific `am_kill`, `am_proc_died`, or `am_crash` in `tmp/logcat.log`
 
-## 2. CDP attach - once, after launch
-
-```
-just android-debug-attach
-```
-
-Forwards `tcp:9222` to the WebView. Required for live JS eval and the error monitor.
-
-```
-node scripts/cdp.mjs "<expr>"
-```
-
-`getBoundingClientRect`, `getComputedStyle`, `outerHTML`, `querySelectorAll`, anything. Use this instead of PNG screenshots for layout/spacing/colors/classes.
-
-`location.href` always returns `http://tauri.localhost/` on Android (Tauri proxies through a custom scheme to the Vite dev server); it is not a dev-session health signal. Use `tmp/android-dev.log` instead (see §Live signals on Android).
-
-## 3. Error monitor - async subagent
-
-```
-node scripts/error-monitor.mjs
-```
-
-Captures (deduped, noise-filtered):
-
-- **Logcat `*:W`** - all `E`/`F`, `RustStdoutStderr` ERROR/WARN/panic, native crashes (`AndroidRuntime`, `tombstoned`).
-- **CDP runtime** - every JS `console.error`/`console.warn`, uncaught `pageerror` with stack, failed network requests.
-- Drops: reqwest/hyper, HwcComposer, SurfaceFlinger, SemGameManager, `setRequestedFrameRate`, BufferQueue, ViewRootImpl.
-- Burst-dedup (2s window).
-- Writes stdout + `tmp/error-monitor.log` (gitignored).
-
-Spawn as long-running async delegate so the inactivity timeout never kills it:
-
-```
-subagent({
-  agent: "delegate",
-  task: "node scripts/error-monitor.mjs\n\nStream forever. Surface any error/warn line back as a concise message. Ignore inactivity warnings.",
-  async: true,
-  cwd: "C:/Users/asolo/src/WTranscriber",
-  control: { enabled: false },
-})
-```
-
-The monitor reattaches to a new WebView instance automatically after `just android-install` (CDP retries ~2 min).
-
-### Live signals on Android
-
-`scripts/error-monitor.mjs` and `tmp/observer-latest.json` are **desktop-only**. On Android, OOM kills and process-death events appear in the Android events log buffer, not the main buffer that `error-monitor.mjs` tails. `tmp/observer-latest.json` will show a stale counter from any previous desktop session.
-
-Dev-session liveness: `tmp/android-dev.log` must contain `connecting to 127.0.0.1:1420` / `connected to 127.0.0.1:1420` from `RustStdoutStderr` within the last 60 seconds, and `[vite] hmr update /src/…` after each JS edit.
-
-Crash/OOM signals: `tmp/logcat.log`, populated at bootstrap by:
-
-```
-adb logcat -c
-adb logcat -b main,events *:W RustStdoutStderr:V Tauri:V chromium:V am_crash:V am_proc_died:V am_kill:V
-```
-
-Key tags:
-
-| Tag                | What it signals                            |
-| ------------------ | ------------------------------------------ |
-| `am_kill`          | Low-memory killer (OOM) terminated the app |
-| `am_proc_died`     | Process death (any cause)                  |
-| `am_crash`         | Unhandled Java/Kotlin crash                |
-| `RustStdoutStderr` | Rust `println!` / `eprintln!` / panics     |
-| `chromium`         | WebView JS errors and console output       |
-| `Tauri`            | Tauri IPC and plugin events                |
-
-Spawn as a detached process at bootstrap (same `Start-Process` pattern as the dev server) and record its PID. The per-turn diff target on Android is the line-count of `tmp/logcat.log`, **not** `tmp/error-monitor.log`.
-
-Agent roster, decision table, and delegation rules live in [`AGENTS.md`](../AGENTS.md) - not restated here.
+`location.href` is not a health signal on Android; Tauri reports `http://tauri.localhost/` even when HMR is stale.

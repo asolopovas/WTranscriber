@@ -9,7 +9,7 @@ src/                  Vue 3 frontend (api.ts, types.ts mirrors Rust)
 src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
 src-tauri/            tauri.conf.json, capabilities/default.json, Cargo.toml, gen/android/
 xtask/src/            build / release / android orchestration
-scripts/              cdp.mjs, error-monitor.mjs, dev-bootstrap.ps1, diarize.py, install-*.ps1
+scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1
 docs/                 android · agents · dev-loop · release · rust-build-speed
 .pi/agents/           diagnose · runner
 ```
@@ -18,8 +18,9 @@ docs/                 android · agents · dev-loop · release · rust-build-spe
 
 ```
 just dev                 desktop (HMR)
-just android-dev[-host]  Android USB / LAN (HMR)
-just android-debug-attach forward WebView CDP to localhost:9222
+just android-bootstrap    Android USB / LAN detached HMR + logcat + CDP
+just android-status       bounded health check for adb / HMR / CDP
+just android-stop         stop detached Android dev session
 just android-debug-eval   evaluate JS in the live Android WebView
 just check               pre-release gate (fmt + clippy + vue-tsc + tests + machete + audit)
 just release-stable      check + bump + tag + build + publish
@@ -75,10 +76,11 @@ While a dev session is live (`tmp/_pids.json` exists and Vite owns `:1420`), do 
 ## Bootstrap
 
 ```
-powershell -ExecutionPolicy Bypass -File scripts/dev-bootstrap.ps1 -Platform <desktop|android-usb|android-host>
+just android-bootstrap usb
+just android-bootstrap host
 ```
 
-Handles hooks path, detached spawn, port-owner tracking, `adb reverse`, logcat, CDP forwarding. Exits non-zero if Vite fails to bind `:1420` or (Android) WebView fails to connect within 180 s. Writes `tmp/_platform`, `tmp/_pids.json`. After OK, run `wt-diagnose` on the latest log to confirm a clean start.
+Handled by `cargo xtask android bootstrap`: detached spawn, port-owner tracking, `adb reverse`, logcat, and CDP forwarding. Exits non-zero if Vite fails to bind `:1420`, the WebView fails to connect within 180 s, or CDP cannot attach. Writes `tmp/_platform`, `tmp/_pids.json`. After OK, run `just android-status` for a bounded health check.
 
 ## Per-turn during a live dev session
 

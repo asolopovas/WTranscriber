@@ -1,9 +1,20 @@
 use anyhow::{Context, Result, bail};
-use clap::{Args as ClapArgs, Subcommand};
-use std::fs;
+use clap::{Args as ClapArgs, Subcommand, ValueEnum};
+use serde_json::json;
+use std::collections::BTreeMap;
+use std::fs::{self, File};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 use crate::util::{exe, root, sh, sh_in};
+
+const ANDROID_PACKAGE: &str = "com.asolopovas.wtranscriber";
 
 #[derive(Subcommand)]
 #[command(about = "Android build / dev / doctor / prebuilts / sign-patch / cli helpers")]
@@ -14,6 +25,16 @@ pub enum Cmd {
     Install(InstallArgs),
     /// Run `tauri android dev`. Target ABI is auto-detected from the connected device.
     Dev(DevArgs),
+    /// Start the detached Android HMR session, logcat capture, adb reverse, and CDP forwarding.
+    Bootstrap(BootstrapArgs),
+    /// Print Android dev-session health.
+    Status(StatusArgs),
+    /// Stop the detached Android dev session and remove forwards.
+    Stop(StopArgs),
+    /// Forward localhost:9222 to the running Android WebView DevTools socket.
+    Attach(AttachArgs),
+    /// Verify adb, HMR, CDP, and Tauri IPC responsiveness.
+    Smoke(AttachArgs),
     /// Print Android toolchain locations and prebuilts status
     Doctor(TargetArgs),
     /// Build the headless `wt` CLI for Android
@@ -57,10 +78,42 @@ pub struct DevArgs {
     #[arg(long)]
     pub host: bool,
     /// Re-enable Tauri's Rust file watcher (default: off, keeps HMR session stable;
-    /// rebuild backend with `just android-install` in a separate terminal)
+    /// restart bootstrap after backend changes)
     #[arg(long)]
     pub watch: bool,
     /// Optional device name when multiple devices/emulators are attached (passed to tauri)
+    pub device: Option<String>,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum BootstrapMode {
+    Usb,
+    Host,
+}
+
+#[derive(ClapArgs)]
+pub struct BootstrapArgs {
+    #[arg(value_enum, default_value_t = BootstrapMode::Usb)]
+    pub mode: BootstrapMode,
+    pub device: Option<String>,
+}
+
+#[derive(ClapArgs)]
+pub struct StatusArgs {
+    #[arg(long)]
+    pub json: bool,
+    pub device: Option<String>,
+}
+
+#[derive(ClapArgs)]
+pub struct StopArgs {
+    #[arg(long)]
+    pub keep_reverse: bool,
+    pub device: Option<String>,
+}
+
+#[derive(ClapArgs)]
+pub struct AttachArgs {
     pub device: Option<String>,
 }
 
@@ -77,6 +130,11 @@ pub fn run(c: Cmd) -> Result<()> {
         Cmd::Build(a) => cmd_build(&a.target),
         Cmd::Install(a) => cmd_install(&a.target, a.fresh),
         Cmd::Dev(a) => cmd_dev(a.open, a.host, a.watch, a.device.as_deref()),
+        Cmd::Bootstrap(a) => cmd_bootstrap(a.mode, a.device.as_deref()),
+        Cmd::Status(a) => cmd_status(a.json, a.device.as_deref()),
+        Cmd::Stop(a) => cmd_stop(a.keep_reverse, a.device.as_deref()),
+        Cmd::Attach(a) => cmd_attach(a.device.as_deref()),
+        Cmd::Smoke(a) => cmd_smoke(a.device.as_deref()),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
         Cmd::CliPush => cmd_cli_push(),
@@ -461,6 +519,548 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
     Ok(())
 }
 
+fn spawn_detached(
+    prog: &str,
+    args: &[&str],
+    env: &[(String, String)],
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<u32> {
+    if let Some(parent) = stdout_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let stdout = File::create(stdout_path)?;
+    let stderr = File::create(stderr_path)?;
+    let mut cmd = Command::new(prog);
+    cmd.args(args)
+        .current_dir(root())
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr));
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let child = cmd.spawn().with_context(|| format!("spawn {prog}"))?;
+    Ok(child.id())
+}
+
+fn adb_args(device: Option<&str>, args: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(d) = device {
+        out.push("-s".into());
+        out.push(d.into());
+    }
+    out.extend(args.iter().map(|s| (*s).to_string()));
+    out
+}
+
+fn adb_status(device: Option<&str>, args: &[&str]) -> Result<()> {
+    let all = adb_args(device, args);
+    let refs = all.iter().map(String::as_str).collect::<Vec<_>>();
+    status_timeout("adb", &refs, Duration::from_secs(5))
+}
+
+fn status_timeout(prog: &str, args: &[&str], timeout: Duration) -> Result<()> {
+    let mut child = Command::new(prog)
+        .args(args)
+        .current_dir(root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("spawn {prog}"))?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait()?.is_some() {
+            let out = child.wait_with_output()?;
+            if out.status.success() {
+                return Ok(());
+            }
+            bail!(
+                "{} {:?} failed: {}",
+                prog,
+                args,
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("{} {:?} timed out after {}s", prog, args, timeout.as_secs());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn adb_reverse(device: Option<&str>, port: &str) -> Result<()> {
+    let spec = format!("tcp:{port}");
+    adb_status(device, &["reverse", &spec, &spec])
+}
+
+fn capture_optional_timeout(prog: &str, args: &[&str], timeout: Duration) -> Option<String> {
+    let mut child = Command::new(prog)
+        .args(args)
+        .current_dir(root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait().ok()? {
+            Some(status) => {
+                let out = child.wait_with_output().ok()?;
+                return status
+                    .success()
+                    .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string());
+            }
+            None => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+fn port_owner(port: u16) -> Option<u32> {
+    if cfg!(windows) {
+        let pattern = format!(":{port}");
+        let out = capture_optional_timeout("netstat", &["-ano"], Duration::from_secs(2))?;
+        out.lines()
+            .find(|line| line.contains(&pattern) && line.contains("LISTENING"))
+            .and_then(|line| line.split_whitespace().last())
+            .and_then(|pid| pid.parse::<u32>().ok())
+    } else {
+        None
+    }
+}
+
+fn tcp_open(port: u16) -> bool {
+    TcpStream::connect_timeout(
+        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+        Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if tcp_open(port) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    bail!("vite did not bind :{port} within {}s", timeout.as_secs())
+}
+
+fn wait_for_log_line(path: &Path, f: impl Fn(&str) -> bool, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if tail_has(path, &f) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    bail!("WebView never connected to Vite - check adb reverse / TAURI_DEV_HOST")
+}
+
+fn tail_has(path: &Path, f: impl Fn(&str) -> bool) -> bool {
+    last_line_matching(path, f).is_some()
+}
+
+fn last_line_matching(path: &Path, f: impl Fn(&str) -> bool) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    raw.lines()
+        .rev()
+        .take(500)
+        .find(|line| f(line))
+        .map(str::to_string)
+}
+
+fn file_age_seconds(path: &Path) -> Option<u64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    Some(modified.elapsed().ok()?.as_secs())
+}
+
+fn json_seconds(value: &serde_json::Value) -> String {
+    value.as_u64().map_or("-".into(), |v| v.to_string())
+}
+
+fn api_probe(timeout: Duration) -> Option<String> {
+    let expr = concat!(
+        "import('/src/api.ts').then(m => Promise.all([",
+        "m.api.appVersion(), m.api.systemInfo(), m.api.loadConfig()",
+        "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
+    );
+    capture_optional_timeout("node", &["scripts/cdp.mjs", expr], timeout)
+}
+
+fn is_app_crash_signal(line: &str) -> bool {
+    line.contains(ANDROID_PACKAGE)
+        && (line.contains("am_crash")
+            || line.contains("am_proc_died")
+            || (line.contains("am_kill")
+                && !line.contains("installPackageLI")
+                && !line.contains("due to install")))
+}
+
+fn read_pids(path: &Path) -> BTreeMap<String, u32> {
+    let raw = match fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(_) => return BTreeMap::new(),
+    };
+    let value: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(value) => value,
+        Err(_) => return BTreeMap::new(),
+    };
+    let mut out = BTreeMap::new();
+    if let Some(obj) = value.as_object() {
+        for (key, value) in obj {
+            if let Some(pid) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
+                out.insert(key.clone(), pid);
+            }
+        }
+    }
+    out
+}
+
+fn pids_device(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()?
+        .get("device")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn pid_alive(pid: u32) -> bool {
+    let pid_text = pid.to_string();
+    if cfg!(windows) {
+        let filter = format!("PID eq {pid}");
+        capture_optional_timeout(
+            "tasklist",
+            &["/FI", &filter, "/FO", "CSV", "/NH"],
+            Duration::from_secs(2),
+        )
+        .is_some_and(|out| out.contains(&pid_text))
+    } else {
+        Command::new("kill")
+            .args(["-0", &pid_text])
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+}
+
+fn kill_pid(pid: u32) {
+    let pid_text = pid.to_string();
+    if cfg!(windows) {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid_text])
+            .status();
+    } else {
+        let _ = Command::new("kill").args(["-TERM", &pid_text]).status();
+    }
+}
+
+fn adb_devices() -> Vec<String> {
+    let out =
+        capture_optional_timeout("adb", &["devices"], Duration::from_secs(2)).unwrap_or_default();
+    out.lines()
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(serial, state)| format!("{}:{}", serial.trim(), state.trim()))
+        .collect()
+}
+
+fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
+    let tmp = root().join("tmp");
+    fs::create_dir_all(&tmp)?;
+    let pids_path = tmp.join("_pids.json");
+    if pids_path.exists() {
+        cmd_stop(false, device)?;
+    } else if tcp_open(1420) {
+        bail!(
+            "port 1420 is already in use; stop the existing dev server before bootstrapping Android"
+        );
+    }
+    let _target = detect_device_target(device)?;
+    fs::write(tmp.join("_platform"), "android")?;
+
+    let _ = adb_status(device, &["logcat", "-c"]);
+    let logcat_args = adb_args(
+        device,
+        &[
+            "logcat",
+            "-b",
+            "main,events",
+            "*:W",
+            "RustStdoutStderr:V",
+            "Tauri:V",
+            "chromium:V",
+            "am_crash:V",
+            "am_proc_died:V",
+            "am_kill:V",
+        ],
+    );
+    let logcat_arg_refs = logcat_args.iter().map(String::as_str).collect::<Vec<_>>();
+    let logcat_pid = spawn_detached(
+        "adb",
+        &logcat_arg_refs,
+        &[],
+        &tmp.join("logcat.log"),
+        &tmp.join("logcat.err.log"),
+    )?;
+
+    let mut env = Vec::<(String, String)>::new();
+    let mut args = vec![
+        "xtask".to_string(),
+        "android".to_string(),
+        "dev".to_string(),
+    ];
+    match mode {
+        BootstrapMode::Usb => {
+            env.push(("TAURI_DEV_HOST".into(), "127.0.0.1".into()));
+            adb_reverse(device, "1420")?;
+            adb_reverse(device, "1421")?;
+        }
+        BootstrapMode::Host => args.push("--host".into()),
+    }
+    if let Some(d) = device {
+        args.push(d.to_string());
+    }
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let dev_pid = spawn_detached(
+        "cargo",
+        &arg_refs,
+        &env,
+        &tmp.join("android-dev.log"),
+        &tmp.join("android-dev.err.log"),
+    )?;
+
+    wait_for_port(1420, Duration::from_secs(180))?;
+    wait_for_log_line(
+        &tmp.join("android-dev.log"),
+        |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420"),
+        Duration::from_secs(180),
+    )?;
+    wait_for_attach(device, Duration::from_secs(30))?;
+    let _ = api_probe(Duration::from_secs(15))
+        .context("Tauri IPC API probe failed after CDP attach")?;
+    let port_owner = port_owner(1420);
+    let pids = json!({
+        "device": device,
+        "dev_wrapper": dev_pid,
+        "dev_port_owner": port_owner,
+        "logcat": logcat_pid
+    });
+    fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
+    println!(
+        "BOOTSTRAP OK platform=android mode={} pids={}",
+        match mode {
+            BootstrapMode::Usb => "usb",
+            BootstrapMode::Host => "host",
+        },
+        pids
+    );
+    Ok(())
+}
+
+fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
+    let tmp = root().join("tmp");
+    let platform = fs::read_to_string(tmp.join("_platform")).unwrap_or_else(|_| "unknown".into());
+    let pids_path = tmp.join("_pids.json");
+    let pids = read_pids(&pids_path);
+    let device = device_arg
+        .map(str::to_string)
+        .or_else(|| pids_device(&pids_path));
+    let devices = adb_devices();
+    let reverse_args = adb_args(device.as_deref(), &["reverse", "--list"]);
+    let reverse_arg_refs = reverse_args.iter().map(String::as_str).collect::<Vec<_>>();
+    let reverse = capture_optional_timeout("adb", &reverse_arg_refs, Duration::from_secs(2))
+        .unwrap_or_default();
+    let mut cdp_forward = tcp_open(9222);
+    if !cdp_forward {
+        let _ = attach_webview(device.as_deref(), as_json);
+        cdp_forward = tcp_open(9222);
+    }
+    let mut api = cdp_forward
+        .then(|| api_probe(Duration::from_secs(8)))
+        .flatten();
+    if api.is_none() {
+        let _ = attach_webview(device.as_deref(), as_json);
+        cdp_forward = tcp_open(9222);
+        api = cdp_forward
+            .then(|| api_probe(Duration::from_secs(8)))
+            .flatten();
+    }
+    let reverse1420 = reverse.contains("tcp:1420");
+    let reverse1421 = reverse.contains("tcp:1421");
+    let vite_alive = tcp_open(1420);
+    let api_responsive = api.is_some();
+    let session_healthy = vite_alive && reverse1420 && reverse1421 && cdp_forward && api_responsive;
+    let status = json!({
+        "platform": platform.trim(),
+        "sessionHealthy": session_healthy,
+        "pidsFile": !pids.is_empty(),
+        "devWrapperPid": pids.get("dev_wrapper"),
+        "devWrapperAlive": pids.get("dev_wrapper").is_some_and(|pid| pid_alive(*pid)),
+        "device": device,
+        "devPortOwner": pids.get("dev_port_owner"),
+        "port1420Owner": port_owner(1420),
+        "viteAlive": vite_alive,
+        "android": {
+            "adbDevices": devices,
+            "reverse1420": reverse1420,
+            "reverse1421": reverse1421,
+            "cdpForward": cdp_forward,
+            "apiResponsive": api_responsive,
+            "apiProbe": api,
+            "devLogAgeSeconds": file_age_seconds(&tmp.join("android-dev.log")),
+            "logcatAgeSeconds": file_age_seconds(&tmp.join("logcat.log")),
+            "recentViteConnection": tail_has(&tmp.join("android-dev.log"), |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
+            "lastHmrUpdate": last_line_matching(&tmp.join("android-dev.log"), |s| s.contains("[vite] hmr update")),
+            "lastCrashSignal": last_line_matching(&tmp.join("logcat.log"), is_app_crash_signal)
+        }
+    });
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&status)?);
+    } else {
+        let android = &status["android"];
+        println!(
+            "platform={} healthy={} pidsFile={} vite=:1420/{} owner={}",
+            status["platform"].as_str().unwrap_or("unknown"),
+            status["sessionHealthy"].as_bool().unwrap_or(false),
+            status["pidsFile"].as_bool().unwrap_or(false),
+            status["viteAlive"].as_bool().unwrap_or(false),
+            status["port1420Owner"]
+                .as_u64()
+                .map_or("-".to_string(), |p| p.to_string())
+        );
+        println!(
+            "adbDevices={} reverse1420={} reverse1421={} cdp={} api={}",
+            android["adbDevices"]
+                .as_array()
+                .map_or(String::new(), |items| items
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")),
+            android["reverse1420"].as_bool().unwrap_or(false),
+            android["reverse1421"].as_bool().unwrap_or(false),
+            android["cdpForward"].as_bool().unwrap_or(false),
+            android["apiResponsive"].as_bool().unwrap_or(false)
+        );
+        println!(
+            "devLogAge={}s logcatAge={}s viteConnectionInTail={}",
+            json_seconds(&android["devLogAgeSeconds"]),
+            json_seconds(&android["logcatAgeSeconds"]),
+            android["recentViteConnection"].as_bool().unwrap_or(false)
+        );
+        if let Some(line) = android["lastHmrUpdate"].as_str() {
+            println!("lastHmr={line}");
+        }
+        if let Some(line) = android["lastCrashSignal"].as_str() {
+            println!("lastCrash={line}");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
+    let tmp = root().join("tmp");
+    let pids_path = tmp.join("_pids.json");
+    let pids = read_pids(&pids_path);
+    let device = device_arg
+        .map(str::to_string)
+        .or_else(|| pids_device(&pids_path));
+    for key in ["logcat", "dev_wrapper", "dev_port_owner"] {
+        if let Some(pid) = pids.get(key) {
+            kill_pid(*pid);
+            println!("stopped {key} pid={pid}");
+        }
+    }
+    if !keep_reverse {
+        let _ = adb_status(device.as_deref(), &["forward", "--remove", "tcp:9222"]);
+        let _ = adb_status(device.as_deref(), &["reverse", "--remove", "tcp:1420"]);
+        let _ = adb_status(device.as_deref(), &["reverse", "--remove", "tcp:1421"]);
+    }
+    let _ = fs::remove_file(tmp.join("_pids.json"));
+    let _ = fs::remove_file(tmp.join("_platform"));
+    println!("dev session stopped");
+    Ok(())
+}
+
+fn wait_for_attach(device: Option<&str>, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match cmd_attach(device) {
+            Ok(()) => return Ok(()),
+            Err(err) if Instant::now() >= deadline => return Err(err),
+            Err(_) => thread::sleep(Duration::from_millis(500)),
+        }
+    }
+}
+
+fn cmd_smoke(device: Option<&str>) -> Result<()> {
+    let target = detect_device_target(device)?;
+    wait_for_port(1420, Duration::from_secs(5))?;
+    wait_for_attach(device, Duration::from_secs(10))?;
+    let probe = api_probe(Duration::from_secs(10)).context("Tauri IPC API probe failed")?;
+    println!("android smoke ok target={target} api={probe}");
+    Ok(())
+}
+
+fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
+    let mut args = Vec::<String>::new();
+    if let Some(d) = device {
+        args.push("-s".into());
+        args.push(d.into());
+    }
+    args.extend([
+        "shell".into(),
+        "cat /proc/net/unix | grep -oE 'webview_devtools_remote_[0-9]+' | head -1".into(),
+    ]);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let socket =
+        capture_optional_timeout("adb", &arg_refs, Duration::from_secs(10)).unwrap_or_default();
+    let pid = socket
+        .trim()
+        .strip_prefix("webview_devtools_remote_")
+        .and_then(|s| s.parse::<u32>().ok())
+        .context("no WebView devtools socket; is the app running?")?;
+    let mut remove = Vec::<String>::new();
+    if let Some(d) = device {
+        remove.push("-s".into());
+        remove.push(d.into());
+    }
+    remove.extend(["forward".into(), "--remove".into(), "tcp:9222".into()]);
+    let remove_refs = remove.iter().map(String::as_str).collect::<Vec<_>>();
+    let _ = status_timeout("adb", &remove_refs, Duration::from_secs(3));
+    let target = format!("localabstract:webview_devtools_remote_{pid}");
+    let mut forward = Vec::<String>::new();
+    if let Some(d) = device {
+        forward.push("-s".into());
+        forward.push(d.into());
+    }
+    forward.extend(["forward".into(), "tcp:9222".into(), target]);
+    let forward_refs = forward.iter().map(String::as_str).collect::<Vec<_>>();
+    status_timeout("adb", &forward_refs, Duration::from_secs(3))?;
+    if !quiet {
+        println!("forwarded tcp:9222 -> webview_devtools_remote_{pid}");
+    }
+    Ok(())
+}
+
+fn cmd_attach(device: Option<&str>) -> Result<()> {
+    attach_webview(device, false)
+}
+
 fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<()> {
     let target = detect_device_target(device)?;
     println!("android dev: detected ABI → target={target}");
@@ -497,15 +1097,9 @@ fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<
 }
 
 fn detect_dev_host(device: Option<&str>) -> Option<String> {
-    let mut cmd = std::process::Command::new("adb");
-    if let Some(d) = device {
-        cmd.args(["-s", d]);
-    }
-    let out = cmd
-        .args(["shell", "ip", "-4", "addr", "show", "wlan0"])
-        .output()
-        .ok()?;
-    let txt = String::from_utf8_lossy(&out.stdout);
+    let args = adb_args(device, &["shell", "ip", "-4", "addr", "show", "wlan0"]);
+    let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let txt = capture_optional_timeout("adb", &refs, Duration::from_secs(3))?;
     let device_ip = txt
         .lines()
         .find_map(|l| l.trim().strip_prefix("inet "))
@@ -563,31 +1157,56 @@ fn host_ipv4_addresses() -> Vec<String> {
 }
 
 fn detect_device_target(device: Option<&str>) -> Result<String> {
-    let out = std::process::Command::new("adb").arg("devices").output()?;
-    let txt = String::from_utf8_lossy(&out.stdout);
-    let serials: Vec<&str> = txt
+    let txt = capture_optional_timeout("adb", &["devices"], Duration::from_secs(5))
+        .context("adb devices timed out or failed")?;
+    let entries = txt
         .lines()
         .filter_map(|l| l.split_once('\t'))
-        .filter(|(_, s)| s.trim() == "device")
-        .map(|(id, _)| id)
-        .collect();
-    if serials.is_empty() {
+        .map(|(id, state)| (id.trim().to_string(), state.trim().to_string()))
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
         bail!("no adb device — connect device and enable USB debugging");
     }
-    let mut cmd = std::process::Command::new("adb");
     if let Some(d) = device {
-        cmd.args(["-s", d]);
-    } else if serials.len() > 1 {
+        match entries.iter().find(|(id, _)| id == d) {
+            Some((_, state)) if state == "device" => {}
+            Some((_, state)) => bail!("adb device {d} is {state}; authorise it or reconnect it"),
+            None => bail!(
+                "adb device {d} not found; connected: {}",
+                entries
+                    .iter()
+                    .map(|(id, state)| format!("{id}:{state}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+    let serials = entries
+        .iter()
+        .filter(|(_, state)| state == "device")
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    if serials.is_empty() {
+        bail!(
+            "no authorised adb device; connected: {}",
+            entries
+                .iter()
+                .map(|(id, state)| format!("{id}:{state}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    if device.is_none() && serials.len() > 1 {
         bail!(
             "multiple adb devices attached: {} — pass one as `cargo xtask android dev <device>`",
             serials.join(", ")
         );
     }
-    let abi_out = cmd
-        .args(["shell", "getprop", "ro.product.cpu.abi"])
-        .output()
-        .context("adb shell getprop ro.product.cpu.abi")?;
-    let abi = String::from_utf8_lossy(&abi_out.stdout).trim().to_string();
+    let args = adb_args(device, &["shell", "getprop", "ro.product.cpu.abi"]);
+    let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let abi = capture_optional_timeout("adb", &refs, Duration::from_secs(5))
+        .context("adb shell getprop ro.product.cpu.abi timed out or failed")?;
+    let abi = abi.trim().to_string();
     Ok(match abi.as_str() {
         "arm64-v8a" => "aarch64".into(),
         "armeabi-v7a" | "armeabi" => "armv7".into(),

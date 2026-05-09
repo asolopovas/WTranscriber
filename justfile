@@ -69,6 +69,21 @@ android-dev device="":
 android-dev-host device="":
     cargo xtask android dev --host {{device}}
 
+android-bootstrap mode="usb" device="":
+    cargo xtask android bootstrap {{mode}} {{device}}
+
+android-status device="":
+    cargo xtask android status {{device}}
+
+android-status-json device="":
+    cargo xtask android status --json {{device}}
+
+android-smoke device="":
+    cargo xtask android smoke {{device}}
+
+android-stop device="":
+    cargo xtask android stop {{device}}
+
 android-build target="aarch64":
     cargo xtask android build --target {{target}}
 
@@ -91,14 +106,8 @@ android-cli-push:
 android-cli-run *args:
     cargo xtask android cli-run -- {{args}}
 
-android-debug-attach:
-    @bash -c 'set -e; export MSYS_NO_PATHCONV=1; \
-      pid=$(adb shell cat /proc/net/unix | grep -oE "webview_devtools_remote_[0-9]+" | head -1 | sed "s/.*_//"); \
-      [ -z "$pid" ] && { echo "no WebView devtools socket; is the app running?"; exit 1; }; \
-      adb forward --remove tcp:9222 2>/dev/null || true; \
-      adb forward tcp:9222 localabstract:webview_devtools_remote_$pid >/dev/null; \
-      echo "forwarded tcp:9222 -> webview_devtools_remote_$pid"; \
-      curl -s http://localhost:9222/json/list | node -e "let d=\"\"; process.stdin.on(\"data\",x=>d+=x).on(\"end\",()=>JSON.parse(d).forEach(p=>console.log(p.title,\"->\",p.url)))"'
+android-debug-attach device="":
+    cargo xtask android attach {{device}}
 
 android-debug-eval expr:
     @node scripts/cdp.mjs {{quote(expr)}}
