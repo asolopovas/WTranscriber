@@ -659,19 +659,31 @@ fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
     bail!("vite did not bind :{port} within {}s", timeout.as_secs())
 }
 
-fn wait_for_log_line(path: &Path, f: impl Fn(&str) -> bool, timeout: Duration) -> Result<()> {
+fn wait_for_log_line(
+    paths: &[&Path],
+    label: &str,
+    f: impl Fn(&str) -> bool,
+    timeout: Duration,
+) -> Result<()> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if tail_has(path, &f) {
+        if paths.iter().any(|p| tail_has(p, &f)) {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(500));
     }
-    bail!("WebView never connected to Vite - check adb reverse / TAURI_DEV_HOST")
+    bail!(
+        "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
+        timeout.as_secs()
+    )
 }
 
 fn tail_has(path: &Path, f: impl Fn(&str) -> bool) -> bool {
     last_line_matching(path, f).is_some()
+}
+
+fn tail_any_has(paths: &[&Path], f: impl Fn(&str) -> bool) -> bool {
+    paths.iter().any(|p| tail_has(p, &f))
 }
 
 fn last_line_matching(path: &Path, f: impl Fn(&str) -> bool) -> Option<String> {
@@ -778,17 +790,57 @@ fn adb_devices() -> Vec<String> {
         .collect()
 }
 
+fn preflight_node_modules() -> Result<()> {
+    let cli = root()
+        .join("node_modules")
+        .join("@tauri-apps")
+        .join("cli")
+        .join("package.json");
+    if !cli.exists() {
+        bail!(
+            "node_modules missing (looked for {}). Run `bun install` before bootstrap.",
+            cli.display()
+        );
+    }
+    Ok(())
+}
+
+fn reap_tauri_logcat_orphans() {
+    if !cfg!(windows) {
+        return;
+    }
+    let Some(out) = capture_optional_timeout(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'adb.exe' -and $_.CommandLine -match 'logcat .* -s wtranscriber' } | ForEach-Object { $_.ProcessId }",
+        ],
+        Duration::from_secs(3),
+    ) else {
+        return;
+    };
+    for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
+        kill_pid(pid);
+        eprintln!("reaped orphan tauri logcat pid={pid}");
+    }
+}
+
 fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
     let tmp = root().join("tmp");
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
     if pids_path.exists() {
+        eprintln!("[stage 0/6] stopping previous dev session");
         cmd_stop(false, device)?;
     } else if tcp_open(1420) {
         bail!(
             "port 1420 is already in use; stop the existing dev server before bootstrapping Android"
         );
     }
+    reap_tauri_logcat_orphans();
+    eprintln!("[stage 1/6] preflight (node_modules, device)");
+    preflight_node_modules()?;
     let _target = detect_device_target(device)?;
     fs::write(tmp.join("_platform"), "android")?;
 
@@ -809,6 +861,7 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
         ],
     );
     let logcat_arg_refs = logcat_args.iter().map(String::as_str).collect::<Vec<_>>();
+    eprintln!("[stage 2/6] starting logcat capture");
     let logcat_pid = spawn_detached(
         "adb",
         &logcat_arg_refs,
@@ -835,6 +888,7 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
         args.push(d.to_string());
     }
     let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    eprintln!("[stage 3/6] spawning tauri android dev (logs: tmp/android-dev.{{log,err.log}})");
     let dev_pid = spawn_detached(
         "cargo",
         &arg_refs,
@@ -843,15 +897,45 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
         &tmp.join("android-dev.err.log"),
     )?;
 
-    wait_for_port(1420, Duration::from_secs(180))?;
-    wait_for_log_line(
-        &tmp.join("android-dev.log"),
-        |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420"),
-        Duration::from_secs(180),
-    )?;
-    wait_for_attach(device, Duration::from_secs(30))?;
-    let _ = api_probe(Duration::from_secs(15))
-        .context("Tauri IPC API probe failed after CDP attach")?;
+    let dev_log = tmp.join("android-dev.log");
+    let dev_err = tmp.join("android-dev.err.log");
+    let bring_up = || -> Result<()> {
+        eprintln!("[stage 4/6] waiting for vite to bind :1420 (≤300s, includes rust compile)");
+        wait_for_port(1420, Duration::from_secs(300))?;
+        eprintln!(
+            "[stage 5/6] waiting for WebView → :1420 connection (≤360s, includes apk build/install/launch)"
+        );
+        wait_for_log_line(
+            &[&dev_log, &dev_err],
+            "WebView connecting to :1420",
+            |s| {
+                (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")
+            },
+            Duration::from_secs(360),
+        )?;
+        eprintln!("[stage 6/6] attaching CDP and probing tauri IPC");
+        wait_for_attach(device, Duration::from_secs(30))?;
+        api_probe(Duration::from_secs(15))
+            .context("Tauri IPC API probe failed after CDP attach")?;
+        Ok(())
+    };
+    if let Err(err) = bring_up() {
+        eprintln!("bootstrap failed: {err:#}");
+        eprintln!("--- last 10 lines of android-dev.err.log ---");
+        if let Ok(raw) = fs::read_to_string(&dev_err) {
+            for line in raw.lines().rev().take(10).collect::<Vec<_>>().iter().rev() {
+                eprintln!("  {line}");
+            }
+        }
+        kill_pid(dev_pid);
+        kill_pid(logcat_pid);
+        reap_tauri_logcat_orphans();
+        let _ = adb_status(device, &["forward", "--remove", "tcp:9222"]);
+        let _ = adb_status(device, &["reverse", "--remove", "tcp:1420"]);
+        let _ = adb_status(device, &["reverse", "--remove", "tcp:1421"]);
+        let _ = fs::remove_file(tmp.join("_platform"));
+        return Err(err);
+    }
     let port_owner = port_owner(1420);
     let pids = json!({
         "device": device,
@@ -923,8 +1007,8 @@ fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
             "apiProbe": api,
             "devLogAgeSeconds": file_age_seconds(&tmp.join("android-dev.log")),
             "logcatAgeSeconds": file_age_seconds(&tmp.join("logcat.log")),
-            "recentViteConnection": tail_has(&tmp.join("android-dev.log"), |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
-            "lastHmrUpdate": last_line_matching(&tmp.join("android-dev.log"), |s| s.contains("[vite] hmr update")),
+            "recentViteConnection": tail_any_has(&[&tmp.join("android-dev.log"), &tmp.join("android-dev.err.log")], |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
+            "lastHmrUpdate": last_line_matching(&tmp.join("android-dev.log"), |s| s.contains("[vite] hmr update")).or_else(|| last_line_matching(&tmp.join("android-dev.err.log"), |s| s.contains("[vite] hmr update"))),
             "lastCrashSignal": last_line_matching(&tmp.join("logcat.log"), is_app_crash_signal)
         }
     });
@@ -985,6 +1069,7 @@ fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
             println!("stopped {key} pid={pid}");
         }
     }
+    reap_tauri_logcat_orphans();
     if !keep_reverse {
         let _ = adb_status(device.as_deref(), &["forward", "--remove", "tcp:9222"]);
         let _ = adb_status(device.as_deref(), &["reverse", "--remove", "tcp:1420"]);
