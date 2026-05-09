@@ -10,7 +10,6 @@ use crate::util::{capture, pkg_version, root, sh};
 #[derive(ClapArgs)]
 #[command(about = "Publish artifacts produced by `xtask release` to a GitHub release")]
 pub struct Args {
-    /// dev = rolling prerelease (force-update); stable = immutable vX.Y.Z
     pub channel: String,
 }
 
@@ -200,9 +199,6 @@ fn which(name: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(line))
 }
 
-/// On msys2 bash on Windows, `gh.exe` cannot find its config because APPDATA is
-/// stripped. xtask runs natively so this is a no-op there, but keep the
-/// fallback for users who set GH_CONFIG_DIR via shell rc.
 fn ensure_gh_config_dir() {
     if std::env::var_os("GH_CONFIG_DIR").is_some() {
         return;

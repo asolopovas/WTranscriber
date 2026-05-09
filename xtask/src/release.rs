@@ -16,22 +16,16 @@ type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);
 #[derive(ClapArgs)]
 #[command(about = "Build release artifacts (host + Android + WSL deb on Windows)")]
 pub struct Args {
-    /// Build to releases/dev/ with branch-suffixed names (rolling channel)
     #[arg(long)]
     pub dev: bool,
-    /// Skip Windows / Linux / macOS host build
     #[arg(long)]
     pub no_host: bool,
-    /// Skip Android build
     #[arg(long)]
     pub no_android: bool,
-    /// Skip WSL .deb build (Windows host only)
     #[arg(long)]
     pub no_wsl: bool,
-    /// Reuse existing build artifacts; only repackage / re-hash
     #[arg(long)]
     pub skip_rebuild: bool,
-    /// Run platform builds sequentially instead of in parallel
     #[arg(long)]
     pub sequential: bool,
 }

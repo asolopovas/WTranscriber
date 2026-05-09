@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,39 +19,25 @@ const ANDROID_PACKAGE: &str = "com.asolopovas.wtranscriber";
 #[derive(Subcommand)]
 #[command(about = "Android build / dev / doctor / prebuilts / sign-patch / cli helpers")]
 pub enum Cmd {
-    /// Build APK for a target ABI (default aarch64)
     Build(TargetArgs),
-    /// Build (debuggable), sign with debug.keystore, adb install -r — fast iteration
     Install(InstallArgs),
-    /// Run `tauri android dev`. Target ABI is auto-detected from the connected device.
     Dev(DevArgs),
-    /// Start the detached Android HMR session, logcat capture, adb reverse, and CDP forwarding.
     Bootstrap(BootstrapArgs),
-    /// Print Android dev-session health.
     Status(StatusArgs),
-    /// Stop the detached Android dev session and remove forwards.
     Stop(StopArgs),
-    /// Forward localhost:9222 to the running Android WebView DevTools socket.
     Attach(AttachArgs),
-    /// Verify adb, HMR, CDP, and Tauri IPC responsiveness.
     Smoke(AttachArgs),
-    /// Print Android toolchain locations and prebuilts status
     Doctor(TargetArgs),
-    /// Build the headless `wt` CLI for Android
     Cli(CliArgs),
-    /// Push the Android `wt` CLI to a connected device (replaces android-wt.sh push)
     CliPush,
-    /// Run `wt` on the connected Android device with arbitrary args
     CliRun {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Download + extract sherpa-onnx Android prebuilts (idempotent)
     Prebuilts {
         #[arg(default_value = "")]
         version: String,
     },
-    /// Patch generated build.gradle.kts to enable release signing (idempotent)
     SignPatch,
 }
 
@@ -65,7 +51,6 @@ pub struct TargetArgs {
 pub struct InstallArgs {
     #[arg(long, default_value = "aarch64")]
     pub target: String,
-    /// adb uninstall before installing (wipes app data, including downloaded models)
     #[arg(long)]
     pub fresh: bool,
 }
@@ -74,14 +59,10 @@ pub struct InstallArgs {
 pub struct DevArgs {
     #[arg(long)]
     pub open: bool,
-    /// Bind dev server to LAN IP and set TAURI_DEV_HOST (required for Wi-Fi / non-USB devices)
     #[arg(long)]
     pub host: bool,
-    /// Re-enable Tauri's Rust file watcher (default: off, keeps HMR session stable;
-    /// restart bootstrap after backend changes)
     #[arg(long)]
     pub watch: bool,
-    /// Optional device name when multiple devices/emulators are attached (passed to tauri)
     pub device: Option<String>,
 }
 
@@ -133,21 +114,14 @@ pub fn run(c: Cmd) -> Result<()> {
         Cmd::Bootstrap(a) => cmd_bootstrap(a.mode, a.device.as_deref()),
         Cmd::Status(a) => cmd_status(a.json, a.device.as_deref()),
         Cmd::Stop(a) => cmd_stop(a.keep_reverse, a.device.as_deref()),
-        Cmd::Attach(a) => cmd_attach(a.device.as_deref()),
+        Cmd::Attach(a) => attach_webview(a.device.as_deref(), false),
         Cmd::Smoke(a) => cmd_smoke(a.device.as_deref()),
         Cmd::Doctor(a) => cmd_doctor(&a.target),
         Cmd::Cli(a) => cmd_cli(&a.target, a.debug),
         Cmd::CliPush => cmd_cli_push(),
         Cmd::CliRun { args } => cmd_cli_run(&args),
-        Cmd::Prebuilts { version } => cmd_prebuilts(if version.is_empty() {
-            None
-        } else {
-            Some(version)
-        }),
-        Cmd::SignPatch => {
-            let _ = sign_patch_inline()?;
-            Ok(())
-        }
+        Cmd::Prebuilts { version } => cmd_prebuilts((!version.is_empty()).then_some(version)),
+        Cmd::SignPatch => sign_patch_inline().map(|_| ()),
     }
 }
 
@@ -193,8 +167,9 @@ fn android_home() -> PathBuf {
         return PathBuf::from(v);
     }
     if cfg!(target_os = "windows") {
-        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        PathBuf::from(local).join("Android").join("Sdk")
+        PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default())
+            .join("Android")
+            .join("Sdk")
     } else if cfg!(target_os = "macos") {
         PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library")
@@ -237,44 +212,333 @@ fn clang_ext() -> &'static str {
     }
 }
 
+fn gen_android() -> PathBuf {
+    root().join("src-tauri").join("gen").join("android")
+}
+
+fn apk_release_dir() -> PathBuf {
+    gen_android()
+        .join("app")
+        .join("build")
+        .join("outputs")
+        .join("apk")
+        .join("universal")
+        .join("release")
+}
+
 fn prebuilt_dir(target: &str) -> Result<PathBuf> {
-    let abi = abi_for(target)?;
     Ok(root()
         .join(".android-prebuilt")
         .join("jniLibs")
-        .join(abi.abi))
+        .join(abi_for(target)?.abi))
 }
 
-fn cmd_doctor(target: &str) -> Result<()> {
-    let abi = abi_for(target)?;
-    let sdk = android_home();
-    let ndk = ndk_home(&sdk);
-    let bin = ndk_bin(&ndk);
-    let pdir = prebuilt_dir(target)?;
-    let sherpa = pdir.join("libsherpa-onnx-c-api.so");
-    for (k, v) in [
-        ("OS", std::env::consts::OS.to_string()),
-        ("ANDROID_HOME", sdk.display().to_string()),
-        ("NDK_HOME", ndk.display().to_string()),
-        ("NDK exists", ndk.exists().to_string()),
-        ("NDK toolchain", bin.display().to_string()),
-        ("target", target.to_string()),
-        ("abi", abi.abi.to_string()),
-        ("sherpa prebuilt", sherpa.display().to_string()),
-        ("sherpa exists", sherpa.exists().to_string()),
-    ] {
-        println!("{k:<18} {v}");
+fn wait_output(mut child: Child, timeout: Duration) -> Option<Output> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+fn run_timeout(prog: &str, args: &[&str], timeout: Duration) -> Result<()> {
+    let child = Command::new(prog)
+        .args(args)
+        .current_dir(root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("spawn {prog}"))?;
+    match wait_output(child, timeout) {
+        Some(out) if out.status.success() => Ok(()),
+        Some(out) => bail!(
+            "{} {:?} failed: {}",
+            prog,
+            args,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        None => bail!("{} {:?} timed out after {}s", prog, args, timeout.as_secs()),
+    }
+}
+
+fn capture_timeout(prog: &str, args: &[&str], timeout: Duration) -> Option<String> {
+    let child = Command::new(prog)
+        .args(args)
+        .current_dir(root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let out = wait_output(child, timeout)?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn with_device<'a>(device: Option<&'a str>, args: &[&'a str]) -> Vec<&'a str> {
+    let mut all = Vec::with_capacity(args.len() + 2);
+    if let Some(d) = device {
+        all.push("-s");
+        all.push(d);
+    }
+    all.extend_from_slice(args);
+    all
+}
+
+fn adb_run(device: Option<&str>, args: &[&str], timeout: Duration) -> Result<()> {
+    run_timeout("adb", &with_device(device, args), timeout)
+}
+
+fn adb_capture(device: Option<&str>, args: &[&str], timeout: Duration) -> Option<String> {
+    capture_timeout("adb", &with_device(device, args), timeout)
+}
+
+fn adb_reverse(device: Option<&str>, port: &str) -> Result<()> {
+    let spec = format!("tcp:{port}");
+    adb_run(device, &["reverse", &spec, &spec], Duration::from_secs(5))
+}
+
+fn spawn_detached(
+    prog: &str,
+    args: &[&str],
+    env: &[(String, String)],
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<u32> {
+    if let Some(parent) = stdout_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut cmd = Command::new(prog);
+    cmd.args(args)
+        .current_dir(root())
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(File::create(stdout_path)?))
+        .stderr(Stdio::from(File::create(stderr_path)?));
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    Ok(cmd.spawn().with_context(|| format!("spawn {prog}"))?.id())
+}
+
+fn spawn_with_env(prog: &str, args: &[&str], env: &[(String, String)]) -> Result<()> {
+    let mut cmd = Command::new(prog);
+    cmd.args(args).current_dir(root());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let status = cmd.status().with_context(|| format!("spawn {prog}"))?;
+    if !status.success() {
+        bail!("{} {:?} exited with {:?}", prog, args, status.code());
     }
     Ok(())
 }
 
-fn ensure_prebuilts(target: &str) -> Result<()> {
-    let pdir = prebuilt_dir(target)?;
-    if pdir.join("libsherpa-onnx-c-api.so").exists() {
-        return Ok(());
+fn port_owner(port: u16) -> Option<u32> {
+    if !cfg!(windows) {
+        return None;
     }
-    eprintln!("sherpa-onnx prebuilts missing — fetching");
-    cmd_prebuilts(None)
+    let pattern = format!(":{port}");
+    let out = capture_timeout("netstat", &["-ano"], Duration::from_secs(2))?;
+    out.lines()
+        .find(|line| line.contains(&pattern) && line.contains("LISTENING"))
+        .and_then(|line| line.split_whitespace().last())
+        .and_then(|pid| pid.parse::<u32>().ok())
+}
+
+fn tcp_open(port: u16) -> bool {
+    TcpStream::connect_timeout(
+        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
+        Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if tcp_open(port) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    bail!("vite did not bind :{port} within {}s", timeout.as_secs())
+}
+
+fn last_line_matching(path: &Path, f: impl Fn(&str) -> bool) -> Option<String> {
+    fs::read_to_string(path)
+        .ok()?
+        .lines()
+        .rev()
+        .take(500)
+        .find(|line| f(line))
+        .map(str::to_string)
+}
+
+fn tail_any(paths: &[&Path], f: impl Fn(&str) -> bool) -> bool {
+    paths.iter().any(|p| last_line_matching(p, &f).is_some())
+}
+
+fn wait_for_log_line(
+    paths: &[&Path],
+    label: &str,
+    f: impl Fn(&str) -> bool,
+    timeout: Duration,
+) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if tail_any(paths, &f) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    bail!(
+        "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
+        timeout.as_secs()
+    )
+}
+
+fn file_age_seconds(path: &Path) -> Option<u64> {
+    Some(
+        fs::metadata(path)
+            .ok()?
+            .modified()
+            .ok()?
+            .elapsed()
+            .ok()?
+            .as_secs(),
+    )
+}
+
+fn json_seconds(value: &serde_json::Value) -> String {
+    value.as_u64().map_or("-".into(), |v| v.to_string())
+}
+
+fn api_probe(timeout: Duration) -> Option<String> {
+    let expr = concat!(
+        "import('/src/api.ts').then(m => Promise.all([",
+        "m.api.appVersion(), m.api.systemInfo(), m.api.loadConfig()",
+        "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
+    );
+    capture_timeout("node", &["scripts/cdp.mjs", expr], timeout)
+}
+
+fn is_app_crash_signal(line: &str) -> bool {
+    line.contains(ANDROID_PACKAGE)
+        && (line.contains("am_crash")
+            || line.contains("am_proc_died")
+            || (line.contains("am_kill")
+                && !line.contains("installPackageLI")
+                && !line.contains("due to install")))
+}
+
+fn read_pids(path: &Path) -> BTreeMap<String, u32> {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return BTreeMap::new();
+    };
+    value
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(k, v)| Some((k.clone(), u32::try_from(v.as_u64()?).ok()?)))
+        .collect()
+}
+
+fn pids_device(path: &Path) -> Option<String> {
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()?
+        .get("device")?
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn pid_alive(pid: u32) -> bool {
+    let pid_text = pid.to_string();
+    if cfg!(windows) {
+        capture_timeout(
+            "tasklist",
+            &["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"],
+            Duration::from_secs(2),
+        )
+        .is_some_and(|out| out.contains(&pid_text))
+    } else {
+        Command::new("kill")
+            .args(["-0", &pid_text])
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+}
+
+fn kill_pid(pid: u32) {
+    let pid_text = pid.to_string();
+    if cfg!(windows) {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid_text])
+            .status();
+    } else {
+        let _ = Command::new("kill").args(["-TERM", &pid_text]).status();
+    }
+}
+
+fn adb_devices() -> Vec<String> {
+    capture_timeout("adb", &["devices"], Duration::from_secs(2))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(serial, state)| format!("{}:{}", serial.trim(), state.trim()))
+        .collect()
+}
+
+fn preflight_node_modules() -> Result<()> {
+    let cli = root()
+        .join("node_modules")
+        .join("@tauri-apps")
+        .join("cli")
+        .join("package.json");
+    if !cli.exists() {
+        bail!(
+            "node_modules missing (looked for {}). Run `bun install` before bootstrap.",
+            cli.display()
+        );
+    }
+    Ok(())
+}
+
+fn reap_tauri_logcat_orphans() {
+    if !cfg!(windows) {
+        return;
+    }
+    let Some(out) = capture_timeout(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'adb.exe' -and $_.CommandLine -match 'logcat .* -s wtranscriber' } | ForEach-Object { $_.ProcessId }",
+        ],
+        Duration::from_secs(3),
+    ) else {
+        return;
+    };
+    for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
+        kill_pid(pid);
+        eprintln!("reaped orphan tauri logcat pid={pid}");
+    }
 }
 
 fn build_env(target: &str) -> Result<Vec<(String, String)>> {
@@ -302,14 +566,51 @@ fn build_env(target: &str) -> Result<Vec<(String, String)>> {
     Ok(e)
 }
 
-fn cmd_build(target: &str) -> Result<()> {
+fn ensure_prebuilts(target: &str) -> Result<()> {
+    let pdir = prebuilt_dir(target)?;
+    if pdir.join("libsherpa-onnx-c-api.so").exists() {
+        return Ok(());
+    }
+    eprintln!("sherpa-onnx prebuilts missing — fetching");
+    cmd_prebuilts(None)
+}
+
+fn prepare(target: &str, with_sign: bool) -> Result<Vec<(String, String)>> {
     ensure_prebuilts(target)?;
-    let _ = sign_patch_inline()?;
+    if with_sign {
+        sign_patch_inline()?;
+    }
     patch_gradle_build_config()?;
     patch_gradle_properties()?;
     copy_llama_jni(target)?;
     patch_manifest()?;
-    let env = build_env(target)?;
+    build_env(target)
+}
+
+fn cmd_doctor(target: &str) -> Result<()> {
+    let abi = abi_for(target)?;
+    let sdk = android_home();
+    let ndk = ndk_home(&sdk);
+    let bin = ndk_bin(&ndk);
+    let sherpa = prebuilt_dir(target)?.join("libsherpa-onnx-c-api.so");
+    for (k, v) in [
+        ("OS", std::env::consts::OS.to_string()),
+        ("ANDROID_HOME", sdk.display().to_string()),
+        ("NDK_HOME", ndk.display().to_string()),
+        ("NDK exists", ndk.exists().to_string()),
+        ("NDK toolchain", bin.display().to_string()),
+        ("target", target.to_string()),
+        ("abi", abi.abi.to_string()),
+        ("sherpa prebuilt", sherpa.display().to_string()),
+        ("sherpa exists", sherpa.exists().to_string()),
+    ] {
+        println!("{k:<18} {v}");
+    }
+    Ok(())
+}
+
+fn cmd_build(target: &str) -> Result<()> {
+    let env = prepare(target, true)?;
     spawn_with_env(
         "bun",
         &[
@@ -317,19 +618,7 @@ fn cmd_build(target: &str) -> Result<()> {
         ],
         &env,
     )?;
-    let abi = abi_for(target)?;
-    let apk = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("build")
-        .join("outputs")
-        .join("apk")
-        .join("universal")
-        .join("release")
-        .join("app-universal-release-unsigned.apk");
-    let _ = abi;
+    let apk = apk_release_dir().join("app-universal-release-unsigned.apk");
     if apk.exists() {
         let mb = fs::metadata(&apk)?.len() as f64 / 1024.0 / 1024.0;
         println!("\nAPK: {}\nsize: {:.1} MB", apk.display(), mb);
@@ -338,15 +627,9 @@ fn cmd_build(target: &str) -> Result<()> {
 }
 
 fn cmd_install(target: &str, fresh: bool) -> Result<()> {
-    let t0 = std::time::Instant::now();
-    ensure_prebuilts(target)?;
-    let _ = sign_patch_inline()?;
-    patch_gradle_build_config()?;
-    patch_gradle_properties()?;
-    copy_llama_jni(target)?;
-    patch_manifest()?;
-    let mut env = build_env(target)?;
-    env.push(("WT_DEV_APK".to_string(), "1".to_string()));
+    let t0 = Instant::now();
+    let mut env = prepare(target, true)?;
+    env.push(("WT_DEV_APK".into(), "1".into()));
     spawn_with_env(
         "bun",
         &[
@@ -354,31 +637,21 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
         ],
         &env,
     )?;
-    let apk_dir = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("build")
-        .join("outputs")
-        .join("apk")
-        .join("universal")
-        .join("release");
+    let apk_dir = apk_release_dir();
     let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
     if !unsigned.exists() {
         bail!("unsigned APK not found at {}", unsigned.display());
     }
     let signed = apk_dir.join("app-universal-release.apk");
     sign_with_debug_keystore(&unsigned, &signed)?;
-    let signed_str = signed.to_string_lossy().to_string();
     if fresh {
-        println!("\n→ adb uninstall com.asolopovas.wtranscriber (--fresh)");
-        let _ = std::process::Command::new("adb")
-            .args(["uninstall", "com.asolopovas.wtranscriber"])
+        println!("\n→ adb uninstall {ANDROID_PACKAGE} (--fresh)");
+        let _ = Command::new("adb")
+            .args(["uninstall", ANDROID_PACKAGE])
             .status();
     }
     println!("\n→ adb install -r {}", signed.display());
-    sh("adb", &["install", "-r", &signed_str])?;
+    sh("adb", &["install", "-r", &signed.to_string_lossy()])?;
     let mb = fs::metadata(&signed)?.len() as f64 / 1024.0 / 1024.0;
     println!(
         "\n✓ installed {:.1} MB in {:.1}s{}",
@@ -394,11 +667,7 @@ fn cmd_install(target: &str, fresh: bool) -> Result<()> {
 }
 
 fn patch_gradle_properties() -> Result<()> {
-    let path = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("gradle.properties");
+    let path = gen_android().join("gradle.properties");
     if !path.exists() {
         return Ok(());
     }
@@ -421,12 +690,7 @@ fn patch_gradle_properties() -> Result<()> {
 }
 
 fn patch_gradle_build_config() -> Result<()> {
-    let gradle = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("build.gradle.kts");
+    let gradle = gen_android().join("app").join("build.gradle.kts");
     if !gradle.exists() {
         return Ok(());
     }
@@ -472,11 +736,7 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
     if !ks.exists() {
         bail!("debug.keystore not found at {}", ks.display());
     }
-    let sdk = std::env::var("ANDROID_HOME").unwrap_or_else(|_| {
-        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        format!("{local}\\Android\\Sdk")
-    });
-    let bt_dir = Path::new(&sdk).join("build-tools");
+    let bt_dir = android_home().join("build-tools");
     let bt_ver = fs::read_dir(&bt_dir)?
         .flatten()
         .filter_map(|e| e.file_name().into_string().ok())
@@ -484,26 +744,28 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
         .context("no Android build-tools installed")?;
     let bt = bt_dir.join(bt_ver);
     let zipalign = bt.join(exe("zipalign"));
-    let apksigner = if cfg!(target_os = "windows") {
-        bt.join("apksigner.bat")
+    let apksigner = bt.join(if cfg!(windows) {
+        "apksigner.bat"
     } else {
-        bt.join("apksigner")
-    };
+        "apksigner"
+    });
     let aligned = unsigned.with_file_name("app-universal-release-aligned.apk");
-    let aligned_str = aligned.to_string_lossy().to_string();
-    let unsigned_str = unsigned.to_string_lossy().to_string();
-    let signed_str = signed.to_string_lossy().to_string();
-    let ks_str = ks.to_string_lossy().to_string();
     sh(
-        zipalign.to_string_lossy().as_ref(),
-        &["-f", "-p", "4", &unsigned_str, &aligned_str],
+        &zipalign.to_string_lossy(),
+        &[
+            "-f",
+            "-p",
+            "4",
+            &unsigned.to_string_lossy(),
+            &aligned.to_string_lossy(),
+        ],
     )?;
     sh(
-        apksigner.to_string_lossy().as_ref(),
+        &apksigner.to_string_lossy(),
         &[
             "sign",
             "--ks",
-            &ks_str,
+            &ks.to_string_lossy(),
             "--ks-pass",
             "pass:android",
             "--ks-key-alias",
@@ -511,319 +773,12 @@ fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
             "--key-pass",
             "pass:android",
             "--out",
-            &signed_str,
-            &aligned_str,
+            &signed.to_string_lossy(),
+            &aligned.to_string_lossy(),
         ],
     )?;
     let _ = fs::remove_file(&aligned);
     Ok(())
-}
-
-fn spawn_detached(
-    prog: &str,
-    args: &[&str],
-    env: &[(String, String)],
-    stdout_path: &Path,
-    stderr_path: &Path,
-) -> Result<u32> {
-    if let Some(parent) = stdout_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let stdout = File::create(stdout_path)?;
-    let stderr = File::create(stderr_path)?;
-    let mut cmd = Command::new(prog);
-    cmd.args(args)
-        .current_dir(root())
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout))
-        .stderr(Stdio::from(stderr));
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
-    let child = cmd.spawn().with_context(|| format!("spawn {prog}"))?;
-    Ok(child.id())
-}
-
-fn adb_args(device: Option<&str>, args: &[&str]) -> Vec<String> {
-    let mut out = Vec::new();
-    if let Some(d) = device {
-        out.push("-s".into());
-        out.push(d.into());
-    }
-    out.extend(args.iter().map(|s| (*s).to_string()));
-    out
-}
-
-fn adb_status(device: Option<&str>, args: &[&str]) -> Result<()> {
-    let all = adb_args(device, args);
-    let refs = all.iter().map(String::as_str).collect::<Vec<_>>();
-    status_timeout("adb", &refs, Duration::from_secs(5))
-}
-
-fn status_timeout(prog: &str, args: &[&str], timeout: Duration) -> Result<()> {
-    let mut child = Command::new(prog)
-        .args(args)
-        .current_dir(root())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("spawn {prog}"))?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        if child.try_wait()?.is_some() {
-            let out = child.wait_with_output()?;
-            if out.status.success() {
-                return Ok(());
-            }
-            bail!(
-                "{} {:?} failed: {}",
-                prog,
-                args,
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!("{} {:?} timed out after {}s", prog, args, timeout.as_secs());
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-}
-
-fn adb_reverse(device: Option<&str>, port: &str) -> Result<()> {
-    let spec = format!("tcp:{port}");
-    adb_status(device, &["reverse", &spec, &spec])
-}
-
-fn capture_optional_timeout(prog: &str, args: &[&str], timeout: Duration) -> Option<String> {
-    let mut child = Command::new(prog)
-        .args(args)
-        .current_dir(root())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait().ok()? {
-            Some(status) => {
-                let out = child.wait_with_output().ok()?;
-                return status
-                    .success()
-                    .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string());
-            }
-            None => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-        }
-    }
-}
-
-fn port_owner(port: u16) -> Option<u32> {
-    if cfg!(windows) {
-        let pattern = format!(":{port}");
-        let out = capture_optional_timeout("netstat", &["-ano"], Duration::from_secs(2))?;
-        out.lines()
-            .find(|line| line.contains(&pattern) && line.contains("LISTENING"))
-            .and_then(|line| line.split_whitespace().last())
-            .and_then(|pid| pid.parse::<u32>().ok())
-    } else {
-        None
-    }
-}
-
-fn tcp_open(port: u16) -> bool {
-    TcpStream::connect_timeout(
-        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
-        Duration::from_millis(250),
-    )
-    .is_ok()
-}
-
-fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if tcp_open(port) {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-    bail!("vite did not bind :{port} within {}s", timeout.as_secs())
-}
-
-fn wait_for_log_line(
-    paths: &[&Path],
-    label: &str,
-    f: impl Fn(&str) -> bool,
-    timeout: Duration,
-) -> Result<()> {
-    let deadline = Instant::now() + timeout;
-    while Instant::now() < deadline {
-        if paths.iter().any(|p| tail_has(p, &f)) {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(500));
-    }
-    bail!(
-        "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
-        timeout.as_secs()
-    )
-}
-
-fn tail_has(path: &Path, f: impl Fn(&str) -> bool) -> bool {
-    last_line_matching(path, f).is_some()
-}
-
-fn tail_any_has(paths: &[&Path], f: impl Fn(&str) -> bool) -> bool {
-    paths.iter().any(|p| tail_has(p, &f))
-}
-
-fn last_line_matching(path: &Path, f: impl Fn(&str) -> bool) -> Option<String> {
-    let raw = fs::read_to_string(path).ok()?;
-    raw.lines()
-        .rev()
-        .take(500)
-        .find(|line| f(line))
-        .map(str::to_string)
-}
-
-fn file_age_seconds(path: &Path) -> Option<u64> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    Some(modified.elapsed().ok()?.as_secs())
-}
-
-fn json_seconds(value: &serde_json::Value) -> String {
-    value.as_u64().map_or("-".into(), |v| v.to_string())
-}
-
-fn api_probe(timeout: Duration) -> Option<String> {
-    let expr = concat!(
-        "import('/src/api.ts').then(m => Promise.all([",
-        "m.api.appVersion(), m.api.systemInfo(), m.api.loadConfig()",
-        "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
-    );
-    capture_optional_timeout("node", &["scripts/cdp.mjs", expr], timeout)
-}
-
-fn is_app_crash_signal(line: &str) -> bool {
-    line.contains(ANDROID_PACKAGE)
-        && (line.contains("am_crash")
-            || line.contains("am_proc_died")
-            || (line.contains("am_kill")
-                && !line.contains("installPackageLI")
-                && !line.contains("due to install")))
-}
-
-fn read_pids(path: &Path) -> BTreeMap<String, u32> {
-    let raw = match fs::read_to_string(path) {
-        Ok(raw) => raw,
-        Err(_) => return BTreeMap::new(),
-    };
-    let value: serde_json::Value = match serde_json::from_str(&raw) {
-        Ok(value) => value,
-        Err(_) => return BTreeMap::new(),
-    };
-    let mut out = BTreeMap::new();
-    if let Some(obj) = value.as_object() {
-        for (key, value) in obj {
-            if let Some(pid) = value.as_u64().and_then(|v| u32::try_from(v).ok()) {
-                out.insert(key.clone(), pid);
-            }
-        }
-    }
-    out
-}
-
-fn pids_device(path: &Path) -> Option<String> {
-    let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str::<serde_json::Value>(&raw)
-        .ok()?
-        .get("device")?
-        .as_str()
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-}
-
-fn pid_alive(pid: u32) -> bool {
-    let pid_text = pid.to_string();
-    if cfg!(windows) {
-        let filter = format!("PID eq {pid}");
-        capture_optional_timeout(
-            "tasklist",
-            &["/FI", &filter, "/FO", "CSV", "/NH"],
-            Duration::from_secs(2),
-        )
-        .is_some_and(|out| out.contains(&pid_text))
-    } else {
-        Command::new("kill")
-            .args(["-0", &pid_text])
-            .status()
-            .is_ok_and(|s| s.success())
-    }
-}
-
-fn kill_pid(pid: u32) {
-    let pid_text = pid.to_string();
-    if cfg!(windows) {
-        let _ = Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid_text])
-            .status();
-    } else {
-        let _ = Command::new("kill").args(["-TERM", &pid_text]).status();
-    }
-}
-
-fn adb_devices() -> Vec<String> {
-    let out =
-        capture_optional_timeout("adb", &["devices"], Duration::from_secs(2)).unwrap_or_default();
-    out.lines()
-        .filter_map(|line| line.split_once('\t'))
-        .map(|(serial, state)| format!("{}:{}", serial.trim(), state.trim()))
-        .collect()
-}
-
-fn preflight_node_modules() -> Result<()> {
-    let cli = root()
-        .join("node_modules")
-        .join("@tauri-apps")
-        .join("cli")
-        .join("package.json");
-    if !cli.exists() {
-        bail!(
-            "node_modules missing (looked for {}). Run `bun install` before bootstrap.",
-            cli.display()
-        );
-    }
-    Ok(())
-}
-
-fn reap_tauri_logcat_orphans() {
-    if !cfg!(windows) {
-        return;
-    }
-    let Some(out) = capture_optional_timeout(
-        "powershell",
-        &[
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'adb.exe' -and $_.CommandLine -match 'logcat .* -s wtranscriber' } | ForEach-Object { $_.ProcessId }",
-        ],
-        Duration::from_secs(3),
-    ) else {
-        return;
-    };
-    for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
-        kill_pid(pid);
-        eprintln!("reaped orphan tauri logcat pid={pid}");
-    }
 }
 
 fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
@@ -841,11 +796,11 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
     reap_tauri_logcat_orphans();
     eprintln!("[stage 1/6] preflight (node_modules, device)");
     preflight_node_modules()?;
-    let _target = detect_device_target(device)?;
+    detect_device_target(device)?;
     fs::write(tmp.join("_platform"), "android")?;
 
-    let _ = adb_status(device, &["logcat", "-c"]);
-    let logcat_args = adb_args(
+    let _ = adb_run(device, &["logcat", "-c"], Duration::from_secs(5));
+    let logcat_args: Vec<String> = with_device(
         device,
         &[
             "logcat",
@@ -859,8 +814,11 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
             "am_proc_died:V",
             "am_kill:V",
         ],
-    );
-    let logcat_arg_refs = logcat_args.iter().map(String::as_str).collect::<Vec<_>>();
+    )
+    .into_iter()
+    .map(String::from)
+    .collect();
+    let logcat_arg_refs: Vec<&str> = logcat_args.iter().map(String::as_str).collect();
     eprintln!("[stage 2/6] starting logcat capture");
     let logcat_pid = spawn_detached(
         "adb",
@@ -887,7 +845,7 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
     if let Some(d) = device {
         args.push(d.to_string());
     }
-    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     eprintln!("[stage 3/6] spawning tauri android dev (logs: tmp/android-dev.{{log,err.log}})");
     let dev_pid = spawn_detached(
         "cargo",
@@ -930,17 +888,28 @@ fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
         kill_pid(dev_pid);
         kill_pid(logcat_pid);
         reap_tauri_logcat_orphans();
-        let _ = adb_status(device, &["forward", "--remove", "tcp:9222"]);
-        let _ = adb_status(device, &["reverse", "--remove", "tcp:1420"]);
-        let _ = adb_status(device, &["reverse", "--remove", "tcp:1421"]);
+        let _ = adb_run(
+            device,
+            &["forward", "--remove", "tcp:9222"],
+            Duration::from_secs(3),
+        );
+        let _ = adb_run(
+            device,
+            &["reverse", "--remove", "tcp:1420"],
+            Duration::from_secs(3),
+        );
+        let _ = adb_run(
+            device,
+            &["reverse", "--remove", "tcp:1421"],
+            Duration::from_secs(3),
+        );
         let _ = fs::remove_file(tmp.join("_platform"));
         return Err(err);
     }
-    let port_owner = port_owner(1420);
     let pids = json!({
         "device": device,
         "dev_wrapper": dev_pid,
-        "dev_port_owner": port_owner,
+        "dev_port_owner": port_owner(1420),
         "logcat": logcat_pid
     });
     fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
@@ -964,10 +933,12 @@ fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
         .map(str::to_string)
         .or_else(|| pids_device(&pids_path));
     let devices = adb_devices();
-    let reverse_args = adb_args(device.as_deref(), &["reverse", "--list"]);
-    let reverse_arg_refs = reverse_args.iter().map(String::as_str).collect::<Vec<_>>();
-    let reverse = capture_optional_timeout("adb", &reverse_arg_refs, Duration::from_secs(2))
-        .unwrap_or_default();
+    let reverse = adb_capture(
+        device.as_deref(),
+        &["reverse", "--list"],
+        Duration::from_secs(2),
+    )
+    .unwrap_or_default();
     let mut cdp_forward = tcp_open(9222);
     if !cdp_forward {
         let _ = attach_webview(device.as_deref(), as_json);
@@ -988,6 +959,9 @@ fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
     let vite_alive = tcp_open(1420);
     let api_responsive = api.is_some();
     let session_healthy = vite_alive && reverse1420 && reverse1421 && cdp_forward && api_responsive;
+    let dev_log = tmp.join("android-dev.log");
+    let dev_err = tmp.join("android-dev.err.log");
+    let logcat_log = tmp.join("logcat.log");
     let status = json!({
         "platform": platform.trim(),
         "sessionHealthy": session_healthy,
@@ -1005,53 +979,54 @@ fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
             "cdpForward": cdp_forward,
             "apiResponsive": api_responsive,
             "apiProbe": api,
-            "devLogAgeSeconds": file_age_seconds(&tmp.join("android-dev.log")),
-            "logcatAgeSeconds": file_age_seconds(&tmp.join("logcat.log")),
-            "recentViteConnection": tail_any_has(&[&tmp.join("android-dev.log"), &tmp.join("android-dev.err.log")], |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
-            "lastHmrUpdate": last_line_matching(&tmp.join("android-dev.log"), |s| s.contains("[vite] hmr update")).or_else(|| last_line_matching(&tmp.join("android-dev.err.log"), |s| s.contains("[vite] hmr update"))),
-            "lastCrashSignal": last_line_matching(&tmp.join("logcat.log"), is_app_crash_signal)
+            "devLogAgeSeconds": file_age_seconds(&dev_log),
+            "logcatAgeSeconds": file_age_seconds(&logcat_log),
+            "recentViteConnection": tail_any(&[&dev_log, &dev_err], |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
+            "lastHmrUpdate": last_line_matching(&dev_log, |s| s.contains("[vite] hmr update"))
+                .or_else(|| last_line_matching(&dev_err, |s| s.contains("[vite] hmr update"))),
+            "lastCrashSignal": last_line_matching(&logcat_log, is_app_crash_signal)
         }
     });
     if as_json {
         println!("{}", serde_json::to_string_pretty(&status)?);
-    } else {
-        let android = &status["android"];
-        println!(
-            "platform={} healthy={} pidsFile={} vite=:1420/{} owner={}",
-            status["platform"].as_str().unwrap_or("unknown"),
-            status["sessionHealthy"].as_bool().unwrap_or(false),
-            status["pidsFile"].as_bool().unwrap_or(false),
-            status["viteAlive"].as_bool().unwrap_or(false),
-            status["port1420Owner"]
-                .as_u64()
-                .map_or("-".to_string(), |p| p.to_string())
-        );
-        println!(
-            "adbDevices={} reverse1420={} reverse1421={} cdp={} api={}",
-            android["adbDevices"]
-                .as_array()
-                .map_or(String::new(), |items| items
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .collect::<Vec<_>>()
-                    .join(",")),
-            android["reverse1420"].as_bool().unwrap_or(false),
-            android["reverse1421"].as_bool().unwrap_or(false),
-            android["cdpForward"].as_bool().unwrap_or(false),
-            android["apiResponsive"].as_bool().unwrap_or(false)
-        );
-        println!(
-            "devLogAge={}s logcatAge={}s viteConnectionInTail={}",
-            json_seconds(&android["devLogAgeSeconds"]),
-            json_seconds(&android["logcatAgeSeconds"]),
-            android["recentViteConnection"].as_bool().unwrap_or(false)
-        );
-        if let Some(line) = android["lastHmrUpdate"].as_str() {
-            println!("lastHmr={line}");
-        }
-        if let Some(line) = android["lastCrashSignal"].as_str() {
-            println!("lastCrash={line}");
-        }
+        return Ok(());
+    }
+    let android = &status["android"];
+    println!(
+        "platform={} healthy={} pidsFile={} vite=:1420/{} owner={}",
+        status["platform"].as_str().unwrap_or("unknown"),
+        status["sessionHealthy"].as_bool().unwrap_or(false),
+        status["pidsFile"].as_bool().unwrap_or(false),
+        status["viteAlive"].as_bool().unwrap_or(false),
+        status["port1420Owner"]
+            .as_u64()
+            .map_or("-".to_string(), |p| p.to_string())
+    );
+    println!(
+        "adbDevices={} reverse1420={} reverse1421={} cdp={} api={}",
+        android["adbDevices"]
+            .as_array()
+            .map_or(String::new(), |items| items
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(",")),
+        android["reverse1420"].as_bool().unwrap_or(false),
+        android["reverse1421"].as_bool().unwrap_or(false),
+        android["cdpForward"].as_bool().unwrap_or(false),
+        android["apiResponsive"].as_bool().unwrap_or(false)
+    );
+    println!(
+        "devLogAge={}s logcatAge={}s viteConnectionInTail={}",
+        json_seconds(&android["devLogAgeSeconds"]),
+        json_seconds(&android["logcatAgeSeconds"]),
+        android["recentViteConnection"].as_bool().unwrap_or(false)
+    );
+    if let Some(line) = android["lastHmrUpdate"].as_str() {
+        println!("lastHmr={line}");
+    }
+    if let Some(line) = android["lastCrashSignal"].as_str() {
+        println!("lastCrash={line}");
     }
     Ok(())
 }
@@ -1071,9 +1046,11 @@ fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
     }
     reap_tauri_logcat_orphans();
     if !keep_reverse {
-        let _ = adb_status(device.as_deref(), &["forward", "--remove", "tcp:9222"]);
-        let _ = adb_status(device.as_deref(), &["reverse", "--remove", "tcp:1420"]);
-        let _ = adb_status(device.as_deref(), &["reverse", "--remove", "tcp:1421"]);
+        let d = device.as_deref();
+        let t = Duration::from_secs(3);
+        let _ = adb_run(d, &["forward", "--remove", "tcp:9222"], t);
+        let _ = adb_run(d, &["reverse", "--remove", "tcp:1420"], t);
+        let _ = adb_run(d, &["reverse", "--remove", "tcp:1421"], t);
     }
     let _ = fs::remove_file(tmp.join("_pids.json"));
     let _ = fs::remove_file(tmp.join("_platform"));
@@ -1081,10 +1058,35 @@ fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
+    let socket = adb_capture(
+        device,
+        &[
+            "shell",
+            "cat /proc/net/unix | grep -oE 'webview_devtools_remote_[0-9]+' | head -1",
+        ],
+        Duration::from_secs(10),
+    )
+    .unwrap_or_default();
+    let pid = socket
+        .trim()
+        .strip_prefix("webview_devtools_remote_")
+        .and_then(|s| s.parse::<u32>().ok())
+        .context("no WebView devtools socket; is the app running?")?;
+    let t = Duration::from_secs(3);
+    let _ = adb_run(device, &["forward", "--remove", "tcp:9222"], t);
+    let target = format!("localabstract:webview_devtools_remote_{pid}");
+    adb_run(device, &["forward", "tcp:9222", &target], t)?;
+    if !quiet {
+        println!("forwarded tcp:9222 -> webview_devtools_remote_{pid}");
+    }
+    Ok(())
+}
+
 fn wait_for_attach(device: Option<&str>, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
     loop {
-        match cmd_attach(device) {
+        match attach_webview(device, false) {
             Ok(()) => return Ok(()),
             Err(err) if Instant::now() >= deadline => return Err(err),
             Err(_) => thread::sleep(Duration::from_millis(500)),
@@ -1101,60 +1103,10 @@ fn cmd_smoke(device: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
-    let mut args = Vec::<String>::new();
-    if let Some(d) = device {
-        args.push("-s".into());
-        args.push(d.into());
-    }
-    args.extend([
-        "shell".into(),
-        "cat /proc/net/unix | grep -oE 'webview_devtools_remote_[0-9]+' | head -1".into(),
-    ]);
-    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let socket =
-        capture_optional_timeout("adb", &arg_refs, Duration::from_secs(10)).unwrap_or_default();
-    let pid = socket
-        .trim()
-        .strip_prefix("webview_devtools_remote_")
-        .and_then(|s| s.parse::<u32>().ok())
-        .context("no WebView devtools socket; is the app running?")?;
-    let mut remove = Vec::<String>::new();
-    if let Some(d) = device {
-        remove.push("-s".into());
-        remove.push(d.into());
-    }
-    remove.extend(["forward".into(), "--remove".into(), "tcp:9222".into()]);
-    let remove_refs = remove.iter().map(String::as_str).collect::<Vec<_>>();
-    let _ = status_timeout("adb", &remove_refs, Duration::from_secs(3));
-    let target = format!("localabstract:webview_devtools_remote_{pid}");
-    let mut forward = Vec::<String>::new();
-    if let Some(d) = device {
-        forward.push("-s".into());
-        forward.push(d.into());
-    }
-    forward.extend(["forward".into(), "tcp:9222".into(), target]);
-    let forward_refs = forward.iter().map(String::as_str).collect::<Vec<_>>();
-    status_timeout("adb", &forward_refs, Duration::from_secs(3))?;
-    if !quiet {
-        println!("forwarded tcp:9222 -> webview_devtools_remote_{pid}");
-    }
-    Ok(())
-}
-
-fn cmd_attach(device: Option<&str>) -> Result<()> {
-    attach_webview(device, false)
-}
-
 fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<()> {
     let target = detect_device_target(device)?;
     println!("android dev: detected ABI → target={target}");
-    ensure_prebuilts(&target)?;
-    patch_gradle_build_config()?;
-    patch_gradle_properties()?;
-    copy_llama_jni(&target)?;
-    patch_manifest()?;
-    let mut env = build_env(&target)?;
+    let mut env = prepare(&target, false)?;
     if std::env::var_os("TAURI_DEV_HOST").is_none()
         && let Some(ip) = detect_dev_host(device)
     {
@@ -1182,9 +1134,11 @@ fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<
 }
 
 fn detect_dev_host(device: Option<&str>) -> Option<String> {
-    let args = adb_args(device, &["shell", "ip", "-4", "addr", "show", "wlan0"]);
-    let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let txt = capture_optional_timeout("adb", &refs, Duration::from_secs(3))?;
+    let txt = adb_capture(
+        device,
+        &["shell", "ip", "-4", "addr", "show", "wlan0"],
+        Duration::from_secs(3),
+    )?;
     let device_ip = txt
         .lines()
         .find_map(|l| l.trim().strip_prefix("inet "))
@@ -1195,91 +1149,78 @@ fn detect_dev_host(device: Option<&str>) -> Option<String> {
     let a = octets.next()?;
     let b = octets.next()?;
     let c = octets.next()?;
-    if octets.next().is_none() {
-        return None;
-    }
+    octets.next()?;
     let prefix = format!("{a}.{b}.{c}.");
-    let host_ips = host_ipv4_addresses();
-    host_ips
+    host_ipv4_addresses()
         .into_iter()
         .find(|ip| ip.starts_with(&prefix) && ip != &device_ip)
 }
 
 fn host_ipv4_addresses() -> Vec<String> {
-    if cfg!(target_os = "windows") {
-        let out = std::process::Command::new("powershell")
-            .args([
+    let (prog, args): (&str, &[&str]) = if cfg!(windows) {
+        (
+            "powershell",
+            &[
                 "-NoProfile",
                 "-Command",
                 "Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp,Manual -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress",
-            ])
-            .output()
-            .ok();
-        if let Some(o) = out {
-            return String::from_utf8_lossy(&o.stdout)
+            ],
+        )
+    } else {
+        (
+            "sh",
+            &[
+                "-c",
+                "ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1",
+            ],
+        )
+    };
+    Command::new(prog)
+        .args(args)
+        .output()
+        .ok()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .collect();
-        }
-        return Vec::new();
-    }
-    let out = std::process::Command::new("sh")
-        .args([
-            "-c",
-            "ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1",
-        ])
-        .output()
-        .ok();
-    out.map(|o| {
-        String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    })
-    .unwrap_or_default()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn detect_device_target(device: Option<&str>) -> Result<String> {
-    let txt = capture_optional_timeout("adb", &["devices"], Duration::from_secs(5))
+    let txt = capture_timeout("adb", &["devices"], Duration::from_secs(5))
         .context("adb devices timed out or failed")?;
-    let entries = txt
+    let entries: Vec<(String, String)> = txt
         .lines()
         .filter_map(|l| l.split_once('\t'))
         .map(|(id, state)| (id.trim().to_string(), state.trim().to_string()))
-        .collect::<Vec<_>>();
+        .collect();
     if entries.is_empty() {
         bail!("no adb device — connect device and enable USB debugging");
     }
+    let summary = || {
+        entries
+            .iter()
+            .map(|(id, state)| format!("{id}:{state}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     if let Some(d) = device {
         match entries.iter().find(|(id, _)| id == d) {
             Some((_, state)) if state == "device" => {}
             Some((_, state)) => bail!("adb device {d} is {state}; authorise it or reconnect it"),
-            None => bail!(
-                "adb device {d} not found; connected: {}",
-                entries
-                    .iter()
-                    .map(|(id, state)| format!("{id}:{state}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            None => bail!("adb device {d} not found; connected: {}", summary()),
         }
     }
-    let serials = entries
+    let serials: Vec<&str> = entries
         .iter()
         .filter(|(_, state)| state == "device")
         .map(|(id, _)| id.as_str())
-        .collect::<Vec<_>>();
+        .collect();
     if serials.is_empty() {
-        bail!(
-            "no authorised adb device; connected: {}",
-            entries
-                .iter()
-                .map(|(id, state)| format!("{id}:{state}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        bail!("no authorised adb device; connected: {}", summary());
     }
     if device.is_none() && serials.len() > 1 {
         bail!(
@@ -1287,12 +1228,13 @@ fn detect_device_target(device: Option<&str>) -> Result<String> {
             serials.join(", ")
         );
     }
-    let args = adb_args(device, &["shell", "getprop", "ro.product.cpu.abi"]);
-    let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
-    let abi = capture_optional_timeout("adb", &refs, Duration::from_secs(5))
-        .context("adb shell getprop ro.product.cpu.abi timed out or failed")?;
-    let abi = abi.trim().to_string();
-    Ok(match abi.as_str() {
+    let abi = adb_capture(
+        device,
+        &["shell", "getprop", "ro.product.cpu.abi"],
+        Duration::from_secs(5),
+    )
+    .context("adb shell getprop ro.product.cpu.abi timed out or failed")?;
+    Ok(match abi.trim() {
         "arm64-v8a" => "aarch64".into(),
         "armeabi-v7a" | "armeabi" => "armv7".into(),
         "x86" => "i686".into(),
@@ -1318,12 +1260,11 @@ fn cmd_cli(target: &str, debug: bool) -> Result<()> {
         cargo_args.push("--release");
     }
     spawn_with_env("cargo", &cargo_args, &env)?;
-    let variant = if debug { "debug" } else { "release" };
     let bin = root()
         .join("src-tauri")
         .join("target")
         .join(abi.triple)
-        .join(variant)
+        .join(if debug { "debug" } else { "release" })
         .join("wt");
     if bin.exists() {
         let mb = fs::metadata(&bin)?.len() as f64 / 1024.0 / 1024.0;
@@ -1345,7 +1286,7 @@ fn cmd_cli_push() -> Result<()> {
     }
     sh(
         "adb",
-        &["push", bin.to_string_lossy().as_ref(), "/data/local/tmp/wt"],
+        &["push", &bin.to_string_lossy(), "/data/local/tmp/wt"],
     )?;
     sh("adb", &["shell", "chmod", "755", "/data/local/tmp/wt"])?;
     println!("pushed to /data/local/tmp/wt");
@@ -1353,8 +1294,10 @@ fn cmd_cli_push() -> Result<()> {
 }
 
 fn cmd_cli_run(args: &[String]) -> Result<()> {
-    let joined = args.join(" ");
-    sh("adb", &["shell", &format!("/data/local/tmp/wt {joined}")])
+    sh(
+        "adb",
+        &["shell", &format!("/data/local/tmp/wt {}", args.join(" "))],
+    )
 }
 
 fn cmd_prebuilts(version: Option<String>) -> Result<()> {
@@ -1388,7 +1331,20 @@ fn cmd_prebuilts(version: Option<String>) -> Result<()> {
         || fs::metadata(&archive_path).map(|m| m.len()).unwrap_or(0) < 1_000_000;
     if need_download {
         println!("downloading {url}");
-        download_with_curl(&url, &archive_path)?;
+        let status = Command::new("curl")
+            .args([
+                "-fsSL",
+                "--retry",
+                "3",
+                "-o",
+                &archive_path.to_string_lossy(),
+                &url,
+            ])
+            .status()
+            .context("spawn curl (curl required for prebuilts download)")?;
+        if !status.success() {
+            bail!("curl failed for {url}");
+        }
         let mb = fs::metadata(&archive_path)?.len() as f64 / 1024.0 / 1024.0;
         println!("  {mb:.1} MB");
     }
@@ -1396,10 +1352,7 @@ fn cmd_prebuilts(version: Option<String>) -> Result<()> {
     sh_in(
         &dest,
         "tar",
-        &[
-            "-xjf",
-            archive_path.file_name().unwrap().to_string_lossy().as_ref(),
-        ],
+        &["-xjf", &archive_path.file_name().unwrap().to_string_lossy()],
     )
     .context("tar -xjf failed (need a tar that handles bz2; available on Win10+, macOS, Linux)")?;
     fs::write(dest.join(".gitignore"), "*\n")?;
@@ -1413,24 +1366,6 @@ fn cmd_prebuilts(version: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn download_with_curl(url: &str, dst: &Path) -> Result<()> {
-    let status = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--retry",
-            "3",
-            "-o",
-            dst.to_string_lossy().as_ref(),
-            url,
-        ])
-        .status()
-        .context("spawn curl (curl required for prebuilts download)")?;
-    if !status.success() {
-        bail!("curl failed for {url}");
-    }
-    Ok(())
-}
-
 fn copy_llama_jni(target: &str) -> Result<()> {
     let abi = abi_for(target)?.abi;
     let llama_src = root()
@@ -1438,10 +1373,7 @@ fn copy_llama_jni(target: &str) -> Result<()> {
         .join("jniLibs")
         .join(abi)
         .join("libllama-cli.so");
-    let gen_dir = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
+    let gen_dir = gen_android()
         .join("app")
         .join("src")
         .join("main")
@@ -1456,13 +1388,7 @@ fn copy_llama_jni(target: &str) -> Result<()> {
 
 fn patch_manifest() -> Result<()> {
     apply_android_overlay()?;
-    let main = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("src")
-        .join("main");
+    let main = gen_android().join("app").join("src").join("main");
     let p = main.join("AndroidManifest.xml");
     if !p.exists() {
         return Ok(());
@@ -1503,13 +1429,7 @@ const TRANSCRIPTION_SERVICE_KT: &str = include_str!(
 const STRINGS_XML: &str = include_str!("../../src-tauri/android-overlay/res/values/strings.xml");
 
 fn apply_android_overlay() -> Result<()> {
-    let main = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("src")
-        .join("main");
+    let main = gen_android().join("app").join("src").join("main");
     if !main.exists() {
         return Ok(());
     }
@@ -1539,8 +1459,7 @@ fn apply_android_icons(res: &Path) -> Result<()> {
         if !entry.file_type()?.is_dir() {
             continue;
         }
-        let dir = entry.file_name();
-        let dst_dir = res.join(&dir);
+        let dst_dir = res.join(entry.file_name());
         fs::create_dir_all(&dst_dir)?;
         for file in fs::read_dir(entry.path())? {
             let file = file?;
@@ -1556,9 +1475,7 @@ fn write_if_changed(path: &Path, content: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
-    if let Ok(existing) = fs::read_to_string(path)
-        && existing == content
-    {
+    if fs::read_to_string(path).is_ok_and(|existing| existing == content) {
         return Ok(());
     }
     fs::write(path, content)?;
@@ -1566,8 +1483,8 @@ fn write_if_changed(path: &Path, content: &str) -> Result<()> {
 }
 
 fn copy_if_changed(src: &Path, dst: &Path) -> Result<()> {
-    if let (Ok(src_bytes), Ok(dst_bytes)) = (fs::read(src), fs::read(dst))
-        && src_bytes == dst_bytes
+    if let (Ok(a), Ok(b)) = (fs::read(src), fs::read(dst))
+        && a == b
     {
         return Ok(());
     }
@@ -1575,29 +1492,8 @@ fn copy_if_changed(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-fn spawn_with_env(prog: &str, args: &[&str], env: &[(String, String)]) -> Result<()> {
-    let mut cmd = std::process::Command::new(prog);
-    cmd.args(args).current_dir(root());
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    let status = cmd.status().with_context(|| format!("spawn {prog}"))?;
-    if !status.success() {
-        bail!("{} {:?} exited with {:?}", prog, args, status.code());
-    }
-    Ok(())
-}
-
-/// Idempotent gradle patch — adds `signingConfigs.release` to the generated
-/// `app/build.gradle.kts` so unsigned APKs become signed when
-/// `keystore.properties` is present at the gradle parent directory.
 pub fn sign_patch_inline() -> Result<i32> {
-    let gradle = root()
-        .join("src-tauri")
-        .join("gen")
-        .join("android")
-        .join("app")
-        .join("build.gradle.kts");
+    let gradle = gen_android().join("app").join("build.gradle.kts");
     if !gradle.exists() {
         println!(
             "sign-patch: gen/android not found — run `xtask android prebuilts` + tauri android init first"
@@ -1612,37 +1508,14 @@ pub fn sign_patch_inline() -> Result<i32> {
     }
     let eol = if raw.contains("\r\n") { "\r\n" } else { "\n" };
     let lines: Vec<&str> = raw.split('\n').collect();
-
-    let find_line = |start: usize, predicate: &dyn Fn(&str) -> bool| -> Option<usize> {
-        (start..lines.len()).find(|&i| predicate(lines[i].trim_end_matches('\r')))
+    let find_line = |start: usize, pred: &dyn Fn(&str) -> bool| -> Option<usize> {
+        (start..lines.len()).find(|&i| pred(lines[i].trim_end_matches('\r')))
     };
-    let find_block_end = |start: usize| -> Option<usize> {
-        let mut depth: i32 = 0;
-        let mut seen_open = false;
-        for (i, line) in lines.iter().enumerate().skip(start) {
-            for ch in line.chars() {
-                if ch == '{' {
-                    depth += 1;
-                    seen_open = true;
-                } else if ch == '}' {
-                    depth -= 1;
-                    if seen_open && depth == 0 {
-                        return Some(i);
-                    }
-                }
-            }
-        }
-        None
-    };
-
-    let android_idx = find_line(0, &|l| l.starts_with("android {"));
-    let Some(android_idx) = android_idx else {
+    let Some(android_idx) = find_line(0, &|l| l.starts_with("android {")) else {
         println!("sign-patch: `android {{` block not found — skipping");
         return Ok(0);
     };
-
-    // Insert keystoreProperties block right after `android {` line.
-    let load_props = vec![
+    let load_props: Vec<String> = [
         format!("    {marker}"),
         "    val keystorePropertiesFile = rootProject.file(\"keystore.properties\")".into(),
         "    val keystoreProperties = java.util.Properties()".into(),
@@ -1659,25 +1532,21 @@ pub fn sign_patch_inline() -> Result<i32> {
         "            }".into(),
         "        }".into(),
         "    }".into(),
-    ];
-
+    ]
+    .into();
     let release_idx = find_line(android_idx, &|l| {
-        l.trim().starts_with("getByName(\"release\")") || l.trim().starts_with("release {")
+        let t = l.trim();
+        t.starts_with("getByName(\"release\")") || t.starts_with("release {")
     });
     let mut new_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-
     new_lines.splice((android_idx + 1)..(android_idx + 1), load_props.clone());
-    let shift = load_props.len();
-    let release_idx = release_idx.map(|i| i + shift);
-
-    if let Some(rel_idx) = release_idx
-        && find_block_end(rel_idx).is_some()
+    if let Some(rel_idx) = release_idx.map(|i| i + load_props.len())
+        && !new_lines[rel_idx].contains("signingConfig")
     {
-        let line = new_lines[rel_idx].clone();
-        if !line.contains("signingConfig") {
-            let inject = "            signingConfig = signingConfigs.getByName(\"release\")";
-            new_lines.insert(rel_idx + 1, inject.to_string());
-        }
+        new_lines.insert(
+            rel_idx + 1,
+            "            signingConfig = signingConfigs.getByName(\"release\")".into(),
+        );
     }
     let mut joined = new_lines.join("\n");
     if eol == "\r\n" {

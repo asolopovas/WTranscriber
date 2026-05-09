@@ -7,7 +7,6 @@ use crate::util::{capture, pkg_version, root, set_json_string, sh};
 #[derive(ClapArgs)]
 #[command(about = "Bump version, commit, tag (no push, no build)")]
 pub struct Args {
-    /// patch | minor | major | X.Y.Z
     #[arg(default_value = "patch")]
     pub level: String,
 }
