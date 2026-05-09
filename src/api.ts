@@ -21,6 +21,7 @@ export const api = {
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
   listModels: () => invoke<ModelInfo[]>("list_models"),
   essentialModels: () => invoke<string[]>("essential_models"),
+  startEssentials: () => invoke<void>("start_essentials"),
   modelStatus: (id: string) => invoke<ModelStatus>("model_status", { id }),
   installModel: (id: string) => invoke<void>("install_model", { id }),
   deleteModel: (id: string) => invoke<void>("delete_model", { id }),

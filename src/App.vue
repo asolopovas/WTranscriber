@@ -147,36 +147,16 @@ function addPathsToWorkdir(paths: string[]) {
   const dir = listing.value.path;
   const entries = listing.value.entries;
 
-  const tryAdd = async (p: string): Promise<string> => {
-    let eRaw: unknown;
-    try {
-      return await api.addToWorkdir(p, dir);
-    } catch (e) {
-      eRaw = e;
-    }
-    if (!sys.value?.is_mobile) {
-      throw eRaw instanceof Error ? eRaw : new Error(String(eRaw));
-    }
-    try {
-      const bytes = await readFile(p);
-      if (bytes.byteLength > 200 * 1024 * 1024) {
-        throw new Error("file exceeds 200 MB limit for in-process copy");
-      }
-      await yieldToUI();
-      return await api.saveRecording(dir, basenameOf(p), bytes);
-    } catch (e2) {
-      throw new Error(`${eRaw} / ${e2}`);
-    }
-  };
-
   const audioPaths = paths.filter(hasAudioExt).filter((p) => !entries.some((e) => e.path === p));
   if (audioPaths.length > 200) {
     audioPaths.splice(200);
     error.value = "only the first 200 files were queued";
   }
+  if (audioPaths.length === 0) return;
 
-  for (const p of audioPaths) {
-    entries.push({
+  type Stub = (typeof entries)[number];
+  const stubs: Stub[] = audioPaths.map((p) => {
+    const stub: Stub = {
       name: basenameOf(p),
       path: p,
       is_dir: false,
@@ -188,62 +168,77 @@ function addPathsToWorkdir(paths: string[]) {
       duration_ms: null,
       trim_start_ms: null,
       trim_end_ms: null,
-    });
+    };
+    entries.push(stub);
+    return stub;
+  });
+  selectedPath.value = stubs[stubs.length - 1].path;
+
+  for (const stub of stubs) {
+    void api
+      .probeDuration(stub.path)
+      .then((ms) => {
+        if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
+      })
+      .catch(() => {});
   }
 
-  void (async () => {
-    const copyResults: PromiseSettledResult<string>[] = [];
-    for (let i = 0; i < audioPaths.length; i += 3) {
-      await yieldToUI();
-      const chunk = await Promise.allSettled(
-        audioPaths.slice(i, i + 3).map(async (p) => {
-          const destPath = await tryAdd(p);
-          if (listing.value) {
-            const stub = listing.value.entries.find((e) => e.path === p);
-            if (stub) {
-              stub.name = basenameOf(destPath);
-              stub.path = destPath;
-            }
-          }
-          return destPath;
-        }),
-      );
-      copyResults.push(...chunk);
+  const copyOne = async (stub: Stub): Promise<string> => {
+    const source = stub.path;
+    let eRaw: unknown;
+    try {
+      return await api.addToWorkdir(source, dir);
+    } catch (e) {
+      eRaw = e;
     }
-
-    let lastDest: string | null = null;
-    const addedPaths = new Set<string>();
-    for (let i = 0; i < copyResults.length; i++) {
-      const r = copyResults[i];
-      if (r.status === "fulfilled" && r.value != null) {
-        lastDest = r.value;
-        addedPaths.add(r.value);
-      } else if (r.status === "rejected") {
-        error.value = String(r.reason);
-        if (listing.value) {
-          const idx = listing.value.entries.findIndex((e) => e.path === audioPaths[i]);
-          if (idx !== -1) listing.value.entries.splice(idx, 1);
-        }
+    if (!sys.value?.is_mobile) {
+      throw eRaw instanceof Error ? eRaw : new Error(String(eRaw));
+    }
+    try {
+      const bytes = await readFile(source);
+      if (bytes.byteLength > 200 * 1024 * 1024) {
+        throw new Error("file exceeds 200 MB limit for in-process copy");
       }
+      await yieldToUI();
+      return await api.saveRecording(dir, basenameOf(source), bytes);
+    } catch (e2) {
+      throw new Error(`${eRaw} / ${e2}`);
     }
+  };
 
-    await refreshListing();
-    if (lastDest !== null) selectedPath.value = lastDest;
-
-    if (!listing.value) return;
-    const toProbe = listing.value.entries.filter(
-      (e) => e.is_audio && e.duration_ms === null && addedPaths.has(e.path),
-    );
-    for (let i = 0; i < toProbe.length; i += 10) {
+  void (async () => {
+    let lastDest: string | null = null;
+    for (let i = 0; i < stubs.length; i += 3) {
+      const batch = stubs.slice(i, i + 3);
       await yieldToUI();
       await Promise.allSettled(
-        toProbe.slice(i, i + 10).map((e) =>
-          api.probeDuration(e.path).then((ms) => {
-            e.duration_ms = ms ?? null;
-          }),
-        ),
+        batch.map(async (stub) => {
+          const source = stub.path;
+          try {
+            const destPath = await copyOne(stub);
+            stub.name = basenameOf(destPath);
+            stub.path = destPath;
+            lastDest = destPath;
+            if (stub.duration_ms == null) {
+              void api
+                .probeDuration(destPath)
+                .then((ms) => {
+                  if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
+                })
+                .catch(() => {});
+            }
+          } catch (e) {
+            error.value = String(e);
+            const idx = entries.findIndex((en) => en.path === source);
+            if (idx !== -1) entries.splice(idx, 1);
+          }
+        }),
       );
     }
+    if (lastDest !== null && selectedPath.value === stubs[stubs.length - 1].path) {
+      selectedPath.value = lastDest;
+    }
+    await refreshListing();
   })();
 }
 
@@ -280,18 +275,6 @@ async function loadCached(key: string) {
 const unlisten: (() => void)[] = [];
 
 onMounted(async () => {
-  version.value = await api.appVersion();
-  sys.value = await api.systemInfo();
-  await reload();
-  if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
-    config.value.device = "cpu";
-  }
-  if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
-    config.value.diarizer = "auto";
-  }
-  if (config.value && (config.value.diarizer as string) === "sherpa") {
-    config.value.diarizer = "eres2net";
-  }
   try {
     essentialIds.value = await api.essentialModels();
   } catch {
@@ -347,6 +330,25 @@ onMounted(async () => {
   }
   document.addEventListener("keydown", onKeyDown);
   unlisten.push(() => document.removeEventListener("keydown", onKeyDown));
+
+  version.value = await api.appVersion();
+  sys.value = await api.systemInfo();
+  await reload();
+  if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
+    config.value.device = "cpu";
+  }
+  if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
+    config.value.diarizer = "auto";
+  }
+  if (config.value && (config.value.diarizer as string) === "sherpa") {
+    config.value.diarizer = "eres2net";
+  }
+
+  try {
+    await api.startEssentials();
+  } catch (e) {
+    error.value = `essentials start failed: ${String(e)}`;
+  }
 });
 
 onUnmounted(() => {

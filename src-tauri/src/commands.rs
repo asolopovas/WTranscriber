@@ -128,6 +128,11 @@ pub fn essential_models() -> Vec<String> {
 }
 
 #[tauri::command]
+pub fn start_essentials(app: AppHandle) {
+    crate::auto_install_essentials(app);
+}
+
+#[tauri::command]
 pub fn model_status(id: String) -> Result<ModelStatus> {
     models::manager().status(&id)
 }
@@ -173,8 +178,11 @@ pub fn delete_model(id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn probe_audio(path: PathBuf) -> Option<u64> {
-    audio::probe_duration_ms(&path)
+pub async fn probe_audio(path: PathBuf) -> Option<u64> {
+    tokio::task::spawn_blocking(move || audio::probe_duration_ms(&path))
+        .await
+        .ok()
+        .flatten()
 }
 
 #[tauri::command]
@@ -763,16 +771,22 @@ pub fn default_dir() -> PathBuf {
 }
 
 #[tauri::command]
-pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
+pub async fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
+    tokio::task::spawn_blocking(move || add_to_workdir_blocking(&source, &workdir))
+        .await
+        .map_err(|e| Error::Config(format!("task: {e}")))?
+}
+
+fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
     if !source.is_file() {
         return Err(Error::Config(format!("not a file: {}", source.display())));
     }
-    std::fs::create_dir_all(&workdir)?;
+    std::fs::create_dir_all(workdir)?;
     let file_name = source
         .file_name()
         .ok_or_else(|| Error::Config("source has no file name".into()))?;
     let mut dst = workdir.join(file_name);
-    if let Ok(src_canon) = std::fs::canonicalize(&source)
+    if let Ok(src_canon) = std::fs::canonicalize(source)
         && let Ok(dst_canon) = std::fs::canonicalize(&dst)
         && src_canon == dst_canon
     {
@@ -804,7 +818,7 @@ pub fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf> {
             "too many copies of {file_name:?} in workdir"
         )));
     }
-    std::fs::copy(&source, &dst)?;
+    std::fs::copy(source, &dst)?;
     logfile::info(&format!(
         "add_to_workdir {} -> {}",
         source.display(),

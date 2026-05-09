@@ -482,7 +482,13 @@ fn maybe_backup_after_install() {
     }
 }
 
-fn auto_install_essentials(app: tauri::AppHandle) {
+static ESSENTIALS_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn auto_install_essentials(app: tauri::AppHandle) {
+    if ESSENTIALS_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     tauri::async_runtime::spawn(async move {
         ensure_runtimes(&app).await;
         let manager = models::manager();
@@ -547,7 +553,9 @@ pub fn run() {
     ));
 
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(|_app| {
+            #[cfg(target_os = "android")]
+            let app = _app;
             #[cfg(target_os = "android")]
             {
                 let data_dir =
@@ -597,7 +605,6 @@ pub fn run() {
                     workdir.display()
                 ));
             }
-            auto_install_essentials(app.handle().clone());
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
@@ -611,6 +618,7 @@ pub fn run() {
             commands::save_config,
             commands::list_models,
             commands::essential_models,
+            commands::start_essentials,
             commands::model_status,
             commands::install_model,
             commands::delete_model,
