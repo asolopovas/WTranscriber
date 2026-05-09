@@ -69,7 +69,7 @@ build-cpu:
     bun run tauri build -- --no-default-features --features sherpa-static
 
 build-cli:
-    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wtr
+    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
 
 # android
 android-targets:
@@ -131,7 +131,7 @@ android-debug-eval expr:
 
 # headless cli
 cli *args:
-    cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wtr -- {{args}}
+    cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
 
 # frontend
 preview:

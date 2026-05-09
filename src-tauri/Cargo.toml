@@ -24,8 +24,8 @@ name = "wtranscriber"
 path = "src/main.rs"
 
 [[bin]]
-name = "wtr"
-path = "src/bin/wtr.rs"
+name = "wt"
+path = "src/bin/wt.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
