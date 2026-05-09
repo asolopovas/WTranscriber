@@ -21,6 +21,7 @@ pub fn silence(cmd: &mut Command) {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::missing_const_for_fn)]
 pub fn silence(_cmd: &mut Command) {}
 
 pub fn find_executable<F>(env_dir: &str, name: &str, extra: F) -> Result<PathBuf>

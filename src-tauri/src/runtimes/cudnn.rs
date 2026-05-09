@@ -198,6 +198,7 @@ fn persist_user_path(bin: &std::path::Path) -> Result<bool> {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::missing_const_for_fn, clippy::unnecessary_wraps)]
 fn persist_user_path(_bin: &std::path::Path) -> Result<bool> {
     Ok(false)
 }

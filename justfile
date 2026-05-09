@@ -30,6 +30,14 @@ setup:
     bun install
     @just install-hooks
 
+[unix]
+bootstrap:
+    bash scripts/bootstrap-linux.sh
+
+[windows]
+bootstrap:
+    @echo "windows bootstrap: run 'bun install' and the install-*.ps1 scripts under scripts/"
+
 install-hooks:
     git config core.hooksPath .githooks
     @echo "git hooks path -> .githooks"

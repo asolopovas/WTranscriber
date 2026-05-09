@@ -39,6 +39,7 @@ pub fn find_ffprobe() -> Option<PathBuf> {
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::missing_const_for_fn)]
 fn find_ffmpeg_windows() -> Option<PathBuf> {
     None
 }
