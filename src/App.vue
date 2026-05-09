@@ -109,10 +109,38 @@ async function reload() {
   }
 }
 
+function probeMissingDurations() {
+  if (!listing.value) return;
+  for (const entry of listing.value.entries) {
+    if (!entry.is_audio || entry.duration_ms != null) continue;
+    const target = entry;
+    void api
+      .probeDuration(target.path)
+      .then((ms) => {
+        if (ms != null && target.duration_ms == null) target.duration_ms = ms;
+      })
+      .catch(() => {});
+  }
+}
+
+function mergePrevDurations(prev: DirEntry[], next: DirEntry[]) {
+  const byPath = new Map(prev.map((e) => [e.path, e.duration_ms]));
+  for (const e of next) {
+    if (e.duration_ms == null) {
+      const seen = byPath.get(e.path);
+      if (seen != null) e.duration_ms = seen;
+    }
+  }
+}
+
 async function refreshListing() {
   if (!listing.value) return;
+  const prev = listing.value.entries;
   try {
-    listing.value = await api.listDirectory(listing.value.path);
+    const next = await api.listDirectory(listing.value.path);
+    mergePrevDurations(prev, next.entries);
+    listing.value = next;
+    probeMissingDurations();
   } catch (e) {
     error.value = String(e);
   }
@@ -125,6 +153,7 @@ async function openDir(path: string) {
     if (config.value && config.value.last_dir !== listing.value.path) {
       config.value.last_dir = listing.value.path;
     }
+    probeMissingDurations();
   } catch (e) {
     error.value = String(e);
   }

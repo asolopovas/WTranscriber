@@ -50,8 +50,19 @@ const selectionActive = computed(() => props.selectedPaths.size > 0);
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
   openMenuPath.value = openMenuPath.value === path ? null : path;
+  if (openMenuPath.value) infoPath.value = null;
 }
-defineExpose({ closeMenus: () => (openMenuPath.value = null) });
+const infoPath = ref<string | null>(null);
+function toggleInfo(path: string) {
+  infoPath.value = infoPath.value === path ? null : path;
+  if (infoPath.value) openMenuPath.value = null;
+}
+defineExpose({
+  closeMenus: () => {
+    openMenuPath.value = null;
+    infoPath.value = null;
+  },
+});
 </script>
 
 <template>
@@ -95,7 +106,8 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
             </span>
           </div>
           <div
-            class="flex items-center gap-xs font-mono text-labelSmall text-on-surface-variant leading-tight"
+            class="items-center gap-xs font-mono text-labelSmall text-on-surface-variant leading-tight hidden md:flex"
+            :class="infoPath === entry.path ? '!flex' : ''"
           >
             <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
             <span class="text-outline-variant">·</span>
@@ -116,6 +128,17 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
         </div>
         <div class="flex items-center gap-unit shrink-0" @click.stop>
           <Button
+            class="md:hidden"
+            variant="ghost"
+            shape="icon"
+            size="sm"
+            icon="info"
+            :icon-size="18"
+            :title="infoPath === entry.path ? 'Hide info' : 'Show info'"
+            :aria-pressed="infoPath === entry.path"
+            @click="toggleInfo(entry.path)"
+          />
+          <Button
             v-if="busy[entry.path]"
             variant="ghost-error"
             shape="icon"
@@ -135,6 +158,46 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
           >
             <TranscribeIcon :size="18" />
           </Button>
+          <Button
+            class="hidden md:inline-flex"
+            variant="ghost"
+            shape="icon"
+            size="sm"
+            icon="content_cut"
+            :icon-size="18"
+            :class="entry.trim_start_ms || entry.trim_end_ms ? 'text-primary' : ''"
+            :title="
+              entry.trim_start_ms || entry.trim_end_ms
+                ? `Trim: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
+                    entry.trim_end_ms ?? entry.duration_ms ?? 0,
+                  )}`
+                : 'Trim — select range to transcribe'
+            "
+            @click="emit('trim', entry)"
+          />
+          <Button
+            class="hidden md:inline-flex"
+            variant="ghost"
+            shape="icon"
+            size="sm"
+            :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
+            :disabled="autoRenamingPath === entry.path"
+            @click="emit('auto-rename', entry)"
+          >
+            <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
+            <Icon v-else name="auto_awesome" :size="18" />
+          </Button>
+          <Button
+            class="hidden md:inline-flex"
+            variant="ghost"
+            shape="icon"
+            size="sm"
+            icon="download"
+            :icon-size="18"
+            title="Export transcript"
+            :disabled="!entry.cache_key"
+            @click="emit('export', entry)"
+          />
           <div class="relative">
             <Button
               variant="ghost"
@@ -150,6 +213,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               class="absolute right-0 top-full mt-unit z-30 min-w-45 bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
             >
               <MenuItem
+                class="md:hidden"
                 icon="content_cut"
                 @click="
                   openMenuPath = null;
@@ -159,6 +223,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
                 Cut / select range
               </MenuItem>
               <MenuItem
+                class="md:hidden"
                 :disabled="autoRenamingPath === entry.path"
                 @click="
                   openMenuPath = null;
@@ -172,15 +237,7 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
                 {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
               </MenuItem>
               <MenuItem
-                icon="drive_file_rename_outline"
-                @click="
-                  openMenuPath = null;
-                  emit('rename', entry);
-                "
-              >
-                Rename
-              </MenuItem>
-              <MenuItem
+                class="md:hidden"
                 icon="download"
                 :disabled="!entry.cache_key"
                 @click="
@@ -190,7 +247,16 @@ defineExpose({ closeMenus: () => (openMenuPath.value = null) });
               >
                 Export
               </MenuItem>
-              <div class="my-unit border-t border-outline-variant/40"></div>
+              <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
+              <MenuItem
+                icon="drive_file_rename_outline"
+                @click="
+                  openMenuPath = null;
+                  emit('rename', entry);
+                "
+              >
+                Rename
+              </MenuItem>
               <MenuItem
                 icon="delete"
                 tone="danger"

@@ -19,7 +19,6 @@ import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
 import DefRow from "@components/ui/DefRow.vue";
 import Button from "@components/ui/Button.vue";
-import SaveIndicator from "@components/ui/SaveIndicator.vue";
 
 const config = ref<Config | null>(null);
 const sys = ref<SystemInfo | null>(null);
@@ -28,7 +27,7 @@ const maintenanceStatus = ref<string | null>(null);
 const modelProgress = ref<Record<string, FileProgress>>({});
 const unlisten: (() => void)[] = [];
 
-const { state: saveState, error } = useDebouncedSave(config, (next) => api.saveConfig(next));
+const { error } = useDebouncedSave(config, (next) => api.saveConfig(next));
 
 const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 const persistentEnabled = ref(false);
@@ -192,7 +191,6 @@ async function resetAudioCache() {
             Runtime, local models, and storage maintenance.
           </p>
         </div>
-        <SaveIndicator :state="saveState" />
       </div>
 
       <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
