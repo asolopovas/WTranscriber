@@ -1,36 +1,41 @@
 #!/usr/bin/env bash
+# Pre-commit gate optimised for fast LLM iteration:
+#   - Auto-formats touched files and re-stages them (formatting is never a gate).
+#   - Type-checks the TS/Vue project (real correctness, fast, clear errors).
+#   - Skips heavy steps (clippy, cargo check, full test) — those belong in CI / `just check`.
+# All output uses `→` prefix lines so an agent can parse step boundaries.
 set -e
 cd "$(git rev-parse --show-toplevel)"
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
-if [ -z "$staged" ]; then
-  exit 0
-fi
+[ -z "$staged" ] && exit 0
 
 rust_files=$(echo "$staged" | grep -E '^src-tauri/.*\.rs$' || true)
-cargo_toml_changed=$(echo "$staged" | grep -E '^src-tauri/Cargo\.(toml|lock)$' || true)
 ts_vue_files=$(echo "$staged" | grep -E '^src/.*\.(ts|vue)$' || true)
-prettier_other=$(echo "$staged" | grep -E '\.(json|html|md)$' || true)
+prettier_other=$(echo "$staged" | grep -E '\.(json|jsonc|html|md|css|scss|yml|yaml)$' || true)
 
 ran_any=0
 
-if [ -n "$rust_files" ] || [ -n "$cargo_toml_changed" ]; then
-  echo "→ rust changed: cargo fmt --check + clippy"
-  cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-  cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
+if [ -n "$rust_files" ]; then
+  echo "→ rust: cargo fmt (auto-fix, touched files)"
+  echo "$rust_files" | xargs cargo fmt --manifest-path src-tauri/Cargo.toml --
+  echo "$rust_files" | xargs git add
   ran_any=1
 fi
 
 if [ -n "$ts_vue_files" ]; then
-  echo "→ ts/vue changed: prettier + vue-tsc"
-  echo "$ts_vue_files" | xargs bun x prettier --check
+  echo "→ ts/vue: prettier --write (auto-fix, touched files)"
+  echo "$ts_vue_files" | xargs bun x prettier --write --log-level warn
+  echo "$ts_vue_files" | xargs git add
+  echo "→ ts/vue: typecheck (gate)"
   bun run typecheck
   ran_any=1
 fi
 
-if [ -n "$prettier_other" ] && [ -z "$ts_vue_files" ]; then
-  echo "→ docs changed: prettier"
-  echo "$prettier_other" | xargs bun x prettier --check
+if [ -n "$prettier_other" ]; then
+  echo "→ docs/config: prettier --write (auto-fix, touched files)"
+  echo "$prettier_other" | xargs bun x prettier --write --log-level warn
+  echo "$prettier_other" | xargs git add
   ran_any=1
 fi
 
