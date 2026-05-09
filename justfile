@@ -1,4 +1,4 @@
-set windows-shell := ["pwsh.exe", "-NoLogo", "-NoProfile", "-Command"]
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 set dotenv-load := false
 
 _sep := if os() == 'windows' { ';' } else { ':' }
@@ -36,7 +36,7 @@ bootstrap:
 
 [windows]
 bootstrap:
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
 
 install-hooks:
     git config core.hooksPath .githooks
