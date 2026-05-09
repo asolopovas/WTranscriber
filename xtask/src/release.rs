@@ -25,6 +25,8 @@ pub struct Args {
     #[arg(long)]
     pub no_wsl: bool,
     #[arg(long)]
+    pub no_windows_vm: bool,
+    #[arg(long)]
     pub skip_rebuild: bool,
     #[arg(long)]
     pub sequential: bool,
@@ -75,7 +77,7 @@ pub fn run(args: Args) -> Result<()> {
         let skip = args.skip_rebuild;
         tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
     }
-    if !is_windows() {
+    if !is_windows() && !args.no_windows_vm {
         let l = lock.clone();
         let skip = args.skip_rebuild;
         let dev = args.dev;
@@ -142,6 +144,7 @@ pub fn run(args: Args) -> Result<()> {
     }
 
     if !is_windows()
+        && !args.no_windows_vm
         && let Some(&rc) = results.get("win")
     {
         if rc == -1 {

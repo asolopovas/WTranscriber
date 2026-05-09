@@ -274,7 +274,7 @@ pub fn sign_patch_inline() -> Result<i32> {
     let load_props: Vec<String> = [
         format!("    {marker}"),
         "    val keystorePropertiesFile = rootProject.file(\"keystore.properties\")".into(),
-        "    val keystoreProperties = java.util.Properties()".into(),
+        "    val keystoreProperties = Properties()".into(),
         "    if (keystorePropertiesFile.exists()) {".into(),
         "        keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }".into(),
         "    }".into(),
