@@ -10,7 +10,7 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { fmtMsLong, MB } from "@composables/format";
+import { fmtClock, fmtMsLong, MB } from "@composables/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
 import { usePanelResize } from "@composables/usePanelResize";
@@ -365,6 +365,21 @@ const headerAriaLabel = computed(() => {
               </span>
             </template>
             <template v-else>{{ status === "idle" && transcript ? "ready" : status }}</template>
+          </span>
+        </div>
+        <div
+          v-if="
+            selectedEntry &&
+            progress &&
+            progress.path === selectedEntry.path &&
+            progress.phase !== 'done'
+          "
+          class="flex justify-between items-center"
+        >
+          <span class="text-on-surface-variant">Elapsed · ETA</span>
+          <span class="text-on-surface">
+            {{ fmtClock(progress.elapsedSec) }} ·
+            <span class="text-secondary">{{ fmtClock(progress.etaSec) }}</span>
           </span>
         </div>
         <div class="flex justify-between items-center">
