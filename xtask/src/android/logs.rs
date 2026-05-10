@@ -271,7 +271,7 @@ pub(super) fn api_probe(timeout: Duration) -> Option<String> {
         "m.api.appVersion(), m.api.systemInfo(), m.api.loadConfig()",
         "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
     );
-    capture_timeout("node", &["scripts/cdp.mjs", expr], timeout)
+    capture_timeout("bun", &["scripts/cdp.ts", expr], timeout)
 }
 
 pub(super) fn is_app_crash_signal(line: &str) -> bool {

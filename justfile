@@ -116,11 +116,11 @@ build-all:
 # Bootstrap Android USB/emu HMR session (idempotent; no-ops if healthy).
 [group('android')]
 android device="":
-    {{_run}} --tag android --idle 60 --max 600 -- cargo xtask android bootstrap usb {{device}}
+    {{_run}} --tag android --idle 120 --max 2100 -- cargo xtask android bootstrap usb {{device}}
 
 [group('android')]
 android-host device="":
-    {{_run}} --tag android-host --idle 60 --max 600 -- cargo xtask android bootstrap host {{device}}
+    {{_run}} --tag android-host --idle 120 --max 2100 -- cargo xtask android bootstrap host {{device}}
 
 [group('android')]
 android-stop device="":

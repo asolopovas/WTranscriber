@@ -16,7 +16,7 @@ docs/            android · dev-loop · release · rust-build-speed
 
 ## Task contract
 
-Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0`; `just android` is finite (it bootstraps a detached session and exits). Anything quiet >30 s is a bug.
+Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0`; `just android` is finite (it bootstraps a detached session and exits) but uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
 
 ## Commands
 

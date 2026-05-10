@@ -10,7 +10,7 @@ Every `just` recipe runs through `scripts/run.ts`:
 - Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
 - Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
 
-Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits). Anything quiet >30 s is a bug.
+Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
 
 `just check` runs **9 gates** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all complete. The same recipe runs in CI on every push and PR.
 

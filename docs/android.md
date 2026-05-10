@@ -36,10 +36,13 @@ Pass `target=<aarch64|armv7|x86_64|i686>`; default `aarch64`. Do not run install
 4. Configures `adb reverse tcp:1420` and `tcp:1421`.
 5. Spawns `tauri android dev --no-watch` detached → `tmp/android-dev.{log,err.log}`.
 6. Waits for Vite ready event (`Local:` + `:1420` line in `tmp/android-dev.log`, ≤90 s; fast-fails on child death or signature mismatch).
-7. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤30 s).
-8. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`).
-9. Auto-recovers signature mismatch (uninstall + retry once).
-10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
+7. Waits for cargo+gradle build → APK install/launch (`Info Opening`/`Finished … profile`/`am_proc_start` event, ≤1800 s — covers cold cargo+NDK builds).
+8. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤90 s).
+9. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`) for ≤20 s — non-fatal, since the WebView-connected event already proves the session is live.
+10. Auto-recovers signature mismatch (uninstall + retry once).
+11. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
+
+Outer harness budget: `--idle 120 --max 2100` (cold aarch64-android cargo + first-run gradle commonly takes 10–30 min; warm builds finish in <30 s).
 
 `just android-status-json` reports: `sessionHealthy`, `viteAlive`, `reverse1420`, `reverse1421`, `cdpForward`, `apiResponsive`, log ages, last HMR update, last crash signal.
 

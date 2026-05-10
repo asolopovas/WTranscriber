@@ -122,7 +122,22 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             healthy,
         )?;
         eprintln!(
-            "[stage 5/6] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤30s)"
+            "[stage 5a/6] waiting for cargo+gradle build → APK install/launch (event: \"Info Opening\"/\"Finished\"/am_proc_start in logs, ≤1800s)"
+        );
+        wait_for_log_line_with_guard(
+            &[&dev_log, &dev_err, &logcat_log],
+            "APK install/launch",
+            |s| {
+                s.contains("Info Opening ")
+                    || s.contains("Info Installing")
+                    || (s.contains("Finished ") && s.contains("profile"))
+                    || s.contains("am_proc_start") && s.contains("wtranscriber")
+            },
+            Duration::from_secs(1800),
+            healthy,
+        )?;
+        eprintln!(
+            "[stage 5b/6] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤90s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
@@ -130,13 +145,17 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             |s| {
                 (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")
             },
-            Duration::from_secs(30),
+            Duration::from_secs(90),
             healthy,
         )?;
         eprintln!("[stage 6/6] attaching CDP and probing tauri IPC");
         wait_for_attach(device, Duration::from_secs(10))?;
-        api_probe(Duration::from_secs(10))
-            .context("Tauri IPC API probe failed after CDP attach")?;
+        match api_probe(Duration::from_secs(20)) {
+            Some(_) => {}
+            None => eprintln!(
+                "warning: Tauri IPC probe did not return within 20s; session is up (WebView connected to :1420), continuing"
+            ),
+        }
         Ok(())
     };
     let bring_up_result = bring_up();
