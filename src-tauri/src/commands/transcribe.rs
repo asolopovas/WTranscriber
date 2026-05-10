@@ -42,7 +42,7 @@ struct ProgressEvent {
     phase: Phase,
     display_pct: f64,
     elapsed_sec: f64,
-    eta_sec: f64,
+    total_sec: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -51,6 +51,7 @@ struct OverallInputs {
     audio_dur_sec: f64,
     expect_diarize: bool,
     diarize_prior_rtf: f64,
+    diarize_only: bool,
 }
 
 fn compute_overall_static(
@@ -106,6 +107,9 @@ fn compute_overall_static(
         (0.0, 0.0, 0.0)
     };
 
+    if inputs.diarize_only {
+        return (d_pct.clamp(0.0, 99.5), d_remaining.max(0.0));
+    }
     let total_wall = t_total + d_total;
     if total_wall <= 0.0 {
         return (0.0, 0.0);
@@ -115,12 +119,25 @@ fn compute_overall_static(
     (combined_pct.clamp(0.0, 99.5), combined_eta)
 }
 
+fn compute_total_sec(phase: Phase, display_pct: f64, elapsed_sec: f64, eta_sec: f64) -> f64 {
+    if matches!(phase, Phase::Done) {
+        return elapsed_sec;
+    }
+    let implied = if display_pct >= 1.0 {
+        elapsed_sec / (display_pct / 100.0)
+    } else {
+        elapsed_sec + eta_sec
+    };
+    implied.max(elapsed_sec)
+}
+
 struct TranscribeSink {
     app: AppHandle,
     handle: Handle,
     file_path: String,
     audio_dur_sec: f64,
     expect_diarize: bool,
+    diarize_only: bool,
     diarize_prior_rtf: f64,
     diarize_backend: Mutex<String>,
     smoother: Arc<Mutex<Smoother>>,
@@ -140,6 +157,7 @@ impl TranscribeSink {
         audio_dur_sec: f64,
         initial_rtf: f64,
         expect_diarize: bool,
+        diarize_only: bool,
         diarize_backend: String,
         diarize_prior_rtf: f64,
         cancel: Arc<AtomicBool>,
@@ -150,6 +168,7 @@ impl TranscribeSink {
             file_path,
             audio_dur_sec,
             expect_diarize,
+            diarize_only,
             diarize_prior_rtf,
             diarize_backend: Mutex::new(diarize_backend),
             smoother: Arc::new(Mutex::new(Smoother::new(audio_dur_sec, initial_rtf))),
@@ -168,6 +187,7 @@ impl TranscribeSink {
                 audio_dur_sec: self.audio_dur_sec,
                 expect_diarize: self.expect_diarize,
                 diarize_prior_rtf: self.diarize_prior_rtf,
+                diarize_only: self.diarize_only,
             },
             &self.smoother,
             &self.diarize,
@@ -211,6 +231,7 @@ impl TranscribeSink {
             Phase::Transcribing | Phase::Diarizing => self.compute_overall(phase),
             _ => (display_pct, eta_sec),
         };
+        let total_sec = compute_total_sec(phase, display_pct, elapsed_sec, eta_sec);
         let _ = self.app.emit(
             "transcribe:progress",
             &ProgressEvent {
@@ -218,7 +239,7 @@ impl TranscribeSink {
                 phase,
                 display_pct,
                 elapsed_sec,
-                eta_sec,
+                total_sec,
             },
         );
     }
@@ -240,6 +261,7 @@ impl TranscribeSink {
         let cancel = self.ticker_cancel.clone();
         let audio_dur_sec = self.audio_dur_sec;
         let expect_diarize = self.expect_diarize;
+        let diarize_only = self.diarize_only;
         let diarize_prior_rtf = self.diarize_prior_rtf;
         let join = self.handle.spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(500));
@@ -259,11 +281,13 @@ impl TranscribeSink {
                         audio_dur_sec,
                         expect_diarize,
                         diarize_prior_rtf,
+                        diarize_only,
                     },
                     &smoother,
                     &diarize,
                 );
                 let elapsed_sec = smoother.lock().map_or(0.0, |s| s.elapsed().as_secs_f64());
+                let total_sec = compute_total_sec(phase, display_pct, elapsed_sec, eta_sec);
                 let _ = app.emit(
                     "transcribe:progress",
                     &ProgressEvent {
@@ -271,7 +295,7 @@ impl TranscribeSink {
                         phase,
                         display_pct,
                         elapsed_sec,
-                        eta_sec,
+                        total_sec,
                     },
                 );
             }
@@ -414,6 +438,7 @@ pub async fn transcribe_file(
         audio_dur_sec,
         initial_rtf,
         expect_diarize,
+        false,
         diarize_backend_hint,
         diarize_prior_rtf,
         cancel,
@@ -580,6 +605,7 @@ pub async fn redo_diarization(
         input_key.clone(),
         audio_dur_sec,
         initial_rtf,
+        true,
         true,
         diarize_backend_hint,
         diarize_prior_rtf,

@@ -376,10 +376,10 @@ const headerAriaLabel = computed(() => {
           "
           class="flex justify-between items-center"
         >
-          <span class="text-on-surface-variant">Elapsed · ETA</span>
+          <span class="text-on-surface-variant">Elapsed · Total</span>
           <span class="text-on-surface">
             {{ fmtClock(progress.elapsedSec) }} ·
-            <span class="text-secondary">{{ fmtClock(progress.etaSec) }}</span>
+            <span class="text-secondary">{{ fmtClock(progress.totalSec) }}</span>
           </span>
         </div>
         <div class="flex justify-between items-center">

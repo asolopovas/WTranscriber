@@ -322,7 +322,17 @@ impl DiarizeSmoother {
         let predicted = if self.rate_init {
             rate * since_last * DIARIZE_PREDICT_DAMP
         } else {
-            0.0
+            let total_prior = if self.prior_rate > 0.0 {
+                100.0 / self.prior_rate
+            } else {
+                0.0
+            };
+            if total_prior > 0.0 {
+                let elapsed = now.duration_since(self.start).as_secs_f64();
+                (elapsed / total_prior * 100.0).min(95.0)
+            } else {
+                0.0
+            }
         };
         let mut display = self.last_pct + predicted;
         if display > 99.0 {

@@ -47,8 +47,8 @@ const isLiveProgress = computed(
       <span class="text-on-surface-variant shrink-0">{{ phaseLabel(progress.phase) }}</span>
       <span class="text-secondary shrink-0 ml-auto">
         <template v-if="progress.phase === 'transcribing' || progress.phase === 'diarizing'">
-          {{ progress.displayPct.toFixed(0) }}% · {{ fmtClock(progress.elapsedSec) }} / ETA
-          {{ fmtClock(progress.etaSec) }}
+          {{ progress.displayPct.toFixed(0) }}% · {{ fmtClock(progress.elapsedSec) }} /
+          {{ fmtClock(progress.totalSec) }}
         </template>
         <template v-else>{{ fmtClock(progress.elapsedSec) }}</template>
       </span>

@@ -105,12 +105,6 @@ defineExpose({
             <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
             <span class="text-outline-variant">·</span>
             <span>{{ fmtBytes(entry.size_bytes) }}</span>
-            <template v-if="entry.cache_key">
-              <span class="text-outline-variant">·</span>
-              <span class="text-tertiary inline-flex items-center gap-unit">
-                <Icon name="check_circle" :size="12" />transcribed
-              </span>
-            </template>
             <template v-if="entry.trim_start_ms || entry.trim_end_ms">
               <span class="text-outline-variant">·</span>
               <span class="text-primary inline-flex items-center gap-unit">trimmed</span>
@@ -150,6 +144,17 @@ defineExpose({
             <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
             <Icon v-else name="auto_awesome" :size="18" />
           </Button>
+          <Button
+            v-if="entry.cache_key"
+            class="hidden md:inline-flex"
+            variant="ghost"
+            shape="icon"
+            size="sm"
+            icon="visibility"
+            :icon-size="18"
+            title="Transcript ready — view"
+            @click="emit('choose', entry)"
+          />
           <div class="relative">
             <Button
               variant="ghost"

@@ -120,7 +120,7 @@ export interface TranscribeProgress {
   phase: TranscribePhase;
   displayPct: number;
   elapsedSec: number;
-  etaSec: number;
+  totalSec: number;
 }
 
 export interface Transcript {
