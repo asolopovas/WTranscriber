@@ -450,6 +450,7 @@ watch(saveError, (e) => {
 async function runTranscribe(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !config.value || !target.is_audio) return;
+  cancelledPaths.value.delete(target.path);
   if (!selectedModelInstalled.value) {
     error.value = `Model "${selectedAsrModel.value?.display_name ?? config.value.model}" is not installed. Download it in Configuration.`;
     tab.value = "transcribe";
@@ -480,29 +481,15 @@ async function runTranscribe(entry?: DirEntry) {
 
 async function stopTranscribe(entry: DirEntry) {
   cancelledPaths.value.add(entry.path);
-  recordOmit(progressByPath, entry.path);
-  recordOmit(busy, entry.path);
-  if (status.value === "running" && selectedPath.value === entry.path) {
-    status.value = "idle";
-  }
-  if (queueActive.value) {
-    queueActive.value = false;
-    queueTotal.value = 0;
-    queueDone.value = 0;
-  }
-  for (const p of Object.keys(busy.value)) {
-    cancelledPaths.value.add(p);
-    recordOmit(progressByPath, p);
-    recordOmit(busy, p);
-  }
-  try {
-    await api.cancelAllTranscribes();
-  } finally {
-    const paths = Array.from(cancelledPaths.value);
-    setTimeout(() => {
-      for (const p of paths) cancelledPaths.value.delete(p);
-    }, 1500);
-  }
+  for (const p of Object.keys(busy.value)) cancelledPaths.value.add(p);
+  for (const p of Object.keys(progressByPath.value)) cancelledPaths.value.add(p);
+  progressByPath.value = {};
+  busy.value = {};
+  status.value = "idle";
+  queueActive.value = false;
+  queueTotal.value = 0;
+  queueDone.value = 0;
+  await api.cancelAllTranscribes();
 }
 
 async function transcribeAll(targets?: DirEntry[]) {

@@ -15,6 +15,8 @@ use std::{
     time::Duration,
 };
 
+use tokio_util::sync::CancellationToken;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::{runtime::Handle, task::JoinHandle};
@@ -32,20 +34,11 @@ use crate::{
     transcriber::{self, Job, Transcript, cache, rediarize_words},
 };
 
-static TRANSCRIBE_CANCELS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
+static TRANSCRIBE_CANCELS: LazyLock<Mutex<HashMap<String, CancellationToken>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static TRANSCRIBE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
-
-async fn wait_cancelled(cancel: Arc<AtomicBool>) {
-    loop {
-        if cancel.load(Ordering::SeqCst) {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,7 +149,7 @@ struct TranscribeSink {
     diarize: Arc<Mutex<Option<DiarizeSmoother>>>,
     current_phase: Arc<Mutex<Phase>>,
     ticker_cancel: Arc<AtomicBool>,
-    cancel: Arc<AtomicBool>,
+    cancel: CancellationToken,
     ticker_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -172,7 +165,7 @@ impl TranscribeSink {
         diarize_only: bool,
         diarize_backend: String,
         diarize_prior_rtf: f64,
-        cancel: Arc<AtomicBool>,
+        cancel: CancellationToken,
     ) -> Self {
         Self {
             app,
@@ -234,6 +227,9 @@ impl TranscribeSink {
     }
 
     fn emit(&self, phase: Phase, display_pct: f64, eta_sec: f64) {
+        if phase != Phase::Done && self.cancel.is_cancelled() {
+            return;
+        }
         let elapsed_sec = self
             .smoother
             .lock()
@@ -394,7 +390,7 @@ impl Sink for TranscribeSink {
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancel.load(Ordering::SeqCst)
+        self.cancel.is_cancelled()
     }
 
     fn set_diarize_backend(&self, name: &str) {
@@ -411,16 +407,26 @@ pub async fn transcribe_file(
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
     let input_key_early = input.to_string_lossy().into_owned();
-    let cancel_early = Arc::new(AtomicBool::new(false));
-    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-        cancels.insert(input_key_early.clone(), cancel_early.clone());
+    let cancel_early = CancellationToken::new();
+    register_cancel(&input_key_early, cancel_early.clone());
+    let lock_contended = TRANSCRIBE_LOCK.try_lock().is_err();
+    if lock_contended {
+        logfile::info(&format!(
+            "queued: waiting for previous transcription to finish ({})",
+            input.display()
+        ));
     }
     let _guard = TRANSCRIBE_LOCK.lock().await;
-    if cancel_early.load(Ordering::SeqCst) {
-        if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-            cancels.remove(&input_key_early);
-        }
+    if cancel_early.is_cancelled() {
+        logfile::info(&format!("cancelled before start ({})", input.display()));
+        unregister_cancel(&input_key_early);
         return Err(Error::Cancelled);
+    }
+    if lock_contended {
+        logfile::info(&format!(
+            "queue resumed: starting transcribe ({})",
+            input.display()
+        ));
     }
     let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
@@ -464,13 +470,31 @@ pub async fn transcribe_file(
         diarize_prior_rtf,
         cancel,
     ));
-    let job = Job { input, config };
     let cancel_watch = cancel_early.clone();
-    let run_fut = transcriber::run_with_sink(&job, sink.clone());
-    let raced = tokio::select! {
+    let job_label = label.clone();
+    let sink_for_task = sink.clone();
+    let mut run_handle = tokio::spawn(async move {
+        let job = Job { input, config };
+        let res = transcriber::run_with_sink(&job, sink_for_task).await;
+        match &res {
+            Ok(_) => logfile::info(&format!("engine returned naturally ({job_label})")),
+            Err(Error::Cancelled) => {
+                logfile::info(&format!("engine finalised after cancel ({job_label})"));
+            }
+            Err(e) => logfile::info(&format!("engine finalised with error ({job_label}): {e}")),
+        }
+        res
+    });
+    let raced: Result<Transcript> = tokio::select! {
         biased;
-        res = run_fut => res,
-        () = wait_cancelled(cancel_watch) => Err(Error::Cancelled),
+        joined = &mut run_handle => match joined {
+            Ok(inner) => inner,
+            Err(e) => Err(Error::Other(anyhow::anyhow!("join: {e}"))),
+        },
+        () = cancel_watch.cancelled() => {
+            logfile::info("cancel acknowledged; releasing lock and detaching engine task");
+            Err(Error::Cancelled)
+        },
     };
     let result = match raced {
         Ok(t) => {
@@ -508,9 +532,7 @@ pub async fn transcribe_file(
         }
     };
     crate::android_stop_transcription_service();
-    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-        cancels.remove(&input_key);
-    }
+    unregister_cancel(&input_key);
     result
 }
 
@@ -623,10 +645,8 @@ pub async fn redo_diarization(
     let diarize_backend_hint = config.diarizer.as_str().to_string();
     let diarize_prior_rtf = progress::load_diarize_rtf(&diarize_backend_hint);
     let input_key = input.to_string_lossy().into_owned();
-    let cancel = Arc::new(AtomicBool::new(false));
-    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-        cancels.insert(input_key.clone(), cancel.clone());
-    }
+    let cancel = CancellationToken::new();
+    register_cancel(&input_key, cancel.clone());
     let sink = Arc::new(TranscribeSink::new(
         app,
         Handle::current(),
@@ -645,7 +665,7 @@ pub async fn redo_diarization(
     let result = tokio::select! {
         biased;
         res = inner_fut => res,
-        () = wait_cancelled(cancel_watch) => Err(Error::Cancelled),
+        () = cancel_watch.cancelled() => Err(Error::Cancelled),
     };
     let outcome = match result {
         Ok(t) => {
@@ -682,9 +702,7 @@ pub async fn redo_diarization(
         }
     };
     crate::android_stop_transcription_service();
-    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-        cancels.remove(&input_key);
-    }
+    unregister_cancel(&input_key);
     outcome
 }
 
@@ -779,25 +797,45 @@ async fn redo_diarization_inner(
 #[tauri::command]
 pub fn cancel_transcribe(input: PathBuf) -> bool {
     let key = input.to_string_lossy().into_owned();
-    let token = TRANSCRIBE_CANCELS
-        .lock()
-        .ok()
-        .and_then(|cancels| cancels.get(&key).cloned());
-    token.is_some_and(|cancel| {
-        cancel.store(true, Ordering::SeqCst);
-        logfile::info(&format!("cancel_transcribe {}", input.display()));
-        true
-    })
+    cancel_by_key(&key)
 }
 
 #[tauri::command]
 pub fn cancel_all_transcribes() -> usize {
+    cancel_all()
+}
+
+pub(super) fn register_cancel(key: &str, token: CancellationToken) {
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.insert(key.to_string(), token);
+    }
+}
+
+pub(super) fn unregister_cancel(key: &str) {
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.remove(key);
+    }
+}
+
+pub(super) fn cancel_by_key(key: &str) -> bool {
+    let token = TRANSCRIBE_CANCELS
+        .lock()
+        .ok()
+        .and_then(|cancels| cancels.get(key).cloned());
+    token.is_some_and(|t| {
+        t.cancel();
+        logfile::info(&format!("cancel_transcribe {key}"));
+        true
+    })
+}
+
+pub(super) fn cancel_all() -> usize {
     let Ok(cancels) = TRANSCRIBE_CANCELS.lock() else {
         return 0;
     };
     let mut count = 0_usize;
     for (key, token) in cancels.iter() {
-        token.store(true, Ordering::SeqCst);
+        token.cancel();
         logfile::info(&format!("cancel_transcribe {key}"));
         count += 1;
     }
@@ -805,12 +843,228 @@ pub fn cancel_all_transcribes() -> usize {
 }
 
 #[cfg(test)]
+pub(super) fn registered_cancels_len() -> usize {
+    TRANSCRIBE_CANCELS.lock().map(|c| c.len()).unwrap_or(0)
+}
+
+#[cfg(test)]
+pub(super) fn lock() -> &'static tokio::sync::Mutex<()> {
+    &TRANSCRIBE_LOCK
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex as StdMutex, OnceLock};
+    use std::time::Instant;
+
+    fn cancel_test_lock() -> &'static StdMutex<()> {
+        static LOCK: OnceLock<StdMutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| StdMutex::new(()))
+    }
+
+    fn clear_cancels() {
+        if let Ok(mut g) = TRANSCRIBE_CANCELS.lock() {
+            g.clear();
+        }
+    }
+
     #[test]
     fn accepts_catalog_model_with_matching_engine() {
         let cfg = Config::default();
 
         assert!(validate_transcription_model(&cfg).is_ok());
+    }
+
+    #[test]
+    fn cancel_by_key_returns_false_when_not_registered() {
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        assert!(!cancel_by_key("/tmp/missing.wav"));
+    }
+
+    #[test]
+    fn cancel_by_key_cancels_and_returns_true_for_registered_token() {
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        let token = CancellationToken::new();
+        register_cancel("/tmp/job-a", token.clone());
+        assert!(!token.is_cancelled());
+        assert!(cancel_by_key("/tmp/job-a"));
+        assert!(token.is_cancelled());
+        unregister_cancel("/tmp/job-a");
+    }
+
+    #[test]
+    fn cancel_all_cancels_every_token() {
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        let a = CancellationToken::new();
+        let b = CancellationToken::new();
+        let c = CancellationToken::new();
+        register_cancel("/tmp/a", a.clone());
+        register_cancel("/tmp/b", b.clone());
+        register_cancel("/tmp/c", c.clone());
+        assert_eq!(registered_cancels_len(), 3);
+        let n = cancel_all();
+        assert_eq!(n, 3);
+        assert!(a.is_cancelled());
+        assert!(b.is_cancelled());
+        assert!(c.is_cancelled());
+        clear_cancels();
+    }
+
+    #[test]
+    fn unregister_removes_from_map() {
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        register_cancel("/tmp/x", CancellationToken::new());
+        assert_eq!(registered_cancels_len(), 1);
+        unregister_cancel("/tmp/x");
+        assert_eq!(registered_cancels_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn select_race_returns_cancelled_immediately() {
+        // Mirrors the bring_up race in transcribe_file: a long-running future
+        // raced against a CancellationToken; cancelling must return within ~ms.
+        let token = CancellationToken::new();
+        let watch = token.clone();
+        let long_running = async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            42_u32
+        };
+        tokio::pin!(long_running);
+        let cancel_at = Instant::now();
+        tokio::spawn({
+            let t = token.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                t.cancel();
+            }
+        });
+        let cancelled = tokio::select! {
+            biased;
+            v = &mut long_running => Err::<(), u32>(v),
+            () = watch.cancelled() => Ok(()),
+        };
+        assert!(cancelled.is_ok(), "cancel branch must win");
+        assert!(
+            cancel_at.elapsed() < Duration::from_millis(200),
+            "cancel should return within 200ms, took {:?}",
+            cancel_at.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_job_observes_cancel_before_lock_release() {
+        // Simulates two transcribe_file invocations: A holds the lock; B is
+        // waiting. Cancelling B's token before A finishes must let B observe
+        // is_cancelled() the moment it acquires the lock, so it can return
+        // Cancelled without starting work.
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        let lock = lock();
+        let guard_a = lock.lock().await;
+
+        let token_b = CancellationToken::new();
+        register_cancel("/tmp/job-b", token_b.clone());
+        let lock_for_b = lock;
+        let token_b_inside = token_b.clone();
+        let b = tokio::spawn(async move {
+            let _g = lock_for_b.lock().await;
+            // After acquiring the lock, the queued task must see cancel.
+            token_b_inside.is_cancelled()
+        });
+
+        // While B is queued, cancel its token.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(cancel_by_key("/tmp/job-b"));
+        // Release A so B acquires the lock.
+        drop(guard_a);
+
+        let observed_cancel = b.await.unwrap();
+        assert!(
+            observed_cancel,
+            "queued task must observe is_cancelled after lock acquisition"
+        );
+        unregister_cancel("/tmp/job-b");
+    }
+
+    #[tokio::test]
+    async fn cancel_all_wakes_every_registered_select_race() {
+        // Two concurrent select! races against their own tokens.
+        // cancel_all() must wake both within a few ms.
+        let _g = cancel_test_lock().lock().unwrap();
+        clear_cancels();
+        let t1 = CancellationToken::new();
+        let t2 = CancellationToken::new();
+        register_cancel("/tmp/r1", t1.clone());
+        register_cancel("/tmp/r2", t2.clone());
+        let watch1 = t1.clone();
+        let watch2 = t2.clone();
+        let h1 = tokio::spawn(async move {
+            let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
+            tokio::pin!(work);
+            tokio::select! {
+                () = &mut work => false,
+                () = watch1.cancelled() => true,
+            }
+        });
+        let h2 = tokio::spawn(async move {
+            let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
+            tokio::pin!(work);
+            tokio::select! {
+                () = &mut work => false,
+                () = watch2.cancelled() => true,
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        let started = Instant::now();
+        let n = cancel_all();
+        assert_eq!(n, 2);
+        let r1 = tokio::time::timeout(Duration::from_secs(1), h1)
+            .await
+            .unwrap()
+            .unwrap();
+        let r2 = tokio::time::timeout(Duration::from_secs(1), h2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(r1, "task 1 must have been cancelled");
+        assert!(r2, "task 2 must have been cancelled");
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "cancel propagation took too long: {:?}",
+            started.elapsed()
+        );
+        clear_cancels();
+    }
+
+    #[tokio::test]
+    async fn sink_emit_drops_progress_after_cancel() {
+        // The sink must not emit progress events once its token is cancelled
+        // (Phase::Done is the one allowed exception so completion is still
+        // observable). We don't have a real AppHandle here, so this is a unit
+        // test on the cancel gate alone.
+        let token = CancellationToken::new();
+        let dropped = phase_should_drop(Phase::Transcribing, &token);
+        assert!(!dropped, "before cancel, transcribing events must pass");
+        let dropped_done = phase_should_drop(Phase::Done, &token);
+        assert!(!dropped_done, "Done events must pass before cancel");
+        token.cancel();
+        assert!(
+            phase_should_drop(Phase::Transcribing, &token),
+            "after cancel, non-Done events must be dropped"
+        );
+        assert!(
+            !phase_should_drop(Phase::Done, &token),
+            "after cancel, Done events must still pass"
+        );
+    }
+
+    fn phase_should_drop(phase: Phase, token: &CancellationToken) -> bool {
+        // Mirror of TranscribeSink::emit's gate.
+        phase != Phase::Done && token.is_cancelled()
     }
 }

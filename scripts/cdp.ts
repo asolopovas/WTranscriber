@@ -81,6 +81,7 @@ async function evalViaWs(wsUrl: string, expression: string): Promise<unknown> {
 
 const target = await pickPage();
 const result = await evalViaWs(target.webSocketDebuggerUrl!, expr);
-console.log(JSON.stringify(result, null, 2));
+if (result === undefined) console.log("(void)");
+else console.log(JSON.stringify(result, null, 2));
 
 export {};
