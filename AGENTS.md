@@ -6,7 +6,7 @@ Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `
 
 ```
 src/                  Vue 3 frontend (api.ts, types.ts mirrors Rust)
-src-tauri/src/        commands.rs, lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
+src-tauri/src/        commands/ (per-domain modules), lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
 src-tauri/            tauri.conf.json, capabilities/default.json, Cargo.toml, gen/android/
 xtask/src/            build / release / android orchestration
 scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1
@@ -34,7 +34,7 @@ just release-stable      check + bump + tag + build + publish
 - Respect Tauri's process split: Vue/WebView owns presentation; Rust core owns filesystem, model, native, and long-running work; cross the boundary only through commands/events.
 - Use commands for request/response and events for progress streams or fire-and-forget notifications.
 - `src/types.ts` mirrors Rust structs. TS/Vue imports use aliases (`@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`).
-- New Tauri command = `commands.rs` handler + `lib.rs` `invoke_handler![…]` + `api.ts` wrapper + `types.ts` mirror; add or tighten `src-tauri/capabilities/default.json` permissions when the frontend calls a new plugin/API.
+- New Tauri command = handler in the matching `commands/<domain>.rs` + `lib.rs` `invoke_handler![…]` (full path, e.g. `commands::models::install_model`) + `api.ts` wrapper + `types.ts` mirror; add or tighten `src-tauri/capabilities/default.json` permissions when the frontend calls a new plugin/API.
 - Keep capability permissions least-privilege. If IPC fails, inspect console + `RustStdoutStderr` before widening permissions.
 - No comments in code. No `sleep` in scripts; poll a real signal with timeout.
 - Conventional commits, simple British English.
@@ -56,14 +56,14 @@ Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in their notes/artefa
 
 ## Tauri workflow by change type
 
-| Change                              | Touch                                         | Fast verification                                     | Dev-session action                              |
-| ----------------------------------- | --------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------- |
-| Vue / TS / CSS UI                   | `src/**`                                      | `bun run typecheck`; CDP eval for layout/state        | No restart; confirm Vite HMR line on Android    |
-| Rust command / IPC shape            | `commands.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + `bun run typecheck`         | Android needs bootstrap restart                 |
-| Rust long-running/native work       | `src-tauri/src/**`                            | Focused Rust test/check; inspect `RustStdoutStderr`   | Android needs bootstrap restart                 |
-| Tauri config/capability/plugin use  | `tauri.conf.json`, `capabilities/*.json`      | Reproduce the exact invoke/API path; check IPC errors | Restart bootstrap                               |
-| Android scaffold/resources/manifest | `src-tauri/gen/android/**`                    | Device smoke via `wt-runner` when install is needed   | Restart bootstrap; avoid release build mid-HMR  |
-| Release/build orchestration         | `xtask/**`, `justfile`, `scripts/install-*`   | Targeted command, then `just check` before release    | Stop live dev first if it would replace the APK |
+| Change                              | Touch                                                  | Fast verification                                     | Dev-session action                              |
+| ----------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- | ----------------------------------------------- |
+| Vue / TS / CSS UI                   | `src/**`                                               | `bun run typecheck`; CDP eval for layout/state        | No restart; confirm Vite HMR line on Android    |
+| Rust command / IPC shape            | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + `bun run typecheck`         | Android needs bootstrap restart                 |
+| Rust long-running/native work       | `src-tauri/src/**`                                     | Focused Rust test/check; inspect `RustStdoutStderr`   | Android needs bootstrap restart                 |
+| Tauri config/capability/plugin use  | `tauri.conf.json`, `capabilities/*.json`               | Reproduce the exact invoke/API path; check IPC errors | Restart bootstrap                               |
+| Android scaffold/resources/manifest | `src-tauri/gen/android/**`                             | Device smoke via `wt-runner` when install is needed   | Restart bootstrap; avoid release build mid-HMR  |
+| Release/build orchestration         | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check` before release    | Stop live dev first if it would replace the APK |
 
 Prefer live inspection over screenshots: `just android-debug-attach`, then `node scripts/cdp.mjs "<expr>"` for DOM, computed styles, console state, and route checks. Use screenshots only for visual judgement.
 

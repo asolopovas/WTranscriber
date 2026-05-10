@@ -60,7 +60,7 @@ Install: `rustup component add rustc-codegen-cranelift-preview --toolchain night
 If compile times become painful, split `src-tauri/src/`:
 
 - `wtranscriber-core`: `transcriber/`, `models.rs`, `paths.rs` (no Tauri).
-- `wtranscriber-tauri`: `commands.rs`, `lib.rs`.
+- `wtranscriber-tauri`: `commands/`, `lib.rs`.
 - `wt` CLI: depends on core only.
 
 Then `cargo check -p wtranscriber-core` and `cargo run --bin wt` skip the Tauri graph.

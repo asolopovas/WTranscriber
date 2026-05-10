@@ -15,8 +15,7 @@ use self::artifacts::{
 use self::builders::{build_android, build_host, build_wsl};
 use self::windows_vm::{build_windows_vm, fetch_windows_vm_exe};
 use crate::util::{
-    SharedOut, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed,
-    shared_out,
+    SharedOut, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed, shared_out,
 };
 
 type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);

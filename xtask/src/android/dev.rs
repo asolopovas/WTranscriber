@@ -12,8 +12,8 @@ use super::adb::{
 };
 use super::build::{preflight_node_modules, prepare};
 use super::logs::{
-    api_probe, file_age_seconds, is_app_crash_signal, json_seconds, last_line_matching, pids_device,
-    read_pids, tail_any, wait_for_log_line,
+    api_probe, file_age_seconds, is_app_crash_signal, json_seconds, last_line_matching,
+    pids_device, read_pids, tail_any, wait_for_log_line,
 };
 use super::proc::{
     kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,

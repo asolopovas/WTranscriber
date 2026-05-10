@@ -37,7 +37,9 @@ pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Resu
     let sha = git_short_sha()?;
     let push = run_streamed("win", "git", &["push", "origin", "HEAD"], &[], lock)?;
     if push != 0 {
-        eprintln!("[win] git push origin HEAD failed (exit {push}) — VM cannot fetch latest commit");
+        eprintln!(
+            "[win] git push origin HEAD failed (exit {push}) — VM cannot fetch latest commit"
+        );
         return Ok(push);
     }
     let helper_local = root().join("scripts").join("wt-windows-build.bat");

@@ -181,8 +181,7 @@ const MAIN_ACTIVITY_KT: &str = include_str!(
 const TRANSCRIPTION_SERVICE_KT: &str = include_str!(
     "../../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/TranscriptionService.kt"
 );
-const STRINGS_XML: &str =
-    include_str!("../../../src-tauri/android-overlay/res/values/strings.xml");
+const STRINGS_XML: &str = include_str!("../../../src-tauri/android-overlay/res/values/strings.xml");
 
 fn apply_android_overlay() -> Result<()> {
     let main = gen_android().join("app").join("src").join("main");
