@@ -1,6 +1,6 @@
 ---
 name: wt-diagnose
-description: Read-only root-cause analysis of a single failing signal in WTranscriber dev/runtime logs (`tmp/logcat.log`, `tmp/error-monitor.log`, `tmp/android-dev.log`) plus device/system state (`adb`, `netstat`, `tasklist`, `git log -p`). Returns one root cause with up to three pieces of evidence and the smallest next step. Never edits files, runs builds, commits, or installs.
+description: Read-only root-cause analysis of a single failing signal in WTranscriber dev/runtime logs (`tmp/logcat.log`, `tmp/android-dev.log`, the live `just dev` stream) plus device/system state (`adb`, `netstat`, `tasklist`, `git log -p`). Returns one root cause with up to three pieces of evidence and the smallest next step. Never edits files, runs builds, commits, or installs.
 tools: Read, Grep, Glob, Bash
 model: anthropic/claude-opus-latest
 ---
@@ -23,7 +23,7 @@ Raw log dumps and `rg`/`adb` output stay in the notes file — never in the retu
 
 1. Read the named log slice and any sibling status (`tmp/_pids.json`, `tmp/_platform`).
 2. If the symptom is Android: cross-check `tmp/logcat.log` for `am_kill` / `am_proc_died` / `am_crash` near the timestamp; verify `connecting to 127.0.0.1:1420` is recent in `tmp/android-dev.log` (live HMR signal).
-3. If the symptom is desktop: check `tmp/error-monitor.log` for `:1421 failed` (port collision) or stack traces.
+3. If the symptom is desktop: scan the live `just dev` stream (or any captured copy under `tmp/dev*.log`) for `:1421 failed` / `EADDRINUSE` (port collision), Rust panics, or unhandled IPC errors.
 4. Bisect with `git log -p <path>` when the failure mode is recent-regression-shaped.
 5. Confirm with read-only system state: `adb shell dumpsys window`, `netstat -ano`, `tasklist`, `cargo check` (no build), `bunx vue-tsc --noEmit`.
 

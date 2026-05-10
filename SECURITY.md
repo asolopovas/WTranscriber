@@ -10,7 +10,7 @@ Email **andrius.solopovas@gmail.com**. Do not open public issues for security re
 
 Include:
 
-- Affected version (`wtranscriber --version`)
+- Affected version (`wt --version`, or the GUI About dialog)
 - Steps to reproduce
 - Impact assessment
 - Proof-of-concept or logs (redact secrets)

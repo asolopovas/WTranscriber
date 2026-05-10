@@ -6,17 +6,17 @@ Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `
 
 ```
 src/             Vue 3 frontend (api.ts, types.ts mirrors Rust)
-src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler), bin/wt.rs, config/models/paths/error/transcriber/
+src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler!), bin/wt.rs, api.rs, config.rs, paths.rs, error.rs, models/, transcriber/, diarizer/, audio/, runtimes/, llm/, engine/
 src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
-xtask/src/       build / release / android orchestration
-scripts/         run.mjs, parallel.mjs, android-emu.mjs, cdp.mjs, error-monitor.mjs, install-*.ps1
+xtask/src/       bump / publish / release / android orchestration
+scripts/         run.mjs, parallel.mjs, android-emu.mjs, cdp.mjs, lint-vue.mjs, clean-temp.mjs, install-*.ps1
 docs/            android · dev-loop · release · rust-build-speed
 .pi/agents/      diagnose · runner
 ```
 
 ## Task contract
 
-Every `just` recipe runs through `scripts/run.mjs`: line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Interactive recipes (`dev`, `dev-cpu`, `watch`, `android`) use `--idle 0 --max 0`. Anything quiet >30 s is a bug.
+Every `just` recipe runs through `scripts/run.mjs`: line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0`; `just android` is finite (it bootstraps a detached session and exits). Anything quiet >30 s is a bug.
 
 ## Commands
 
@@ -49,13 +49,13 @@ just release-stable    check + bump + tag + build + publish
 
 ## Live dev invariant
 
-- Desktop: Vite owns `http://localhost:1420/`. No `:1421 failed` lines in `tmp/error-monitor.log`.
+- Desktop: Vite owns `http://localhost:1420/`. The live `[dev]` stream from `just dev` is the source of truth; a `:1421 failed` / `EADDRINUSE` line there means HMR is dead.
 - Android: liveness = fresh `connecting to 127.0.0.1:1420` in `tmp/logcat.log` (`RustStdoutStderr`). `location.href` is **not** a signal — Tauri reports `http://tauri.localhost/` even when HMR is stale.
 - While `tmp/_pids.json` exists and Vite owns `:1420`, do **not** run `just android-install`, `just android-build`, `cargo tauri build`, or any release build — each replaces the debug-dev APK and strands HMR.
 
 ## Per-turn during a live dev session
 
-- Diff `tmp/error-monitor.log` (desktop) / `tmp/logcat.log` (Android) line counts. New lines → `wt-diagnose`.
+- Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → `wt-diagnose`.
 - Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just android-stop && just android`.
 - New `am_kill` / `am_proc_died` / `am_crash` for the app → `wt-diagnose`.
 
