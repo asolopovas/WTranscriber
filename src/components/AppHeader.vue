@@ -47,7 +47,7 @@ const activeTabLabel = computed(() => TABS.find((t) => t.id === tab.value)?.labe
         <select
           :value="logRetain"
           @change="logRetain = Number(($event.target as HTMLSelectElement).value)"
-          class="h-10 px-md rounded-full border border-outline-variant text-on-surface-variant text-labelMedium bg-transparent text-center"
+          class="h-10 min-w-[92px] pl-md pr-9 rounded-full border border-outline-variant text-on-surface-variant text-labelMedium bg-transparent text-center"
           title="How many recent runs to display"
         >
           <option :value="1">Latest</option>
