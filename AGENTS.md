@@ -26,8 +26,11 @@ just android           Android USB/emu HMR session (idempotent)
 just android-stop      stop the session
 just android-emu       headless x86_64 emulator (cross-platform)
 just check             parallel pre-release gate
+just release           rolling dev release (host + Android + Windows-VM → gh `dev` prerelease)
 just release-stable    check + bump + tag + build + publish
 ```
+
+`just release` builds host + Android + the Windows NSIS installer (via SSH alias `windows-vm` → `~/os/windows-vm` Tiny11 VM) in parallel, then publishes to the rolling `dev` prerelease. Self-healing on transient Windows failures (auto `docker restart` + 1 retry); persistent rustup corruption needs `make -C ~/os/windows-vm fix-rustup`. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
 `just check` runs **9 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 
@@ -93,7 +96,8 @@ Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in artefact files.
 | Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities |
 | Edit project files            | Main thread (pre-commit hook is the gate)                             |
 | Install + smoke-test          | `wt-runner` (modes: `install`, `test`, `install-and-test`)            |
-| Release                       | `just release-stable` via `wt-runner`                                 |
+| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)    |
+| Stable release                | `just release-stable` via `wt-runner`                                 |
 
 ## Skills
 

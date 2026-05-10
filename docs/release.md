@@ -37,13 +37,29 @@ without the `.exe`.
 
 ### Failsafe
 
-`xtask release` is self-healing: if the initial SSH probe fails, or if
-the Windows build inside the VM exits non-zero, the task runs
-`docker restart windows`, polls SSH for up to 5 min, and retries the
-build **once** before giving up. The build script
-(`scripts/wt-windows-build.bat`) also self-heals corrupt rustup state
-(reinstalls `rust-std-x86_64-pc-windows-msvc` and the toolchain if
-`rustup target add` reports a corrupt manifest).
+`xtask release` is self-healing for transient failures: if the initial
+SSH probe fails, or if the Windows build inside the VM exits non-zero,
+the task runs `docker restart windows`, polls SSH for up to 5 min, and
+retries the build **once** before giving up. The build script
+(`scripts/wt-windows-build.bat`) attempts a softer self-heal first —
+`rustup component remove + self update + target add` — and as a last
+resort `rustup toolchain uninstall + install`. This catches transient
+rustup hiccups but **cannot** repair a persistent on-disk rustup state
+corruption (e.g. a poisoned `~/.rustup/manifests` cache that survives
+uninstall).
+
+When `xtask release` keeps reporting `error: component manifest for
+'rust-std-x86_64-pc-windows-msvc' is corrupt` after the auto-retry,
+run the manual nuke once from inside the VM:
+
+```
+powershell -ExecutionPolicy Bypass -File \\host.lan\Data\fix-rustup.ps1
+```
+
+(See `~/os/windows-vm/shared/fix-rustup.ps1`. It deletes `~/.rustup`
+and `~/.cargo/bin`, reinstalls via `rustup-init.exe`, and re-adds the
+msvc target. Same access pattern as `restart-sshd.ps1`: web viewer
+→ admin shell → run.) Then re-run `just release`.
 
 Full setup and recovery flow: see `~/os/windows-vm/AGENTS.md`.
 
