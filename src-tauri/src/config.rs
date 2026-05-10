@@ -79,7 +79,9 @@ pub enum Device {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiarizerChoice {
-    #[serde(alias = "auto")]
+    #[serde(alias = "auto", alias = "sortformer")]
+    SortformerOnnx,
+    #[serde(alias = "nemo-python")]
     Nemo,
     #[serde(alias = "sherpa", alias = "eres2net")]
     Titanet,
@@ -88,9 +90,12 @@ pub enum DiarizerChoice {
 impl Default for DiarizerChoice {
     fn default() -> Self {
         if cfg!(any(target_os = "android", target_os = "ios")) {
+            // Mobile: pure-ONNX Titanet (~22 MB, CPU-friendly).
             Self::Titanet
         } else {
-            Self::Nemo
+            // Desktop: Sortformer v2.1 ONNX (~492 MB, NeMo-grade quality, no
+            // Python runtime, GPU-accelerated when available).
+            Self::SortformerOnnx
         }
     }
 }
@@ -99,6 +104,7 @@ impl DiarizerChoice {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::SortformerOnnx => "sortformer-v2-onnx-4spk",
             Self::Nemo => "nemo-sortformer-v2",
             Self::Titanet => "sherpa-pyannote-titanet",
         }
@@ -107,7 +113,7 @@ impl DiarizerChoice {
     #[must_use]
     pub const fn embedding_rel(self) -> &'static str {
         match self {
-            Self::Nemo | Self::Titanet => "titanet_large.onnx",
+            Self::SortformerOnnx | Self::Nemo | Self::Titanet => "titanet_large.onnx",
         }
     }
 }
@@ -306,6 +312,10 @@ mod tests {
 
     #[test]
     fn diarizer_choice_maps_to_catalog_ids() {
+        assert_eq!(
+            DiarizerChoice::SortformerOnnx.as_str(),
+            "sortformer-v2-onnx-4spk"
+        );
         assert_eq!(DiarizerChoice::Nemo.as_str(), "nemo-sortformer-v2");
         assert_eq!(DiarizerChoice::Titanet.as_str(), "sherpa-pyannote-titanet");
     }
@@ -356,9 +366,11 @@ mod tests {
     }
 
     #[test]
-    fn diarizer_choice_deserialises_auto_alias_to_nemo() {
+    fn diarizer_choice_deserialises_auto_alias_to_sortformer_onnx() {
         let v: DiarizerChoice = serde_json::from_str("\"auto\"").unwrap();
-        assert!(matches!(v, DiarizerChoice::Nemo));
+        assert!(matches!(v, DiarizerChoice::SortformerOnnx));
+        let v: DiarizerChoice = serde_json::from_str("\"sortformer\"").unwrap();
+        assert!(matches!(v, DiarizerChoice::SortformerOnnx));
     }
 
     #[test]

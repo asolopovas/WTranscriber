@@ -17,7 +17,7 @@ export interface SystemInfo {
 
 export type Engine = "whisper-onnx" | "zipformer" | "parakeet" | "canary" | "nemo-ctc";
 
-export type DiarizerChoice = "nemo" | "titanet";
+export type DiarizerChoice = "sortformer-onnx" | "nemo" | "titanet";
 
 export interface Config {
   model: string;

@@ -85,7 +85,8 @@ async function installSelectedModel() {
 }
 
 const speakerOptions = computed<{ value: number; label: string }[]>(() => {
-  const cap = props.config.diarizer === "nemo" ? 4 : 10;
+  const cap =
+    props.config.diarizer === "nemo" || props.config.diarizer === "sortformer-onnx" ? 4 : 10;
   const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
   for (let i = 1; i <= cap; i++) opts.push({ value: i, label: String(i) });
   return opts;
@@ -277,8 +278,13 @@ const headerAriaLabel = computed(() => {
               :disabled="!config.diarize"
               :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
             >
-              <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
+              <option v-if="!sys?.is_mobile" value="sortformer-onnx">
+                NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)
+              </option>
               <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
+              <option v-if="!sys?.is_mobile" value="nemo">
+                NVIDIA NeMo Sortformer (Python, legacy)
+              </option>
             </select>
           </FormField>
           <FormField label="Speakers">

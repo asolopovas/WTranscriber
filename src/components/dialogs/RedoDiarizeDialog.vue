@@ -12,7 +12,9 @@ const speakers = defineModel<number>("speakers", { required: true });
 
 const emit = defineEmits<{ (e: "commit"): void }>();
 
-const speakerCap = computed(() => (diarizer.value === "nemo" ? 4 : 10));
+const speakerCap = computed(() =>
+  diarizer.value === "nemo" || diarizer.value === "sortformer-onnx" ? 4 : 10,
+);
 const speakerOptions = computed<{ value: number; label: string }[]>(() => {
   const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
   for (let i = 1; i <= speakerCap.value; i++) opts.push({ value: i, label: String(i) });

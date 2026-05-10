@@ -13,7 +13,7 @@ default-run = "wtranscriber"
 [features]
 default = ["cuda"]
 sherpa-static = ["sherpa-onnx/static"]
-cuda = ["sherpa-onnx/shared"]
+cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda"]
 
 [lib]
 name = "wtranscriber_lib"
@@ -57,6 +57,9 @@ vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 base64 = "0.22"
 byteorder = "1.5"
 sherpa-onnx = { version = "1.13", default-features = false }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+parakeet-rs = { version = "0.3", default-features = false, features = ["sortformer", "ort-defaults"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"

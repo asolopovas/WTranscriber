@@ -1,6 +1,8 @@
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod nemo;
 mod sherpa;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod sortformer_onnx;
 
 use std::path::Path;
 
@@ -39,15 +41,35 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let titanet_fallback = || {
+            SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
+                .map(|d| Box::new(d) as Box<dyn Backend>)
+        };
         match choice {
+            DiarizerChoice::SortformerOnnx => {
+                if num_speakers > 4 {
+                    crate::logfile::info(&format!(
+                        "sortformer-onnx supports max 4 speakers; {num_speakers} requested, using titanet"
+                    ));
+                    return titanet_fallback();
+                }
+                match sortformer_onnx::SortformerDiarizer::new() {
+                    Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
+                    Err(e) => {
+                        crate::logfile::warn(&format!(
+                            "diarizer sortformer-onnx failed at init ({e}); falling back to titanet"
+                        ));
+                        titanet_fallback()
+                    }
+                }
+            }
             DiarizerChoice::Nemo => match nemo::NemoDiarizer::new() {
                 Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
                 Err(e) => {
                     crate::logfile::warn(&format!(
                         "diarizer nemo failed at init ({e}); falling back to titanet"
                     ));
-                    SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
-                        .map(|d| Box::new(d) as Box<dyn Backend>)
+                    titanet_fallback()
                 }
             },
             DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())

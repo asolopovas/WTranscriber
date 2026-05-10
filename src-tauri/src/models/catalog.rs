@@ -145,8 +145,11 @@ mod tests {
 
     #[test]
     #[cfg(not(target_os = "android"))]
-    fn default_diarizer_is_nemo_sortformer() {
-        assert_eq!(default_id(Family::Diarizer), Some("nemo-sortformer-v2"));
+    fn default_diarizer_is_sortformer_onnx() {
+        assert_eq!(
+            default_id(Family::Diarizer),
+            Some("sortformer-v2-onnx-4spk")
+        );
     }
 
     #[test]
