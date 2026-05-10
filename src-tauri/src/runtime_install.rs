@@ -22,8 +22,20 @@ pub async fn ensure_runtimes(app: &tauri::AppHandle) {
         return;
     }
     let cfg = config::Config::load().unwrap_or_default();
-    let variant = runtimes::SherpaVariant::from_device(cfg.device);
-    install_sherpa(app, variant).await;
+    let gpu_present = has_nvidia_gpu();
+    let effective_device = effective_device(cfg.device, gpu_present);
+    let variant = runtimes::SherpaVariant::from_device(effective_device);
+
+    // Skip the sherpa-onnx shared-lib download when the binary already statically
+    // links sherpa (CPU). The downloaded `.so` would never be used.
+    let sherpa_static_cpu =
+        cfg!(feature = "sherpa-static") && matches!(variant, runtimes::SherpaVariant::Cpu);
+    if sherpa_static_cpu {
+        logfile::info("runtime sherpa-onnx-cpu skipped (statically linked into binary)");
+    } else {
+        install_sherpa(app, variant).await;
+    }
+
     if matches!(variant, runtimes::SherpaVariant::Cuda) && runtimes::cudnn_supported() {
         install_cudnn(app).await;
     }
@@ -32,8 +44,57 @@ pub async fn ensure_runtimes(app: &tauri::AppHandle) {
         runtimes::inproc_cuda::setup();
         runtimes::inproc_cuda::dump_path();
     }
-    if !cfg!(target_os = "windows") {
+
+    // nemo-python is ~5 GB (Python + PyTorch + CUDA wheels). Only auto-install
+    // when the user explicitly picked the legacy NeMo Python diarizer (the
+    // default Sortformer-ONNX path needs no Python).
+    let want_nemo_python = cfg.diarize && matches!(cfg.diarizer, config::DiarizerChoice::Nemo);
+    if !cfg!(target_os = "windows") && want_nemo_python && gpu_present {
         spawn_nemo_runtime_install(app.clone());
+    } else if want_nemo_python && !gpu_present {
+        logfile::info(
+            "runtime nemo-python skipped (no NVIDIA GPU detected; install on demand from settings)",
+        );
+    }
+}
+
+fn effective_device(requested: config::Device, gpu_present: bool) -> config::Device {
+    if matches!(requested, config::Device::Cuda) && !gpu_present {
+        logfile::info(
+            "config device=cuda but no NVIDIA GPU detected; treating as cpu for runtime install",
+        );
+        return config::Device::Cpu;
+    }
+    requested
+}
+
+fn has_nvidia_gpu() -> bool {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        // /proc/driver/nvidia/version leaks into containers from the host kernel
+        // driver even when no GPU device is exposed. /dev/nvidia0 (Linux) or a
+        // successful `nvidia-smi -L` listing at least one GPU is the only
+        // reliable evidence of a usable GPU.
+        #[cfg(target_os = "linux")]
+        if std::path::Path::new("/dev/nvidia0").exists() {
+            return true;
+        }
+        match std::process::Command::new("nvidia-smi")
+            .arg("-L")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                let s = String::from_utf8_lossy(&out.stdout);
+                s.lines().any(|l| l.starts_with("GPU "))
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        false
     }
 }
 
@@ -44,7 +105,7 @@ fn nemo_python_path() -> Option<PathBuf> {
     Some(data.join("python").join("bin").join("python3.12"))
 }
 
-fn install_script_basename() -> &'static str {
+const fn install_script_basename() -> &'static str {
     if cfg!(target_os = "windows") {
         "install-nemo-deps.ps1"
     } else {
@@ -97,6 +158,7 @@ fn locate_install_script() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+#[allow(clippy::too_many_lines)]
 fn spawn_nemo_runtime_install(app: tauri::AppHandle) {
     if NEMO_RUNTIME_STARTED.swap(true, Ordering::SeqCst) {
         return;
