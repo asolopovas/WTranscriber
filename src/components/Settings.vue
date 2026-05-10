@@ -140,6 +140,18 @@ onMounted(async () => {
     config.value.threads = sys.value.cpu_threads;
   }
   await refreshModels();
+  if (config.value && !config.value.llm_model) {
+    const defaultLlm =
+      models.value.find((m) => m.family === "llm" && m.default_active) ??
+      models.value.find((m) => m.family === "llm");
+    if (defaultLlm) config.value.llm_model = defaultLlm.id;
+  }
+  if (config.value && !config.value.model) {
+    const defaultAsr =
+      models.value.find((m) => m.family === "asr" && m.default_active) ??
+      models.value.find((m) => m.family === "asr");
+    if (defaultAsr) config.value.model = defaultAsr.id;
+  }
   unlisten.push(
     await events.onModelProgress((p) => recordSet(modelProgress, p.id, p)),
     await events.onModelDone(refreshModels),

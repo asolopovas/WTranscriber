@@ -363,6 +363,18 @@ onMounted(async () => {
   ) {
     config.value.diarizer = sys.value?.is_mobile ? "eres2net" : "nemo";
   }
+  if (config.value && !config.value.llm_model) {
+    const defaultLlm =
+      models.value.find((m) => m.family === "llm" && m.default_active) ??
+      models.value.find((m) => m.family === "llm");
+    if (defaultLlm) config.value.llm_model = defaultLlm.id;
+  }
+  if (config.value && !config.value.model) {
+    const defaultAsr =
+      models.value.find((m) => m.family === "asr" && m.default_active) ??
+      models.value.find((m) => m.family === "asr");
+    if (defaultAsr) config.value.model = defaultAsr.id;
+  }
 
   if (sys.value?.os === "android") {
     try {
