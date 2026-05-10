@@ -261,9 +261,7 @@ async function resetAudioCache() {
                 :variant="persistentEnabled ? 'primary' : 'neutral'"
                 @click="togglePersistent(!persistentEnabled)"
               >
-                {{
-                  persistentEnabled ? "Restore files on launch: On" : "Restore files on launch: Off"
-                }}
+                {{ persistentEnabled ? "Keep models: On" : "Keep models: Off" }}
               </Button>
             </div>
             <p
