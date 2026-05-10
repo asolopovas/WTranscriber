@@ -1,8 +1,8 @@
 import type { FileProgress } from "@/types";
 
-export const KB = 1024;
+const KB = 1024;
 export const MB = 1024 * 1024;
-export const GB = 1024 * 1024 * 1024;
+const GB = 1024 * 1024 * 1024;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
