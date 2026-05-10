@@ -18,7 +18,7 @@ use super::logs::{
 };
 use super::proc::{
     kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,
-    tcp_open, wait_for_port, wait_for_port_with_guard,
+    tcp_open, wait_for_port,
 };
 
 pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
@@ -113,10 +113,16 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         true
     };
     let bring_up = || -> Result<()> {
-        eprintln!("[stage 4/6] waiting for vite :1420 (≤180s, live log streaming below)");
-        wait_for_port_with_guard(1420, Duration::from_secs(180), &healthy)?;
+        eprintln!("[stage 4/6] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)");
+        wait_for_log_line_with_guard(
+            &[&dev_log, &dev_err],
+            "vite ready on :1420",
+            |s| s.contains("Local:") && s.contains(":1420"),
+            Duration::from_secs(90),
+            healthy,
+        )?;
         eprintln!(
-            "[stage 5/6] waiting for WebView → :1420 connection (≤240s, fast-fail on child death/install error)"
+            "[stage 5/6] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤30s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
@@ -124,12 +130,12 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             |s| {
                 (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")
             },
-            Duration::from_secs(120),
-            &healthy,
+            Duration::from_secs(30),
+            healthy,
         )?;
         eprintln!("[stage 6/6] attaching CDP and probing tauri IPC");
-        wait_for_attach(device, Duration::from_secs(30))?;
-        api_probe(Duration::from_secs(15))
+        wait_for_attach(device, Duration::from_secs(10))?;
+        api_probe(Duration::from_secs(10))
             .context("Tauri IPC API probe failed after CDP attach")?;
         Ok(())
     };

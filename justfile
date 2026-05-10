@@ -220,6 +220,11 @@ test:
     {{_run}} --tag rust-test --idle 90 --max 600 -- cargo test --manifest-path src-tauri/Cargo.toml --offline
     {{_run}} --tag js-test --idle 60 --max 300 -- bun run test
 
+# Playwright UI tests against the Vite dev server with mocked Tauri IPC.
+[group('quality')]
+e2e:
+    {{_run}} --tag e2e --idle 60 --max 600 -- bun run test:ui
+
 [group('quality')]
 dep-check: _ensure-machete
     {{_run}} --tag machete --idle 30 --max 120 -- cargo machete src-tauri

@@ -32,9 +32,9 @@ Pass `target=<aarch64|armv7|x86_64|i686>`; default `aarch64`. Do not run install
 3. Clears + tails logcat → `tmp/logcat.log` (W+, RustStdoutStderr/Tauri/chromium/am\_\*).
 4. Configures `adb reverse tcp:1420` and `tcp:1421`.
 5. Spawns `tauri android dev --no-watch` detached → `tmp/android-dev.{log,err.log}`.
-6. Waits for Vite `:1420` (≤180 s, fast-fails on child death or signature mismatch).
-7. Waits for WebView `connecting to … :1420` (≤120 s).
-8. Forwards CDP to `127.0.0.1:9222`; probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`).
+6. Waits for Vite ready event (`Local:` + `:1420` line in `tmp/android-dev.log`, ≤90 s; fast-fails on child death or signature mismatch).
+7. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤30 s).
+8. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`).
 9. Auto-recovers signature mismatch (uninstall + retry once).
 10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
 

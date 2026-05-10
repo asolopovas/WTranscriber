@@ -68,11 +68,15 @@ pub(super) fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
 
 pub(super) fn wait_for_attach(device: Option<&str>, timeout: Duration) -> Result<()> {
     let deadline = Instant::now() + timeout;
+    let mut backoff = Duration::from_millis(50);
     loop {
         match attach_webview(device, false) {
             Ok(()) => return Ok(()),
             Err(err) if Instant::now() >= deadline => return Err(err),
-            Err(_) => thread::sleep(Duration::from_millis(500)),
+            Err(_) => {
+                thread::sleep(backoff);
+                backoff = (backoff * 2).min(Duration::from_millis(500));
+            }
         }
     }
 }

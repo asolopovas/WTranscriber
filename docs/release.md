@@ -49,7 +49,7 @@ The bump commit uses `--no-verify` because `just check` already ran.
 Required for stable, recommended for dev.
 
 ```
-src-tauri/gen/android/keystore.properties     (gitignored; see .example)
+src-tauri/gen/android/keystore.properties
   storeFile=
   storePassword=
   keyAlias=

@@ -3,6 +3,7 @@ use std::fs::{self, File};
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,21 +12,14 @@ use std::os::windows::process::CommandExt;
 
 use crate::util::root;
 
-pub(super) fn wait_output(mut child: Child, timeout: Duration) -> Option<Output> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => return None,
-        }
+pub(super) fn wait_output(child: Child, timeout: Duration) -> Option<Output> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => Some(output),
+        _ => None,
     }
 }
 
@@ -115,7 +109,7 @@ pub(super) fn port_owner(port: u16) -> Option<u32> {
 pub(super) fn tcp_open(port: u16) -> bool {
     TcpStream::connect_timeout(
         &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port)),
-        Duration::from_millis(250),
+        Duration::from_millis(100),
     )
     .is_ok()
 }
@@ -144,7 +138,7 @@ pub(super) fn wait_for_port_with_guard(
             eprintln!("  [{:>3}s] waiting for vite :{port}…", start.elapsed().as_secs());
             next_tick = Instant::now() + Duration::from_secs(10);
         }
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(100));
     }
     bail!("vite did not bind :{port} within {}s", timeout.as_secs())
 }

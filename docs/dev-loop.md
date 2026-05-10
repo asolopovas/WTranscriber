@@ -22,6 +22,7 @@ just dev-cpu      # HMR with sherpa-static (no CUDA)
 just build-app    # fast no-bundle build
 just build        # full bundle (NSIS on Windows, .deb on Linux)
 just check        # parallel pre-release gate
+just e2e          # Playwright UI tests (Vite + mocked Tauri IPC)
 ```
 
 ## Android

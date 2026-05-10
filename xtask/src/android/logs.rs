@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -34,33 +35,104 @@ pub(super) fn wait_for_log_line_with_guard(
 ) -> Result<()> {
     let start = Instant::now();
     let deadline = start + timeout;
-    let mut last_progress = Instant::now();
+    if tail_any(paths, &f) {
+        eprintln!("  ✓ {label} (0s)");
+        return Ok(());
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel::<String>();
+    let owned: Vec<PathBuf> = paths.iter().map(|p| (*p).to_path_buf()).collect();
+    let stop_tail = Arc::clone(&stop);
+    let tail = thread::spawn(move || tail_lines(owned, tx, stop_tail));
     let mut last_line: Option<String> = None;
-    while Instant::now() < deadline {
-        if tail_any(paths, &f) {
-            eprintln!("  ✓ {label} ({}s)", start.elapsed().as_secs());
-            return Ok(());
+    let mut last_progress = Instant::now();
+    let result = loop {
+        let now = Instant::now();
+        if now >= deadline {
+            break Err(());
         }
-        if !guard() {
-            bail!(
-                "{label} aborted — child process exited; see {paths:?} for details"
-            );
-        }
-        if last_progress.elapsed() >= Duration::from_secs(5) {
-            if let Some(line) = latest_progress_line(paths) {
-                if last_line.as_deref() != Some(line.as_str()) {
-                    eprintln!("  [{:>3}s] {}", start.elapsed().as_secs(), trim_log_line(&line));
-                    last_line = Some(line);
+        let slice = (deadline - now).min(Duration::from_secs(1));
+        match rx.recv_timeout(slice) {
+            Ok(line) => {
+                if f(&line) {
+                    eprintln!("  ✓ {label} ({}s)", start.elapsed().as_secs());
+                    break Ok(());
+                }
+                if last_progress.elapsed() >= Duration::from_secs(5) && is_progress_line(&line) {
+                    if last_line.as_deref() != Some(line.as_str()) {
+                        eprintln!("  [{:>3}s] {}", start.elapsed().as_secs(), trim_log_line(&line));
+                        last_line = Some(line);
+                    }
+                    last_progress = Instant::now();
                 }
             }
-            last_progress = Instant::now();
+            Err(RecvTimeoutError::Timeout) => {
+                if !guard() {
+                    break Err(());
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => break Err(()),
         }
-        thread::sleep(Duration::from_millis(500));
+    };
+    stop.store(true, Ordering::Relaxed);
+    let _ = tail.join();
+    match result {
+        Ok(()) => Ok(()),
+        Err(()) if !guard() => bail!(
+            "{label} aborted — child process exited; see {paths:?} for details"
+        ),
+        Err(()) => bail!(
+            "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
+            timeout.as_secs()
+        ),
     }
-    bail!(
-        "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
-        timeout.as_secs()
-    )
+}
+
+fn tail_lines(paths: Vec<PathBuf>, tx: mpsc::Sender<String>, stop: Arc<AtomicBool>) {
+    let mut offsets: Vec<u64> = paths
+        .iter()
+        .map(|p| fs::metadata(p).map(|m| m.len()).unwrap_or(0))
+        .collect();
+    while !stop.load(Ordering::Relaxed) {
+        let mut produced = false;
+        for (i, p) in paths.iter().enumerate() {
+            let Ok(meta) = fs::metadata(p) else { continue };
+            let len = meta.len();
+            if len <= offsets[i] {
+                if len < offsets[i] {
+                    offsets[i] = 0;
+                }
+                continue;
+            }
+            let Ok(raw) = fs::read(p) else { continue };
+            let from = offsets[i] as usize;
+            if from >= raw.len() {
+                continue;
+            }
+            if let Ok(text) = std::str::from_utf8(&raw[from..]) {
+                for line in text.lines() {
+                    let cleaned = strip_ansi(line);
+                    let trimmed = cleaned.trim_end();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    produced = true;
+                    if tx.send(trimmed.to_string()).is_err() {
+                        return;
+                    }
+                }
+                offsets[i] = raw.len() as u64;
+            }
+        }
+        if !produced {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+fn is_progress_line(line: &str) -> bool {
+    let l = line.trim_start();
+    !l.starts_with('$') && !l.starts_with("---") && l.len() >= 3
 }
 
 pub(super) struct LogStreamer {
@@ -136,22 +208,6 @@ fn should_show_line(line: &str) -> bool {
         return false;
     }
     true
-}
-
-fn latest_progress_line(paths: &[&Path]) -> Option<String> {
-    paths.iter().find_map(|p| {
-        let raw = fs::read_to_string(p).ok()?;
-        raw.lines()
-            .rev()
-            .take(80)
-            .map(str::trim)
-            .find(|line| {
-                !line.is_empty()
-                    && !line.starts_with('$')
-                    && !line.contains("---")
-            })
-            .map(str::to_string)
-    })
 }
 
 fn trim_log_line(line: &str) -> String {
