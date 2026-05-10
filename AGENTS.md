@@ -85,7 +85,7 @@ Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in artefact files.
 | ----------------------------- | --------------------------------------------------------------------- |
 | Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                         |
 | Diagnose a failing log signal | `wt-diagnose`                                                         |
-| Debug Tauri/WebView/IPC live  | Skill `tauri-debugging`; CDP + logcat/`RustStdoutStderr`              |
+| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`    |
 | Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities |
 | Edit project files            | Main thread (pre-commit hook is the gate)                             |
 | Install + smoke-test          | `wt-runner` (modes: `install`, `test`, `install-and-test`)            |
@@ -93,5 +93,4 @@ Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in artefact files.
 
 ## Skills
 
-- `tauri` — load before architectural / IPC / capability / mobile / distribution changes.
-- `tauri-debugging` — load before WebView/CDP/logcat debugging.
+- `tauri` — load before architectural / IPC / capability / mobile / distribution changes, and for WebView/CDP/logcat debugging.

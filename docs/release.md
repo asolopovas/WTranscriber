@@ -11,7 +11,7 @@
 | `just release-publish <ch>`   | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z` |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
-`release-build` flags: `--no-host`, `--no-android`, `--no-wsl`, `--skip-rebuild`, `--sequential`.
+`release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-wsl`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
 ## Channels
 

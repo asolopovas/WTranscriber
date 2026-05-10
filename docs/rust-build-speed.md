@@ -7,13 +7,6 @@
 - Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just lint` does this.
 - Profile with `cargo build --timings`; re-measure after each change.
 
-## Linker (committed in `.cargo/config.toml`)
-
-| Target                     | Linker           | Setup                    |
-| -------------------------- | ---------------- | ------------------------ |
-| `x86_64-pc-windows-msvc`   | `rust-lld`       | none                     |
-| `x86_64-unknown-linux-gnu` | `clang` + `mold` | `apt install clang mold` |
-
 ## Dev profile (committed in `src-tauri/Cargo.toml`)
 
 ```toml
@@ -21,6 +14,7 @@
 incremental = true
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
+codegen-units = 256
 
 [profile.dev.package."*"]
 opt-level = 3
