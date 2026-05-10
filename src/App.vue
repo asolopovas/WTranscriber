@@ -794,7 +794,7 @@ const selectedProgress = computed(() =>
               @trim="openTrim"
               @auto-rename="autoRename"
               @rename="openRename"
-              @export="openExport"
+              @share="openExport"
               @redo-diarize="openRedoDiarize"
               @delete="deleteEntry"
               :selected-paths="selectedPaths"

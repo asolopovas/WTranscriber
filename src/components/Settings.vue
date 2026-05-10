@@ -188,7 +188,7 @@ async function resetAudioCache() {
             Settings
           </h1>
           <p class="text-bodyMedium text-on-surface-variant mt-unit">
-            Runtime, local models, and storage maintenance.
+            Device, local models, and storage maintenance.
           </p>
         </div>
       </div>
@@ -210,26 +210,8 @@ async function resetAudioCache() {
               <span v-else-if="sys.nnapi_available">NNAPI (experimental)</span>
               <span v-else>CPU only</span>
             </DefRow>
-            <div
-              v-if="sys.workdir"
-              class="col-span-1 md:col-span-2 flex flex-col gap-xs border-t border-outline-variant/30 pt-md"
-            >
-              <DefRow label="Workdir" align="right" break-all>{{ sys.workdir }}</DefRow>
-              <DefRow v-if="sys.models_dir" label="Models" align="right" break-all>
-                {{ sys.models_dir }}
-              </DefRow>
-              <DefRow v-if="sys.cache_dir" label="Cache" align="right" break-all>
-                {{ sys.cache_dir }}
-              </DefRow>
-              <DefRow v-if="sys.config_dir" label="Config" align="right" break-all>
-                {{ sys.config_dir }}
-              </DefRow>
-            </div>
           </dl>
-        </Card>
-
-        <Card icon="memory" icon-color="text-secondary" title="Runtime">
-          <div class="p-margin flex flex-col gap-margin">
+          <div class="px-margin pb-margin">
             <label class="flex flex-col gap-unit max-w-sm">
               <span class="text-titleSmall text-on-surface">Threads</span>
               <input
@@ -255,79 +237,27 @@ async function resetAudioCache() {
           @select="onSelectDefault"
         />
 
-        <Card v-if="isAndroid" icon="save" icon-color="text-tertiary" title="Storage">
+        <Card icon="cleaning_services" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">
-            <div class="flex flex-col gap-md">
-              <div>
-                <h3 class="text-titleSmall text-on-surface">Keep AI models when uninstalling</h3>
-                <p class="text-bodyMedium text-on-surface-variant mt-unit">
-                  Mirrors downloaded models to
-                  <span class="font-mono">/storage/emulated/0/WTranscriber/models</span> so a future
-                  reinstall doesn’t need to re-download ~1&nbsp;GB. Requires
-                  <span class="font-medium">All Files Access</span> in Android Settings.
-                </p>
-              </div>
+            <div class="grid gap-md" :class="isAndroid ? 'grid-cols-3' : 'grid-cols-2'">
+              <Button class="w-full justify-center" @click="resetTranscriptCache">
+                Transcript cache
+              </Button>
+              <Button class="w-full justify-center" @click="resetAudioCache"> Audio cache </Button>
               <Button
+                v-if="isAndroid"
+                class="w-full justify-center"
                 :variant="persistentEnabled ? 'primary' : 'neutral'"
-                :icon="persistentEnabled ? 'check_circle' : 'shield'"
-                :icon-size="18"
-                class="w-fit"
                 @click="togglePersistent(!persistentEnabled)"
               >
-                {{ persistentEnabled ? "Enabled" : "Grant access & enable" }}
+                {{ persistentEnabled ? "Persist: on" : "Persist: off" }}
               </Button>
             </div>
             <p
-              v-if="persistentMessage"
-              class="text-bodyMedium"
-              :class="persistentBusy === 'saved' ? 'text-tertiary' : 'text-on-surface-variant'"
+              v-if="maintenanceStatus || persistentMessage"
+              class="text-bodyMedium text-on-surface-variant"
             >
-              {{ persistentMessage }}
-            </p>
-            <p class="text-labelSmall text-on-surface-variant font-mono">
-              Status:
-              {{
-                persistentEnabled && persistentGranted
-                  ? "enabled"
-                  : persistentGranted
-                    ? "permission granted, not enabled"
-                    : "permission not granted"
-              }}
-            </p>
-          </div>
-        </Card>
-
-        <Card icon="cleaning_services" icon-color="text-tertiary" title="Maintenance">
-          <div class="p-margin grid grid-cols-1 md:grid-cols-2 gap-margin">
-            <div class="flex flex-col gap-md">
-              <div>
-                <h3 class="text-titleSmall text-on-surface">Transcript cache</h3>
-                <p class="text-bodyMedium text-on-surface-variant">
-                  Clears saved transcript previews and cached transcription results.
-                </p>
-              </div>
-              <Button
-                icon="delete_sweep"
-                :icon-size="18"
-                class="w-fit"
-                @click="resetTranscriptCache"
-              >
-                Reset transcript cache
-              </Button>
-            </div>
-            <div class="flex flex-col gap-md">
-              <div>
-                <h3 class="text-titleSmall text-on-surface">Audio cache</h3>
-                <p class="text-bodyMedium text-on-surface-variant">
-                  Clears converted WAV files created for non-WAV audio inputs.
-                </p>
-              </div>
-              <Button icon="delete_sweep" :icon-size="18" class="w-fit" @click="resetAudioCache">
-                Reset audio cache
-              </Button>
-            </div>
-            <p v-if="maintenanceStatus" class="md:col-span-2 text-bodyMedium text-tertiary">
-              {{ maintenanceStatus }}
+              {{ maintenanceStatus || persistentMessage }}
             </p>
           </div>
         </Card>

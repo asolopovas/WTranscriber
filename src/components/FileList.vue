@@ -39,7 +39,7 @@ const emit = defineEmits<{
   (e: "trim", entry: DirEntry): void;
   (e: "auto-rename", entry: DirEntry): void;
   (e: "rename", entry: DirEntry): void;
-  (e: "export", entry: DirEntry): void;
+  (e: "share", entry: DirEntry): void;
   (e: "redo-diarize", entry: DirEntry): void;
   (e: "delete", entry: DirEntry): void;
   (e: "toggle-select", path: string): void;
@@ -113,9 +113,7 @@ defineExpose({
             </template>
             <template v-if="entry.trim_start_ms || entry.trim_end_ms">
               <span class="text-outline-variant">·</span>
-              <span class="text-primary inline-flex items-center gap-unit">
-                <Icon name="content_cut" :size="12" />trimmed
-              </span>
+              <span class="text-primary inline-flex items-center gap-unit">trimmed</span>
             </template>
           </div>
         </div>
@@ -145,23 +143,6 @@ defineExpose({
             variant="ghost"
             shape="icon"
             size="sm"
-            icon="content_cut"
-            :icon-size="18"
-            :class="entry.trim_start_ms || entry.trim_end_ms ? 'text-primary' : ''"
-            :title="
-              entry.trim_start_ms || entry.trim_end_ms
-                ? `Trim: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
-                    entry.trim_end_ms ?? entry.duration_ms ?? 0,
-                  )}`
-                : 'Trim — select range to transcribe'
-            "
-            @click="emit('trim', entry)"
-          />
-          <Button
-            class="hidden md:inline-flex"
-            variant="ghost"
-            shape="icon"
-            size="sm"
             :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
             :disabled="autoRenamingPath === entry.path"
             @click="emit('auto-rename', entry)"
@@ -169,17 +150,6 @@ defineExpose({
             <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
             <Icon v-else name="auto_awesome" :size="18" />
           </Button>
-          <Button
-            class="hidden md:inline-flex"
-            variant="ghost"
-            shape="icon"
-            size="sm"
-            icon="download"
-            :icon-size="18"
-            title="Export transcript"
-            :disabled="!entry.cache_key"
-            @click="emit('export', entry)"
-          />
           <div class="relative">
             <Button
               variant="ghost"
@@ -195,14 +165,19 @@ defineExpose({
               class="absolute right-0 top-full mt-unit z-30 min-w-45 bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
             >
               <MenuItem
-                class="md:hidden"
                 icon="content_cut"
                 @click="
                   openMenuPath = null;
                   emit('trim', entry);
                 "
               >
-                Cut / select range
+                {{
+                  entry.trim_start_ms || entry.trim_end_ms
+                    ? `Cut: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
+                        entry.trim_end_ms ?? entry.duration_ms ?? 0,
+                      )}`
+                    : "Cut / select range"
+                }}
               </MenuItem>
               <MenuItem
                 class="md:hidden"
@@ -219,15 +194,14 @@ defineExpose({
                 {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
               </MenuItem>
               <MenuItem
-                class="md:hidden"
-                icon="download"
+                icon="ios_share"
                 :disabled="!entry.cache_key"
                 @click="
                   openMenuPath = null;
-                  emit('export', entry);
+                  emit('share', entry);
                 "
               >
-                Export
+                Share
               </MenuItem>
               <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
               <MenuItem
