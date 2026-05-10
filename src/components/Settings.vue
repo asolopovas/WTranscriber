@@ -189,21 +189,8 @@ async function resetAudioCache() {
 </script>
 
 <template>
-  <main class="flex-1 overflow-y-auto p-margin md:p-xl bg-surface-container-lowest scroll-thin">
+  <main class="flex-1 overflow-y-auto px-xs md:px-md py-md bg-surface-container-lowest scroll-thin">
     <div class="max-w-5xl mx-auto flex flex-col gap-xl pb-xl">
-      <div
-        class="flex flex-col md:flex-row md:items-end justify-between gap-margin pb-md border-b border-outline-variant/50"
-      >
-        <div>
-          <h1 class="text-[20px] md:text-[24px] leading-7 md:leading-8 font-bold text-on-surface">
-            Settings
-          </h1>
-          <p class="text-bodyMedium text-on-surface-variant mt-unit">
-            Device, local models, and storage maintenance.
-          </p>
-        </div>
-      </div>
-
       <p v-if="error" class="text-error text-bodyMedium">{{ error }}</p>
 
       <div v-if="config" class="flex flex-col gap-margin">

@@ -3,13 +3,12 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { api } from "@/api";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
-import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 
+const retain = defineModel<number>("retain", { default: 1 });
+const auto = defineModel<boolean>("auto", { default: true });
+
 const tail = ref<string>("");
-const path = ref<string>("");
-const auto = ref(true);
-const retain = ref<number>(Number(localStorage.getItem("wt.logRetain") ?? "1") || 1);
 const error = ref<string | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -25,11 +24,6 @@ const displayed = computed(() => {
   if (starts.length <= retain.value) return tail.value;
   return lines.slice(starts[starts.length - retain.value]).join("\n");
 });
-
-function onRetainChange(v: number) {
-  retain.value = v;
-  localStorage.setItem("wt.logRetain", String(v));
-}
 
 async function refresh() {
   try {
@@ -53,16 +47,22 @@ async function clear() {
   }
 }
 
-async function copyPath() {
-  await navigator.clipboard.writeText(path.value);
-}
-
-onMounted(async () => {
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+async function copyContents() {
   try {
-    path.value = await api.logPath();
+    await navigator.clipboard.writeText(displayed.value);
+    copied.value = true;
+    if (copiedTimer) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      copied.value = false;
+    }, 1500);
   } catch (e) {
     error.value = String(e);
   }
+}
+
+onMounted(async () => {
   await refresh();
   timer = setInterval(refresh, 2000);
 });
@@ -71,78 +71,27 @@ onUnmounted(() => {
   if (timer) clearInterval(timer);
 });
 
+defineExpose({ refresh, clear });
+
 function levelClass(line: string): string {
   if (line.includes(" ERROR ")) return "text-error";
   if (line.includes(" WARN ")) return "text-secondary";
   if (line.includes(" PROC ") || line.startsWith("-----")) return "text-primary";
-  if (line.includes(" INFO ")) return "text-on-surface-variant";
-  return "text-on-surface-variant";
+  return "text-on-surface-variant/80";
 }
 </script>
 
 <template>
   <main class="flex-1 flex flex-col overflow-hidden bg-surface-container-lowest">
-    <div
-      class="flex-1 flex flex-col overflow-hidden max-w-[768px] w-full mx-auto px-margin md:px-xl pt-margin md:pt-xl pb-margin md:pb-xl gap-md"
-    >
-      <div class="flex flex-col gap-md pb-md border-b border-outline-variant/50">
-        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-md">
-          <div class="min-w-0">
-            <h1
-              class="text-[20px] md:text-[24px] leading-[28px] md:leading-[32px] font-bold text-on-surface"
-            >
-              Application Log
-            </h1>
-            <p class="text-bodyMedium text-on-surface-variant mt-unit">
-              Persistent runtime log — engine errors, model installs, transcribe runs.
-            </p>
-          </div>
-          <div class="flex items-center flex-wrap gap-xs shrink-0">
-            <label
-              class="flex items-center gap-unit text-bodyMedium text-on-surface-variant cursor-pointer select-none h-11 md:h-auto px-xs"
-            >
-              <input v-model="auto" type="checkbox" class="accent-primary w-4 h-4" />
-              auto-scroll
-            </label>
-            <select
-              :value="retain"
-              @change="onRetainChange(Number(($event.target as HTMLSelectElement).value))"
-              class="min-h-11 md:min-h-0 px-md py-xs rounded-full border border-outline text-on-surface text-titleSmall bg-transparent"
-              title="How many recent runs to display"
-            >
-              <option :value="1">Latest run</option>
-              <option :value="5">Last 5 runs</option>
-              <option :value="20">Last 20 runs</option>
-              <option :value="0">All</option>
-            </select>
-            <Button mobile-tall icon="refresh" :icon-size="18" @click="refresh"> Refresh </Button>
-            <Button variant="danger" mobile-tall icon="delete" @click="clear"> Clear </Button>
-          </div>
-        </div>
-        <div class="flex items-center gap-xs text-on-surface-variant min-w-0">
-          <Icon name="description" :size="16" class="shrink-0" />
-          <code class="font-mono text-labelSmall truncate">{{ path || "—" }}</code>
-          <Button
-            v-if="path"
-            variant="ghost"
-            shape="icon"
-            icon="content_copy"
-            :icon-size="16"
-            class="ml-xs"
-            aria-label="Copy path"
-            @click="copyPath"
-          />
-        </div>
-      </div>
-
+    <div class="flex-1 flex flex-col overflow-hidden w-full px-xs md:px-md py-md gap-md">
       <ErrorBanner v-if="error">{{ error }}</ErrorBanner>
 
       <section
-        class="flex-1 flex flex-col overflow-hidden bg-surface-container rounded-xl border border-outline-variant/50"
+        class="relative flex-1 flex flex-col overflow-hidden bg-surface-container/40 rounded-xl border border-outline-variant/40"
       >
         <div
           ref="scroller"
-          class="flex-1 overflow-y-auto scroll-thin px-md py-md font-mono text-labelMedium leading-relaxed whitespace-pre-wrap break-all"
+          class="flex-1 overflow-y-auto scroll-thin px-xl py-lg font-mono text-labelSmall leading-snug whitespace-pre-wrap break-words"
         >
           <p v-if="!displayed" class="text-outline italic">(log is empty)</p>
           <template v-else>
@@ -151,6 +100,17 @@ function levelClass(line: string): string {
             </div>
           </template>
         </div>
+        <Button
+          v-if="displayed"
+          variant="neutral"
+          shape="icon"
+          :icon="copied ? 'check' : 'content_copy'"
+          :icon-size="22"
+          :aria-label="copied ? 'Copied' : 'Copy log to clipboard'"
+          :title="copied ? 'Copied' : 'Copy log to clipboard'"
+          class="absolute bottom-md right-md w-12 h-12 shadow-md bg-surface-container-high"
+          @click="copyContents"
+        />
       </section>
     </div>
   </main>

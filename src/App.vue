@@ -39,6 +39,10 @@ import { useFileSelection } from "@composables/useFileSelection";
 import { recordOmit, recordSet } from "@composables/records";
 
 const tab = ref<Tab>("transcribe");
+const logRetain = ref<number>(Number(localStorage.getItem("wt.logRetain") ?? "1") || 1);
+const logAuto = ref(true);
+const logViewerRef = ref<InstanceType<typeof LogViewer> | null>(null);
+watch(logRetain, (v) => localStorage.setItem("wt.logRetain", String(v)));
 const sys = ref<SystemInfo | null>(null);
 const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
@@ -769,13 +773,18 @@ const selectedProgress = computed(() =>
   <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
     <AppHeader
       v-model:tab="tab"
+      v-model:log-retain="logRetain"
+      v-model:log-auto="logAuto"
       :show-transcribe-actions="tab === 'transcribe'"
+      :show-log-controls="tab === 'logs'"
       :pending-count="untranscribedEntries.length"
       :queue-active="queueActive"
       :queue-done="queueDone"
       :queue-total="queueTotal"
       @transcribe-all="transcribeAll"
       @pick-audio="pickAudio"
+      @log-refresh="logViewerRef?.refresh()"
+      @log-clear="logViewerRef?.clear()"
     />
 
     <Recorder
@@ -892,7 +901,12 @@ const selectedProgress = computed(() =>
       </template>
 
       <Settings v-else-if="tab === 'settings'" />
-      <LogViewer v-else-if="tab === 'logs'" />
+      <LogViewer
+        v-else-if="tab === 'logs'"
+        ref="logViewerRef"
+        v-model:retain="logRetain"
+        v-model:auto="logAuto"
+      />
     </main>
 
     <BottomNav v-model="tab" />

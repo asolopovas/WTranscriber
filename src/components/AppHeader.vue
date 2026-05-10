@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { TABS, type Tab } from "@components/nav-tabs";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
@@ -9,27 +10,30 @@ defineProps<{
   queueActive: boolean;
   queueDone: number;
   queueTotal: number;
+  showLogControls?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "transcribe-all"): void;
   (e: "pick-audio"): void;
+  (e: "log-refresh"): void;
+  (e: "log-clear"): void;
 }>();
 
 const tab = defineModel<Tab>("tab", { required: true });
+const logRetain = defineModel<number>("logRetain", { default: 1 });
+const logAuto = defineModel<boolean>("logAuto", { default: true });
+
+const activeTabLabel = computed(() => TABS.find((t) => t.id === tab.value)?.label ?? "");
 </script>
 
 <template>
   <header
-    class="flex justify-between items-center w-full px-margin h-20 md:h-24 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
+    class="flex justify-between items-center w-full px-margin h-14 md:h-16 shrink-0 border-b border-outline-variant/40 bg-surface gap-xs"
   >
-    <div class="flex items-center gap-xs">
+    <div class="flex items-center gap-unit">
       <Icon name="graphic_eq" :size="24" class="text-primary" />
-      <span
-        class="font-mono tracking-tighter font-bold text-primary text-labelMedium ml-xs uppercase"
-      >
-        wt
-      </span>
+      <h1 class="text-headlineSmall font-semibold text-on-surface">{{ activeTabLabel }}</h1>
     </div>
     <nav
       class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0"
@@ -39,6 +43,52 @@ const tab = defineModel<Tab>("tab", { required: true });
       </Button>
     </nav>
     <div class="flex items-center gap-xs shrink-0">
+      <template v-if="showLogControls">
+        <select
+          :value="logRetain"
+          @change="logRetain = Number(($event.target as HTMLSelectElement).value)"
+          class="h-10 px-md rounded-full border border-outline-variant text-on-surface-variant text-labelMedium bg-transparent text-center"
+          title="How many recent runs to display"
+        >
+          <option :value="1">Latest</option>
+          <option :value="5">Last 5</option>
+          <option :value="20">Last 20</option>
+          <option :value="0">All</option>
+        </select>
+        <div class="flex items-center">
+          <Button
+            variant="ghost"
+            shape="icon"
+            :icon="logAuto ? 'vertical_align_bottom' : 'pause'"
+            :icon-fill="logAuto"
+            :icon-size="22"
+            :aria-label="logAuto ? 'Auto-scroll on' : 'Auto-scroll off'"
+            :title="logAuto ? 'Auto-scroll on' : 'Auto-scroll off'"
+            class="w-12 h-12"
+            @click="logAuto = !logAuto"
+          />
+          <Button
+            variant="ghost"
+            shape="icon"
+            icon="refresh"
+            :icon-size="22"
+            aria-label="Refresh"
+            title="Refresh"
+            class="w-12 h-12"
+            @click="emit('log-refresh')"
+          />
+          <Button
+            variant="ghost"
+            shape="icon"
+            icon="delete"
+            :icon-size="22"
+            aria-label="Clear log"
+            title="Clear log"
+            class="w-12 h-12 text-error hover:text-error"
+            @click="emit('log-clear')"
+          />
+        </div>
+      </template>
       <Button
         v-if="showTranscribeActions && pendingCount > 0"
         variant="ghost"
