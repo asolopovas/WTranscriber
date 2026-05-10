@@ -1,25 +1,80 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Result, bail};
 
 use crate::util::{SharedOut, git_short_sha, root, run_streamed};
 
+pub(super) fn restart_vm(lock: &SharedOut) -> Result<bool> {
+    eprintln!("[win] restarting windows-vm container (docker restart windows)");
+    let rc = run_streamed(
+        "win",
+        "docker",
+        &["restart", "--time", "30", "windows"],
+        &[],
+        lock,
+    )?;
+    if rc != 0 {
+        eprintln!("[win] docker restart windows failed (exit {rc})");
+        return Ok(false);
+    }
+    eprintln!("[win] waiting up to 5 min for guest sshd to come back");
+    let attempts = 60u32;
+    for i in 1..=attempts {
+        std::thread::sleep(Duration::from_secs(5));
+        let ok = std::process::Command::new("ssh")
+            .args([
+                "-o",
+                "ConnectTimeout=5",
+                "-o",
+                "BatchMode=yes",
+                "windows-vm",
+                "true",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            eprintln!("[win] guest sshd back after restart (~{}s)", i * 5);
+            return Ok(true);
+        }
+    }
+    eprintln!("[win] guest sshd did not come back within 5 min");
+    Ok(false)
+}
+
 pub(super) fn ssh_alive() -> bool {
-    std::process::Command::new("ssh")
-        .args([
-            "-o",
-            "ConnectTimeout=5",
-            "-o",
-            "BatchMode=yes",
-            "windows-vm",
-            "true",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let attempts = 12u32;
+    let interval = std::time::Duration::from_secs(5);
+    for i in 1..=attempts {
+        let ok = std::process::Command::new("ssh")
+            .args([
+                "-o",
+                "ConnectTimeout=5",
+                "-o",
+                "BatchMode=yes",
+                "windows-vm",
+                "true",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            if i > 1 {
+                eprintln!("[win] windows-vm SSH responded after {i} attempts");
+            }
+            return true;
+        }
+        if i < attempts {
+            std::thread::sleep(interval);
+        }
+    }
+    false
 }
 
 pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Result<i32> {
@@ -28,11 +83,16 @@ pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Resu
         return Ok(0);
     }
     if !ssh_alive() {
-        println!(
-            "[win] windows-vm SSH unreachable on localhost:2222 — skipping Windows build.\n\
-             [win]   bring up: cd ~/os/windows-vm && make up   (then run shared/enable-ssh.ps1 inside VM once)"
+        eprintln!(
+            "[win] windows-vm SSH unreachable on localhost:2222 — attempting failsafe restart"
         );
-        return Ok(-1);
+        if !restart_vm(lock)? {
+            println!(
+                "[win] windows-vm SSH still unreachable after restart — skipping Windows build.\n\
+                 [win]   manual: cd ~/os/windows-vm && make ssh-restart   (or reboot via http://127.0.0.1:8006/)"
+            );
+            return Ok(-1);
+        }
     }
     let sha = git_short_sha()?;
     let push = run_streamed("win", "git", &["push", "origin", "HEAD"], &[], lock)?;
@@ -49,6 +109,26 @@ pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Resu
             helper_local.display()
         );
     }
+    let rc = build_windows_vm_once(&sha, &helper_local, lock)?;
+    if rc == 0 {
+        return Ok(0);
+    }
+    eprintln!(
+        "[win] build failed (exit {rc}); attempting failsafe restart + single retry"
+    );
+    if !restart_vm(lock)? {
+        eprintln!("[win] restart failed; not retrying");
+        return Ok(rc);
+    }
+    eprintln!("[win] retrying build after restart");
+    build_windows_vm_once(&sha, &helper_local, lock)
+}
+
+fn build_windows_vm_once(
+    sha: &str,
+    helper_local: &Path,
+    lock: &SharedOut,
+) -> Result<i32> {
     let mkdir = run_streamed(
         "win",
         "ssh",

@@ -13,6 +13,40 @@
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
 `release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-wsl`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
+## Windows VM preflight
+
+The Linux host builds the Windows NSIS installer by SSH-driving a Tiny11
+VM hosted in `~/os/windows-vm` (dockur/windows). `xtask release`
+resolves the VM via the SSH alias `windows-vm` (`localhost:2222`).
+
+```bash
+cd ~/os/windows-vm && make start    # resume the VM (idempotent)
+ssh windows-vm true                 # smoke-test; xtask retries for ~60 s
+```
+
+If SSH probes get `kex_exchange_identification: Connection reset by
+peer`, the guest sshd is wedged behind a sign-in screen — run
+`make -C ~/os/windows-vm ssh-restart` (drives `Restart-Service sshd`
+over VNC). Without a healthy alias, `xtask release` warns
+`windows-vm SSH unreachable — skipping Windows build` and continues
+without the `.exe`.
+
+> If SSH still won’t connect after `ssh-restart`, the Windows guest is
+> frozen. Reboot it via the web viewer (http://127.0.0.1:8006/) and
+> wait 2–3 min for sshd to come back.
+
+### Failsafe
+
+`xtask release` is self-healing: if the initial SSH probe fails, or if
+the Windows build inside the VM exits non-zero, the task runs
+`docker restart windows`, polls SSH for up to 5 min, and retries the
+build **once** before giving up. The build script
+(`scripts/wt-windows-build.bat`) also self-heals corrupt rustup state
+(reinstalls `rust-std-x86_64-pc-windows-msvc` and the toolchain if
+`rustup target add` reports a corrupt manifest).
+
+Full setup and recovery flow: see `~/os/windows-vm/AGENTS.md`.
+
 ## Channels
 
 | Channel | Tag      | Filenames                                                      | Mutability |
