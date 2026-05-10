@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import type { DirEntry, TranscribeProgress, Transcript } from "@/types";
 import { phaseLabel, prettyName } from "@utils/audio";
-import { fmtClock, fmtMs, fmtMsLong, fmtBytes } from "@composables/format";
+import { fmtClock, fmtMs, fmtMsLong, fmtBytes } from "@utils/format";
 import Icon from "@components/ui/Icon.vue";
 
 const props = defineProps<{

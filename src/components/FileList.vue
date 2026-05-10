@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import type { DirEntry, TranscribeProgress } from "@/types";
 import { decodeName, prettyName } from "@utils/audio";
-import { fmtMs, fmtBytes } from "@composables/format";
+import { fmtMs, fmtBytes } from "@utils/format";
 import TranscribeIcon from "@components/icons/TranscribeIcon.vue";
 import Spinner from "@components/icons/Spinner.vue";
 import Icon from "@components/ui/Icon.vue";

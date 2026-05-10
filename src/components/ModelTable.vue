@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Family, FileProgress, ModelInfo } from "@/types";
-import { fmtModelSize, progressPct } from "@composables/format";
+import { fmtModelSize, progressPct } from "@utils/format";
 import Card from "@components/ui/Card.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";

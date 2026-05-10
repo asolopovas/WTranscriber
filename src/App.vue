@@ -33,10 +33,11 @@ import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import RedoDiarizeDialog from "@components/dialogs/RedoDiarizeDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
 import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
+import { applyMissingModelDefaults, applySystemConfigDefaults } from "@utils/models";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { useEssentials } from "@composables/useEssentials";
 import { useFileSelection } from "@composables/useFileSelection";
-import { recordOmit, recordSet } from "@composables/records";
+import { recordOmit, recordSet } from "@utils/records";
 
 const tab = ref<Tab>("transcribe");
 const logRetain = ref<number>(Number(localStorage.getItem("wt.logRetain") ?? "1") || 1);
@@ -359,29 +360,9 @@ onMounted(async () => {
 
   sys.value = await api.systemInfo();
   await reload();
-  if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
-    config.value.device = "cpu";
-  }
-  if (config.value && sys.value?.is_mobile && config.value.diarizer !== "titanet") {
-    config.value.diarizer = "titanet";
-  }
   if (config.value) {
-    const d = config.value.diarizer as string;
-    if (d === "sherpa" || d === "auto" || d === "eres2net") {
-      config.value.diarizer = sys.value?.is_mobile ? "titanet" : "nemo";
-    }
-  }
-  if (config.value && !config.value.llm_model) {
-    const defaultLlm =
-      models.value.find((m) => m.family === "llm" && m.default_active) ??
-      models.value.find((m) => m.family === "llm");
-    if (defaultLlm) config.value.llm_model = defaultLlm.id;
-  }
-  if (config.value && !config.value.model) {
-    const defaultAsr =
-      models.value.find((m) => m.family === "asr" && m.default_active) ??
-      models.value.find((m) => m.family === "asr");
-    if (defaultAsr) config.value.model = defaultAsr.id;
+    applySystemConfigDefaults(config.value, sys.value);
+    applyMissingModelDefaults(config.value, models.value);
   }
 
   if (sys.value?.os === "android") {

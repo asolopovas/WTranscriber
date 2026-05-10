@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { FileProgress, ModelInfo } from "@/types";
-import { fmtModelSize, MB } from "@composables/format";
+import { fmtModelSize, MB } from "@utils/format";
 import DownloadCircle from "@components/DownloadCircle.vue";
 
 interface Props {

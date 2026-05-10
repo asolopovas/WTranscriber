@@ -2,18 +2,16 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { api, events } from "@/api";
-import type {
-  Config,
-  DiarizerChoice,
-  Engine,
-  Family,
-  FileProgress,
-  ModelInfo,
-  SystemInfo,
-} from "@/types";
-import { fmtBytes } from "@composables/format";
+import type { Config, Family, FileProgress, ModelInfo, SystemInfo } from "@/types";
+import { fmtBytes } from "@utils/format";
+import {
+  DIARIZER_BY_MODEL_ID,
+  applyAsrModel,
+  applyMissingModelDefaults,
+  modelIdForDiarizer,
+} from "@utils/models";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
-import { recordOmit, recordSet } from "@composables/records";
+import { recordOmit, recordSet } from "@utils/records";
 import { fieldClass } from "@styles/fields";
 import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
@@ -91,17 +89,9 @@ async function refreshModels() {
   models.value = await api.listModels();
 }
 
-const DIARIZER_BY_ID: Record<string, DiarizerChoice> = {
-  "nemo-sortformer-v2": "nemo",
-  "sherpa-pyannote-titanet": "titanet",
-};
-
-const diarizerSelectedId = computed<string | null>(() => {
-  if (!config.value) return null;
-  const choice = config.value.diarizer;
-  for (const [id, c] of Object.entries(DIARIZER_BY_ID)) if (c === choice) return id;
-  return null;
-});
+const diarizerSelectedId = computed<string | null>(() =>
+  config.value ? modelIdForDiarizer(config.value.diarizer) : null,
+);
 
 const selectedByFamily = computed<Partial<Record<Family, string | null>>>(() => ({
   asr: config.value?.model ?? null,
@@ -113,10 +103,9 @@ function onSelectDefault(payload: { family: Family; id: string }) {
   if (!config.value) return;
   const m: ModelInfo | undefined = models.value.find((x) => x.id === payload.id);
   if (payload.family === "asr") {
-    config.value.model = payload.id;
-    if (m && m.engine) config.value.engine = m.engine as Engine;
+    if (m) applyAsrModel(config.value, m);
   } else if (payload.family === "diarizer") {
-    const choice = DIARIZER_BY_ID[payload.id];
+    const choice = DIARIZER_BY_MODEL_ID[payload.id];
     if (choice) config.value.diarizer = choice;
   } else if (payload.family === "llm") {
     config.value.llm_model = payload.id;
@@ -139,18 +128,7 @@ onMounted(async () => {
     config.value.threads = sys.value.cpu_threads;
   }
   await refreshModels();
-  if (config.value && !config.value.llm_model) {
-    const defaultLlm =
-      models.value.find((m) => m.family === "llm" && m.default_active) ??
-      models.value.find((m) => m.family === "llm");
-    if (defaultLlm) config.value.llm_model = defaultLlm.id;
-  }
-  if (config.value && !config.value.model) {
-    const defaultAsr =
-      models.value.find((m) => m.family === "asr" && m.default_active) ??
-      models.value.find((m) => m.family === "asr");
-    if (defaultAsr) config.value.model = defaultAsr.id;
-  }
+  if (config.value) applyMissingModelDefaults(config.value, models.value);
   unlisten.push(
     await events.onModelProgress((p) => recordSet(modelProgress, p.id, p)),
     await events.onModelDone(refreshModels),

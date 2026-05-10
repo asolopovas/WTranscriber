@@ -212,6 +212,7 @@ fmt-check:
 [group('quality')]
 lint:
     {{_run}} --tag clippy --idle 120 --max 900 -- cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
+    {{_run}} --tag clippy-xtask --idle 60 --max 300 -- cargo clippy --manifest-path xtask/Cargo.toml --all-targets --offline -- -D warnings
     {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
     {{_run}} --tag vue-lint --idle 30 --max 120 -- bun run scripts/lint-vue.ts
     {{_run}} --tag knip --idle 30 --max 120 -- bun x knip
@@ -219,6 +220,7 @@ lint:
 [group('quality')]
 test:
     {{_run}} --tag rust-test --idle 90 --max 600 -- cargo test --manifest-path src-tauri/Cargo.toml --offline
+    {{_run}} --tag xtask-test --idle 60 --max 300 -- cargo test --manifest-path xtask/Cargo.toml --offline
     {{_run}} --tag js-test --idle 60 --max 300 -- bun run test
 
 # Playwright UI tests against the Vite dev server with mocked Tauri IPC.
@@ -235,22 +237,24 @@ audit: _ensure-audit
     {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock
     {{_run}} --tag bun-audit --idle 30 --max 120 -- bun audit
 
-# Pre-release gate: 9 jobs in parallel (fmt-check, clippy, typecheck, vue-lint, knip, rust-test, js-test, machete, audit).
+# Pre-release gate: 11 jobs in parallel (fmt-check, clippy, clippy-xtask, typecheck, vue-lint, knip, rust-test, xtask-test, js-test, machete, audit).
 [group('quality')]
 check: _ensure-machete _ensure-audit
     {{_par}} --idle 180 --max 1200 \
         --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"' \
         --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
+        --job 'clippy-xtask=cargo clippy --manifest-path xtask/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'typecheck=bun run typecheck' \
         --job 'vue-lint=bun run scripts/lint-vue.ts' \
         --job 'knip=bun x knip' \
         --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
+        --job 'xtask-test=cargo test --manifest-path xtask/Cargo.toml --offline' \
         --job 'js-test=bun run test' \
         --job 'machete=cargo machete src-tauri' \
         --job 'audit=cargo audit --file src-tauri/Cargo.lock && bun audit'
     @echo "✓ check passed"
 
-# Desktop dev prerequisites check (rust ≥1.85, bun, just, hooks, audit config).
+# Desktop dev prerequisites check (rust ≥1.88, bun, just, hooks, audit config).
 [group('quality')]
 doctor:
     {{_run}} --tag doctor --idle 30 --max 60 -- bun scripts/doctor.ts

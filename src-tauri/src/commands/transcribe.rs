@@ -398,6 +398,13 @@ impl Sink for TranscribeSink {
     }
 }
 
+struct TranscribeRunContext {
+    label: String,
+    display_name: String,
+    input_key: String,
+    sink: Arc<TranscribeSink>,
+}
+
 #[tauri::command]
 pub async fn transcribe_file(
     app: AppHandle,
@@ -406,20 +413,13 @@ pub async fn transcribe_file(
 ) -> Result<Transcript> {
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
-    let input_key_early = input.to_string_lossy().into_owned();
-    let cancel_early = CancellationToken::new();
-    register_cancel(&input_key_early, cancel_early.clone());
-    let lock_contended = TRANSCRIBE_LOCK.try_lock().is_err();
-    if lock_contended {
-        logfile::info(&format!(
-            "queued: waiting for previous transcription to finish ({})",
-            input.display()
-        ));
-    }
-    let _guard = TRANSCRIBE_LOCK.lock().await;
-    if cancel_early.is_cancelled() {
+    let input_key = input.to_string_lossy().into_owned();
+    let cancel = CancellationToken::new();
+    register_cancel(&input_key, cancel.clone());
+    let (lock_contended, _guard) = wait_for_transcribe_slot(&input).await;
+    if cancel.is_cancelled() {
         logfile::info(&format!("cancelled before start ({})", input.display()));
-        unregister_cancel(&input_key_early);
+        unregister_cancel(&input_key);
         return Err(Error::Cancelled);
     }
     if lock_contended {
@@ -428,23 +428,47 @@ pub async fn transcribe_file(
             input.display()
         ));
     }
+    let context = prepare_transcribe_run(app, &input, &config, input_key.clone(), cancel.clone());
+    let mut run_handle =
+        spawn_transcribe_job(input, config, context.sink.clone(), context.label.clone());
+    let raced = race_transcribe_job(&mut run_handle, cancel).await;
+    let result = finish_transcribe_run(raced, &context);
+    crate::android_stop_transcription_service();
+    unregister_cancel(&context.input_key);
+    result
+}
+
+async fn wait_for_transcribe_slot(input: &Path) -> (bool, tokio::sync::MutexGuard<'static, ()>) {
+    let lock_contended = TRANSCRIBE_LOCK.try_lock().is_err();
+    if lock_contended {
+        logfile::info(&format!(
+            "queued: waiting for previous transcription to finish ({})",
+            input.display()
+        ));
+    }
+    let guard = TRANSCRIBE_LOCK.lock().await;
+    (lock_contended, guard)
+}
+
+fn prepare_transcribe_run(
+    app: AppHandle,
+    input: &Path,
+    config: &Config,
+    input_key: String,
+    cancel: CancellationToken,
+) -> TranscribeRunContext {
     let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
-    log_preflight(&input, &config);
+    log_preflight(input, config);
     let display_name = input
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("audio")
         .to_string();
     crate::android_start_transcription_service(&format!("Transcribing {display_name}"));
-    let audio_dur_ms = audio::probe_duration_ms(&input).unwrap_or(0);
-    let audio_dur_sec = if audio_dur_ms > 0 {
-        audio_dur_ms as f64 / 1000.0
-    } else {
-        1.0
-    };
+    let audio_dur_sec =
+        audio::probe_duration_ms(input).map_or(1.0, |ms| (ms as f64 / 1000.0).max(1.0));
     let device_label = format!("{:?}", config.device).to_lowercase();
-    let initial_rtf = progress::load_rtf(&config.model, &device_label);
     let expect_diarize = config.diarize;
     let diarize_backend_hint = if expect_diarize {
         config.diarizer.as_str().to_string()
@@ -456,84 +480,111 @@ pub async fn transcribe_file(
     } else {
         progress::DIARIZE_DEFAULT_RTF
     };
-    let input_key = input_key_early.clone();
-    let cancel = cancel_early.clone();
     let sink = Arc::new(TranscribeSink::new(
         app,
         Handle::current(),
         input_key.clone(),
         audio_dur_sec,
-        initial_rtf,
+        progress::load_rtf(&config.model, &device_label),
         expect_diarize,
         false,
         diarize_backend_hint,
         diarize_prior_rtf,
         cancel,
     ));
-    let cancel_watch = cancel_early.clone();
-    let job_label = label.clone();
-    let sink_for_task = sink.clone();
-    let mut run_handle = tokio::spawn(async move {
+    TranscribeRunContext {
+        label,
+        display_name,
+        input_key,
+        sink,
+    }
+}
+
+fn spawn_transcribe_job(
+    input: PathBuf,
+    config: Config,
+    sink: Arc<TranscribeSink>,
+    label: String,
+) -> JoinHandle<Result<Transcript>> {
+    tokio::spawn(async move {
         let job = Job { input, config };
-        let res = transcriber::run_with_sink(&job, sink_for_task).await;
+        let res = transcriber::run_with_sink(&job, sink).await;
         match &res {
-            Ok(_) => logfile::info(&format!("engine returned naturally ({job_label})")),
+            Ok(_) => logfile::info(&format!("engine returned naturally ({label})")),
             Err(Error::Cancelled) => {
-                logfile::info(&format!("engine finalised after cancel ({job_label})"));
+                logfile::info(&format!("engine finalised after cancel ({label})"));
             }
-            Err(e) => logfile::info(&format!("engine finalised with error ({job_label}): {e}")),
+            Err(e) => logfile::info(&format!("engine finalised with error ({label}): {e}")),
         }
         res
-    });
-    let raced: Result<Transcript> = tokio::select! {
+    })
+}
+
+async fn race_transcribe_job(
+    run_handle: &mut JoinHandle<Result<Transcript>>,
+    cancel: CancellationToken,
+) -> Result<Transcript> {
+    tokio::select! {
         biased;
-        joined = &mut run_handle => match joined {
+        joined = run_handle => match joined {
             Ok(inner) => inner,
             Err(e) => Err(Error::Other(anyhow::anyhow!("join: {e}"))),
         },
-        () = cancel_watch.cancelled() => {
+        () = cancel.cancelled() => {
             logfile::info("cancel acknowledged; releasing lock and detaching engine task");
             Err(Error::Cancelled)
         },
-    };
-    let result = match raced {
-        Ok(t) => {
-            logfile::process_end(
-                &label,
-                "ok",
-                &format!(
-                    "{} utterances, {} ms, {} speakers",
-                    t.utterances.len(),
-                    t.duration_ms,
-                    t.speakers_detected
-                ),
-            );
-            sink.emit(Phase::Done, 100.0, 0.0);
-            crate::android_notify_transcription_done(
-                "Transcription finished",
-                &format!("{display_name}: {} utterances", t.utterances.len()),
-                true,
-            );
-            Ok(t)
-        }
+    }
+}
+
+fn finish_transcribe_run(
+    raced: Result<Transcript>,
+    context: &TranscribeRunContext,
+) -> Result<Transcript> {
+    match raced {
+        Ok(t) => Ok(finish_successful_transcribe(t, context)),
         Err(Error::Cancelled) => {
-            logfile::process_end(&label, "cancelled", "user cancelled");
+            logfile::process_end(&context.label, "cancelled", "user cancelled");
             Err(Error::Cancelled)
         }
         Err(e) => {
-            logfile::error(&format!("{label}: {e}"));
-            logfile::process_end(&label, "failed", &e.to_string());
+            logfile::error(&format!("{}: {e}", context.label));
+            logfile::process_end(&context.label, "failed", &e.to_string());
             crate::android_notify_transcription_done(
                 "Transcription failed",
-                &format!("{display_name}: {e}"),
+                &format!("{}: {e}", context.display_name),
                 false,
             );
             Err(e)
         }
-    };
-    crate::android_stop_transcription_service();
-    unregister_cancel(&input_key);
-    result
+    }
+}
+
+fn finish_successful_transcribe(
+    transcript: Transcript,
+    context: &TranscribeRunContext,
+) -> Transcript {
+    logfile::process_end(
+        &context.label,
+        "ok",
+        &format!(
+            "{} utterances, {} ms, {} speakers",
+            transcript.utterances.len(),
+            transcript.duration_ms,
+            transcript.speakers_detected
+        ),
+    );
+    context.sink.emit(Phase::Done, 100.0, 0.0);
+    crate::android_notify_transcription_done(
+        "Transcription finished",
+        &format!(
+            "{}: {} utterances",
+            context.display_name,
+            transcript.utterances.len()
+        ),
+        true,
+    );
+    transcript
 }
 
 fn log_preflight(input: &Path, config: &Config) {
@@ -956,89 +1007,92 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn queued_job_observes_cancel_before_lock_release() {
-        // Simulates two transcribe_file invocations: A holds the lock; B is
-        // waiting. Cancelling B's token before A finishes must let B observe
-        // is_cancelled() the moment it acquires the lock, so it can return
-        // Cancelled without starting work.
+    #[test]
+    fn queued_job_observes_cancel_before_lock_release() {
         let _g = cancel_test_lock().lock().unwrap();
-        clear_cancels();
-        let lock = lock();
-        let guard_a = lock.lock().await;
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async {
+                clear_cancels();
+                let lock = lock();
+                let guard_a = lock.lock().await;
 
-        let token_b = CancellationToken::new();
-        register_cancel("/tmp/job-b", token_b.clone());
-        let lock_for_b = lock;
-        let token_b_inside = token_b.clone();
-        let b = tokio::spawn(async move {
-            let _g = lock_for_b.lock().await;
-            // After acquiring the lock, the queued task must see cancel.
-            token_b_inside.is_cancelled()
-        });
+                let token_b = CancellationToken::new();
+                register_cancel("/tmp/job-b", token_b.clone());
+                let lock_for_b = lock;
+                let token_b_inside = token_b.clone();
+                let b = tokio::spawn(async move {
+                    let _g = lock_for_b.lock().await;
+                    token_b_inside.is_cancelled()
+                });
 
-        // While B is queued, cancel its token.
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        assert!(cancel_by_key("/tmp/job-b"));
-        // Release A so B acquires the lock.
-        drop(guard_a);
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                assert!(cancel_by_key("/tmp/job-b"));
+                drop(guard_a);
 
-        let observed_cancel = b.await.unwrap();
-        assert!(
-            observed_cancel,
-            "queued task must observe is_cancelled after lock acquisition"
-        );
-        unregister_cancel("/tmp/job-b");
+                let observed_cancel = b.await.unwrap();
+                assert!(
+                    observed_cancel,
+                    "queued task must observe is_cancelled after lock acquisition"
+                );
+                unregister_cancel("/tmp/job-b");
+            });
     }
 
-    #[tokio::test]
-    async fn cancel_all_wakes_every_registered_select_race() {
-        // Two concurrent select! races against their own tokens.
-        // cancel_all() must wake both within a few ms.
+    #[test]
+    fn cancel_all_wakes_every_registered_select_race() {
         let _g = cancel_test_lock().lock().unwrap();
-        clear_cancels();
-        let t1 = CancellationToken::new();
-        let t2 = CancellationToken::new();
-        register_cancel("/tmp/r1", t1.clone());
-        register_cancel("/tmp/r2", t2.clone());
-        let watch1 = t1.clone();
-        let watch2 = t2.clone();
-        let h1 = tokio::spawn(async move {
-            let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
-            tokio::pin!(work);
-            tokio::select! {
-                () = &mut work => false,
-                () = watch1.cancelled() => true,
-            }
-        });
-        let h2 = tokio::spawn(async move {
-            let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
-            tokio::pin!(work);
-            tokio::select! {
-                () = &mut work => false,
-                () = watch2.cancelled() => true,
-            }
-        });
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let started = Instant::now();
-        let n = cancel_all();
-        assert_eq!(n, 2);
-        let r1 = tokio::time::timeout(Duration::from_secs(1), h1)
-            .await
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
             .unwrap()
-            .unwrap();
-        let r2 = tokio::time::timeout(Duration::from_secs(1), h2)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(r1, "task 1 must have been cancelled");
-        assert!(r2, "task 2 must have been cancelled");
-        assert!(
-            started.elapsed() < Duration::from_millis(500),
-            "cancel propagation took too long: {:?}",
-            started.elapsed()
-        );
-        clear_cancels();
+            .block_on(async {
+                clear_cancels();
+                let t1 = CancellationToken::new();
+                let t2 = CancellationToken::new();
+                register_cancel("/tmp/r1", t1.clone());
+                register_cancel("/tmp/r2", t2.clone());
+                let watch1 = t1.clone();
+                let watch2 = t2.clone();
+                let h1 = tokio::spawn(async move {
+                    let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
+                    tokio::pin!(work);
+                    tokio::select! {
+                        () = &mut work => false,
+                        () = watch1.cancelled() => true,
+                    }
+                });
+                let h2 = tokio::spawn(async move {
+                    let work = async { tokio::time::sleep(Duration::from_secs(60)).await };
+                    tokio::pin!(work);
+                    tokio::select! {
+                        () = &mut work => false,
+                        () = watch2.cancelled() => true,
+                    }
+                });
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                let started = Instant::now();
+                let n = cancel_all();
+                assert_eq!(n, 2);
+                let r1 = tokio::time::timeout(Duration::from_secs(1), h1)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let r2 = tokio::time::timeout(Duration::from_secs(1), h2)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(r1, "task 1 must have been cancelled");
+                assert!(r2, "task 2 must have been cancelled");
+                assert!(
+                    started.elapsed() < Duration::from_millis(500),
+                    "cancel propagation took too long: {:?}",
+                    started.elapsed()
+                );
+                clear_cancels();
+            });
     }
 
     #[tokio::test]

@@ -13,6 +13,7 @@ import type {
   TranscribeProgress,
   Transcript,
 } from "@/types";
+import { uint8ToBase64 } from "@utils/base64";
 
 export const api = {
   appVersion: () => invoke<string>("app_version"),
@@ -57,14 +58,8 @@ export const api = {
     invoke<boolean>("share_transcript", { title, text }),
   addToWorkdir: (source: string, workdir: string) =>
     invoke<string>("add_to_workdir", { source, workdir }),
-  saveRecording: (workdir: string, filename: string, bytes: Uint8Array) => {
-    let s = "";
-    const chunk = 8192;
-    for (let i = 0; i < bytes.byteLength; i += chunk) {
-      s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[]);
-    }
-    return invoke<string>("save_recording", { workdir, filename, bytes: btoa(s) });
-  },
+  saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
+    invoke<string>("save_recording", { workdir, filename, bytes: uint8ToBase64(bytes) }),
   readAudioBytes: (path: string) => invoke<number[]>("read_audio_bytes", { path }),
   hasPersistentStorage: () => invoke<boolean>("has_persistent_storage"),
   requestPersistentStorage: () => invoke<void>("request_persistent_storage"),

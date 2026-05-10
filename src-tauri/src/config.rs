@@ -2,7 +2,8 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
+    logfile,
     models::{Family, by_id, default_id},
     paths,
 };
@@ -105,7 +106,9 @@ impl DiarizerChoice {
 
     #[must_use]
     pub const fn embedding_rel(self) -> &'static str {
-        "titanet_large.onnx"
+        match self {
+            Self::Nemo | Self::Titanet => "titanet_large.onnx",
+        }
     }
 }
 
@@ -185,6 +188,15 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
     dirty
 }
 
+fn corrupt_config_backup_path(path: &std::path::Path) -> std::path::PathBuf {
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let name = path.file_name().and_then(|n| n.to_str()).map_or_else(
+        || format!("config.corrupt-{stamp}.bak"),
+        |name| format!("{name}.corrupt-{stamp}.bak"),
+    );
+    path.with_file_name(name)
+}
+
 impl Config {
     pub fn load() -> Result<Self> {
         let path = paths::config_file()?;
@@ -194,7 +206,23 @@ impl Config {
             return Ok(cfg);
         }
         let raw = std::fs::read_to_string(&path)?;
-        let mut cfg: Self = serde_json::from_str(&raw).unwrap_or_default();
+        let mut cfg: Self = match serde_json::from_str(&raw) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                let backup = corrupt_config_backup_path(&path);
+                logfile::error(&format!(
+                    "config parse failed ({}): {e}; backing up to {}",
+                    path.display(),
+                    backup.display()
+                ));
+                std::fs::copy(&path, &backup)?;
+                return Err(Error::Config(format!(
+                    "invalid config file {}; backed up to {}: {e}",
+                    path.display(),
+                    backup.display()
+                )));
+            }
+        };
         if migrate_for_platform(&mut cfg) {
             let _ = cfg.save();
         }
@@ -288,6 +316,35 @@ mod tests {
             DiarizerChoice::Titanet.embedding_rel(),
             "titanet_large.onnx"
         );
+    }
+
+    #[test]
+    fn invalid_config_is_backed_up_and_reported() {
+        let _g = crate::paths::PATHS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::paths::clear_test_overrides();
+        let tmp = tempfile::tempdir().unwrap();
+        let config_file = tmp.path().join("config.yml");
+        crate::paths::set_config_file(config_file.clone());
+        std::fs::write(&config_file, "not-json").unwrap();
+
+        let err = Config::load().unwrap_err();
+
+        assert!(err.to_string().contains("invalid config file"));
+        assert_eq!(std::fs::read_to_string(&config_file).unwrap(), "not-json");
+        let backups = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.yml.corrupt-")
+            })
+            .count();
+        assert_eq!(backups, 1);
+        crate::paths::clear_test_overrides();
     }
 
     #[test]

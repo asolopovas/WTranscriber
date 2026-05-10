@@ -10,7 +10,8 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { fmtClock, fmtMsLong, MB } from "@composables/format";
+import { syncAsrEngineAndModel } from "@utils/models";
+import { fmtClock, fmtMsLong, MB } from "@utils/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
 import { usePanelResize } from "@composables/usePanelResize";
@@ -96,22 +97,8 @@ const languageOptions = computed(() => {
   return base.includes("auto") ? base : ["auto", ...base];
 });
 
-function syncEngineAndModel(next: Config) {
-  const installed = asrModels.value;
-  if (!installed.length) return;
-  const model = installed.find((m) => m.id === next.model);
-  if (model) {
-    if (next.engine !== model.engine) next.engine = model.engine as Config["engine"];
-    return;
-  }
-  const engineModel = installed.find((m) => m.engine === next.engine);
-  const fallback = engineModel ?? installed.find((m) => m.default_active) ?? installed[0];
-  next.engine = fallback.engine as Config["engine"];
-  next.model = fallback.id;
-}
-
 function onModelChanged() {
-  syncEngineAndModel(props.config);
+  syncAsrEngineAndModel(props.config, asrModels.value);
   const opts = languageOptions.value;
   if (opts.length && !opts.includes(props.config.language)) {
     props.config.language = opts.includes("auto") ? "auto" : opts[0];

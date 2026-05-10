@@ -77,6 +77,22 @@ pub fn set_config_file(path: PathBuf) {
     }
 }
 
+#[cfg(test)]
+pub fn clear_test_overrides() {
+    if let Ok(mut g) = OVERRIDE.write() {
+        *g = None;
+    }
+    if let Ok(mut g) = WORKDIR_OVERRIDE.write() {
+        *g = None;
+    }
+    if let Ok(mut g) = MODELS_OVERRIDE.write() {
+        *g = None;
+    }
+    if let Ok(mut g) = CONFIG_FILE_OVERRIDE.write() {
+        *g = None;
+    }
+}
+
 fn resolved() -> Result<Resolved> {
     if let Ok(g) = OVERRIDE.read()
         && let Some(r) = g.as_ref()

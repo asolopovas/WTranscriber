@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Transcript } from "@/types";
-import { fmtMs as fmt } from "@composables/format";
+import { fmtMs as fmt } from "@utils/format";
 import SlidingPanel from "@components/SlidingPanel.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";

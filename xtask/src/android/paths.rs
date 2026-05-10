@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::util::root;
 
+#[derive(Debug)]
 pub(super) struct Abi {
     pub abi: &'static str,
     pub rust: &'static str,
@@ -109,4 +110,35 @@ pub(super) fn prebuilt_dir(target: &str) -> Result<PathBuf> {
         .join(".android-prebuilt")
         .join("jniLibs")
         .join(abi_for(target)?.abi))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abi_for_maps_supported_targets() {
+        let cases = [
+            ("aarch64", "arm64-v8a", "aarch64_linux_android", "aarch64-linux-android24-clang"),
+            ("armv7", "armeabi-v7a", "armv7_linux_androideabi", "armv7a-linux-androideabi24-clang"),
+            ("i686", "x86", "i686_linux_android", "i686-linux-android24-clang"),
+            ("x86_64", "x86_64", "x86_64_linux_android", "x86_64-linux-android24-clang"),
+        ];
+
+        for (target, abi_name, rust, clang) in cases {
+            let abi = abi_for(target).unwrap();
+            assert_eq!(abi.abi, abi_name);
+            assert_eq!(abi.rust, rust);
+            assert_eq!(abi.clang, clang);
+            assert!(abi.triple.contains("linux-android"));
+        }
+    }
+
+    #[test]
+    fn abi_for_rejects_unknown_target() {
+        let err = abi_for("mips").unwrap_err().to_string();
+
+        assert!(err.contains("unknown target: mips"));
+        assert!(err.contains("aarch64|armv7|i686|x86_64"));
+    }
 }

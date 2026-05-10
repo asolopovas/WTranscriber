@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { api } from "@/api";
 import type { AudioMeta, DirEntry } from "@/types";
-import { fmtMs } from "@composables/format";
+import { fmtMs } from "@utils/format";
 import Modal from "@components/ui/Modal.vue";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
 import Icon from "@components/ui/Icon.vue";

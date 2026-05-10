@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from "vue";
 import { api } from "@/api";
-import { fmtClock } from "@composables/format";
+import { fmtClock } from "@utils/format";
 import Button from "@components/ui/Button.vue";
 
 const props = defineProps<{ workdir: string; headless?: boolean }>();
@@ -35,9 +35,19 @@ function pickMime(): string {
 
 const TARGET_SR = 16000;
 
+type AudioContextWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+function createAudioContext(): AudioContext {
+  const ctor = window.AudioContext ?? (window as AudioContextWindow).webkitAudioContext;
+  if (!ctor) throw new Error("AudioContext is unavailable");
+  return new ctor();
+}
+
 async function blobToWav16kMono(blob: Blob): Promise<Uint8Array> {
   const arr = await blob.arrayBuffer();
-  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const ctx = createAudioContext();
   const buf = await ctx.decodeAudioData(arr.slice(0));
   await ctx.close();
   const ch = buf.numberOfChannels;
@@ -121,7 +131,7 @@ async function start() {
     };
     recorder.onstop = onStopped;
     recorder.start(250);
-    audioCtx = new AudioContext();
+    audioCtx = createAudioContext();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 256;
     audioCtx.createMediaStreamSource(stream).connect(analyser);

@@ -308,3 +308,43 @@ pub(super) fn write_sha256sums(artifacts: &[PathBuf], sums_path: &Path) -> Resul
     fs::write(sums_path, format!("{}\n", lines.join("\n")))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn win_path_to_wsl_converts_drive_paths() {
+        assert_eq!(
+            win_path_to_wsl(Path::new("C:\\Users\\me\\artifact.exe")),
+            "/mnt/c/Users/me/artifact.exe"
+        );
+    }
+
+    #[test]
+    fn win_path_to_wsl_leaves_non_drive_paths() {
+        assert_eq!(win_path_to_wsl(Path::new("relative/path")), "relative/path");
+    }
+
+    #[test]
+    fn write_sha256sums_uses_file_names() {
+        let dir = std::env::temp_dir().join(format!(
+            "wtranscriber-xtask-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let artifact = dir.join("artifact.bin");
+        let sums = dir.join("SHA256SUMS");
+        fs::write(&artifact, b"abc").unwrap();
+
+        write_sha256sums(std::slice::from_ref(&artifact), &sums).unwrap();
+
+        let out = fs::read_to_string(&sums).unwrap();
+        assert_eq!(
+            out,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  artifact.bin\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+}

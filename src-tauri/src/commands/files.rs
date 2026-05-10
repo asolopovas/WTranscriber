@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::file_names::unique_child_path;
 use crate::{
     browser::{self, DirListing},
     error::{Error, Result},
@@ -35,40 +36,19 @@ fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
     let file_name = source
         .file_name()
         .ok_or_else(|| Error::Config("source has no file name".into()))?;
-    let mut dst = workdir.join(file_name);
+    let initial_dst = workdir.join(file_name);
     if let Ok(src_canon) = std::fs::canonicalize(source)
-        && let Ok(dst_canon) = std::fs::canonicalize(&dst)
+        && let Ok(dst_canon) = std::fs::canonicalize(&initial_dst)
         && src_canon == dst_canon
     {
-        return Ok(dst);
+        return Ok(initial_dst);
     }
-    if dst.exists() {
-        let stem = Path::new(file_name)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file");
-        let ext = Path::new(file_name)
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        for n in 1..=999 {
-            let candidate = if ext.is_empty() {
-                workdir.join(format!("{stem} ({n})"))
-            } else {
-                workdir.join(format!("{stem} ({n}).{ext}"))
-            };
-            if !candidate.exists() {
-                dst = candidate;
-                break;
-            }
-        }
-    }
-    if dst.exists() {
-        return Err(Error::Config(format!(
+    let dst = unique_child_path(workdir, file_name, "file").ok_or_else(|| {
+        Error::Config(format!(
             "too many copies of '{}' in workdir",
             file_name.to_string_lossy()
-        )));
-    }
+        ))
+    })?;
     std::fs::copy(source, &dst)?;
     logfile::info(&format!(
         "add_to_workdir {} -> {}",

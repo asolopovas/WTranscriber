@@ -1,7 +1,7 @@
 import { computed, ref, type Ref } from "vue";
 import { api, events } from "@/api";
 import type { FileProgress, ModelInfo } from "@/types";
-import { recordOmit, recordSet } from "@composables/records";
+import { recordOmit, recordSet } from "@utils/records";
 
 export interface EssentialsState {
   ids: Ref<string[]>;

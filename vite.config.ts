@@ -1,3 +1,4 @@
+import process from "node:process";
 import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
@@ -5,10 +6,9 @@ import { defineConfig } from "vite";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
-export default defineConfig(async () => ({
+export default defineConfig(() => ({
   plugins: [tailwindcss(), vue()],
 
   build: {

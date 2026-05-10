@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
+import { detachedSpawnOptions, killProcessTree } from "./process-tree";
 
 interface Options {
   tag: string;
@@ -51,6 +52,7 @@ let lastLine = "";
 let killReason: string | null = null;
 
 const child = spawn(opts.cmd[0]!, opts.cmd.slice(1), {
+  ...detachedSpawnOptions,
   stdio: ["inherit", "pipe", "pipe"],
   env: { ...process.env, FORCE_COLOR: process.env.FORCE_COLOR ?? "1" },
 });
@@ -93,9 +95,7 @@ const idleTimer = setInterval(() => {
   if (Date.now() - lastOutput > opts.idle * 1000) {
     killReason = `IDLE_TIMEOUT (${opts.idle}s without output)`;
     process.stderr.write(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
-    try {
-      child.kill("SIGKILL");
-    } catch {}
+    killProcessTree(child, "SIGKILL");
   }
 }, 1000);
 
@@ -104,9 +104,7 @@ const hardTimer =
     ? setTimeout(() => {
         killReason = killReason ?? `MAX_TIMEOUT (${opts.max}s)`;
         process.stderr.write(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
-        try {
-          child.kill("SIGKILL");
-        } catch {}
+        killProcessTree(child, "SIGKILL");
       }, opts.max * 1000)
     : null;
 
@@ -118,9 +116,7 @@ const cleanup = (): void => {
 
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(sig, () => {
-    try {
-      child.kill(sig);
-    } catch {}
+    killProcessTree(child, sig);
   });
 }
 

@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "bun run typecheck && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "knip": "knip",
-    "test": "vitest run",
+    "test": "vitest run src scripts",
     "test:watch": "vitest",
     "test:ui": "playwright test"
   },
