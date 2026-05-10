@@ -212,7 +212,23 @@ fn resolve_script() -> Result<PathBuf> {
     {
         candidates.push(dir.join("diarize.py"));
         candidates.push(dir.join("resources").join("diarize.py"));
+        candidates.push(dir.join("_up_").join("scripts").join("diarize.py"));
+        candidates.push(
+            dir.join("..")
+                .join("lib")
+                .join("WTranscriber")
+                .join("_up_")
+                .join("scripts")
+                .join("diarize.py"),
+        );
         candidates.push(dir.join("..").join("Resources").join("diarize.py"));
+        candidates.push(
+            dir.join("..")
+                .join("Resources")
+                .join("_up_")
+                .join("scripts")
+                .join("diarize.py"),
+        );
     }
     candidates.push(paths::data_dir()?.join("diarize.py"));
     if let Ok(cwd) = std::env::current_dir() {

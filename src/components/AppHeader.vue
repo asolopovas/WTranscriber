@@ -35,13 +35,6 @@ const activeTabLabel = computed(() => TABS.find((t) => t.id === tab.value)?.labe
       <Icon name="graphic_eq" :size="24" class="text-primary" />
       <h1 class="text-headlineSmall font-semibold text-on-surface">{{ activeTabLabel }}</h1>
     </div>
-    <nav
-      class="hidden md:flex items-center gap-md md:gap-xl h-full overflow-x-auto scroll-thin min-w-0"
-    >
-      <Button v-for="t in TABS" :key="t.id" shape="tab" :active="tab === t.id" @click="tab = t.id">
-        {{ t.label }}
-      </Button>
-    </nav>
     <div class="flex items-center gap-xs shrink-0">
       <template v-if="showLogControls">
         <select

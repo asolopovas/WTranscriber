@@ -9,7 +9,7 @@ const model = defineModel<Tab>({ required: true });
 </script>
 
 <template>
-  <nav class="md:hidden flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface">
+  <nav class="flex items-stretch shrink-0 border-t border-outline-variant/40 bg-surface">
     <Button
       v-for="t in TABS"
       :key="t.id"
@@ -23,6 +23,7 @@ const model = defineModel<Tab>({ required: true });
       <TranscribeIcon v-if="t.id === 'transcribe'" :size="26" />
       <SettingsIcon v-else-if="t.id === 'settings'" :size="26" />
       <LogIcon v-else :size="26" />
+      <span class="text-labelSmall">{{ t.label }}</span>
     </Button>
   </nav>
 </template>
