@@ -250,18 +250,20 @@ async function resetAudioCache() {
 
         <Card icon="cleaning_services" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">
-            <div class="grid gap-md" :class="isAndroid ? 'grid-cols-3' : 'grid-cols-2'">
+            <div class="grid grid-cols-2 gap-md">
               <Button class="w-full justify-center" @click="resetTranscriptCache">
                 Transcript cache
               </Button>
               <Button class="w-full justify-center" @click="resetAudioCache"> Audio cache </Button>
               <Button
                 v-if="isAndroid"
-                class="w-full justify-center"
+                class="w-full justify-center col-span-2"
                 :variant="persistentEnabled ? 'primary' : 'neutral'"
                 @click="togglePersistent(!persistentEnabled)"
               >
-                {{ persistentEnabled ? "Persist: on" : "Persist: off" }}
+                {{
+                  persistentEnabled ? "Restore files on launch: On" : "Restore files on launch: Off"
+                }}
               </Button>
             </div>
             <p
