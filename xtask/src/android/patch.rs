@@ -157,9 +157,17 @@ pub(super) fn patch_manifest() -> Result<()> {
             "    <uses-permission android:name=\"android.permission.FOREGROUND_SERVICE_DATA_SYNC\" />\n",
             "    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n",
             "    <uses-permission android:name=\"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS\" />\n",
+            "    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />\n",
             "    <uses-feature",
         );
         raw = raw.replacen("    <uses-feature", perms, 1);
+    }
+    if !raw.contains("android.permission.MANAGE_EXTERNAL_STORAGE") {
+        raw = raw.replacen(
+            "    <uses-feature",
+            "    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />\n    <uses-feature",
+            1,
+        );
     }
     if !raw.contains(".TranscriptionService") {
         let service = concat!(

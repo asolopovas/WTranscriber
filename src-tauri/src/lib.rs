@@ -378,6 +378,9 @@ fn enable_persistent_storage() -> std::result::Result<bool, String> {
         cfg.use_persistent_models = true;
         cfg.save().map_err(|e| e.to_string())?;
         if let Ok(internal) = paths::models_dir() {
+            if std::path::Path::new(PERSISTENT_MODELS_DIR).exists() {
+                restore_models_from_persistent(&internal);
+            }
             backup_models_to_persistent(&internal);
         }
         backup_config_to_persistent();
