@@ -2,7 +2,9 @@
 
 ## Supported versions
 
-Only the latest minor release is patched.
+Only the most recent stable tag (`vX.Y.Z`) receives security patches. The
+rolling `dev` prerelease is updated continuously and is not a support
+channel.
 
 ## Reporting
 

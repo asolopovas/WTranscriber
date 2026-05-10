@@ -4,10 +4,13 @@ Dev-loop commands live in [`dev-loop.md`](dev-loop.md). This file: prerequisites
 
 ## Prerequisites
 
-- Android Studio with SDK + NDK `27.2.12479018`
+- Android Studio with SDK + NDK (version pinned in `justfile` `_android_ndk` — currently `27.2.12479018`)
 - JDK 21
 - `just android-targets` — Rust Android targets
 - `just android-prebuilts` — sherpa-onnx Android prebuilts
+
+Run `just android-doctor` for an authoritative toolchain check; it reads the
+actual NDK path the build will use and fails loudly on drift.
 
 ## Build / install
 
@@ -47,4 +50,4 @@ just android-emu       # cross-platform; bounded waits
 just android-emu-stop
 ```
 
-Backed by `scripts/android-emu.mjs`. Creates the AVD on first run, boots `-no-window -gpu swiftshader_indirect -accel on`. Each wait stage prints progress every 5 s.
+Backed by `scripts/android-emu.ts`. Creates the AVD on first run, boots `-no-window -gpu swiftshader_indirect -accel on`. Each wait stage prints progress every 5 s.

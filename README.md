@@ -4,10 +4,14 @@ Audio transcription desktop app. [Tauri 2](https://tauri.app) · Vue 3 + TS · R
 
 ## Prerequisites
 
-- Rust stable (MSRV 1.85)
+- Rust stable (MSRV 1.85, enforced via `rust-version` in `Cargo.toml`)
 - Bun
 - [`just`](https://github.com/casey/just)
 - Tauri platform toolchain ([docs](https://tauri.app/start/prerequisites/))
+
+Desktop dev (`just dev`, `just build`) is exercised on Linux and Windows.
+macOS builds via `tauri build` (bundle target `app`) but is not part of the
+release matrix; expect rough edges. Android dev from a macOS host works.
 
 ## Quick start
 
@@ -28,7 +32,8 @@ just check        # parallel pre-release gate
 just sherpa-cuda     # prebuilt sherpa-onnx CUDA archive
 just cudnn           # cuDNN 9 for CUDA 12
 just nemo-deps       # Python venv + nemo_toolkit for Sortformer diarization
-just build-cpu       # CPU-only fallback (sherpa-static feature)
+just dev-cpu         # HMR with sherpa-static (no CUDA toolchain required)
+just build-cpu       # CPU-only full build (sherpa-static feature)
 ```
 
 Requires NVIDIA CUDA 12.x (`cudart64_12.dll`) installed system-wide. The sidecar `sherpa-onnx-offline.exe` runs CUDA independently of the build feature; toggling Device → GPU in the UI uses the sidecar with automatic CPU fallback.

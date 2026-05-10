@@ -1,7 +1,6 @@
-#!/usr/bin/env node
-
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, unlinkSync } from "node:fs";
+#!/usr/bin/env bun
+import { spawn, spawnSync, type SpawnSyncOptionsWithStringEncoding } from "node:child_process";
+import { mkdirSync, openSync, unlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,8 +13,8 @@ const sdk =
       ? path.join(os.homedir(), "Library", "Android", "sdk")
       : path.join(os.homedir(), "Android", "Sdk"));
 
-const exe = (n) => (isWin ? `${n}.exe` : n);
-const bat = (n) => (isWin ? `${n}.bat` : n);
+const exe = (n: string): string => (isWin ? `${n}.exe` : n);
+const bat = (n: string): string => (isWin ? `${n}.bat` : n);
 const adb = path.join(sdk, "platform-tools", exe("adb"));
 const avdmanager = path.join(sdk, "cmdline-tools", "latest", "bin", bat("avdmanager"));
 const emulator = path.join(sdk, "emulator", exe("emulator"));
@@ -25,8 +24,8 @@ const cmd = args[0];
 let name = "wt";
 let image = "system-images;android-34;google_apis_playstore;x86_64";
 for (let i = 1; i < args.length; i++) {
-  if (args[i] === "--name") name = args[++i];
-  else if (args[i] === "--image") image = args[++i];
+  if (args[i] === "--name") name = args[++i] ?? name;
+  else if (args[i] === "--image") image = args[++i] ?? image;
 }
 
 const tmpDir = path.resolve("tmp");
@@ -34,21 +33,37 @@ mkdirSync(tmpDir, { recursive: true });
 const pidFile = path.join(tmpDir, "emulator.pid");
 const logFile = path.join(tmpDir, "emulator.log");
 
-function log(msg) {
+const log = (msg: string): void => {
   process.stderr.write(`[emu] ${msg}\n`);
+};
+
+interface ShResult {
+  code: number;
+  out: string;
 }
 
-function sh(prog, argv, opts = {}) {
+const sh = (
+  prog: string,
+  argv: string[],
+  opts: Partial<SpawnSyncOptionsWithStringEncoding> = {},
+): ShResult => {
   const r = spawnSync(prog, argv, { encoding: "utf8", ...opts });
   return { code: r.status ?? 1, out: (r.stdout || "") + (r.stderr || "") };
-}
+};
 
-async function withDeadline(label, deadlineMs, intervalMs, probe) {
+const fileExists = async (p: string): Promise<boolean> => Bun.file(p).exists();
+
+const withDeadline = async <T>(
+  label: string,
+  deadlineMs: number,
+  intervalMs: number,
+  probe: () => Promise<T | false> | T | false,
+): Promise<T> => {
   const start = Date.now();
   let lastBeat = start;
   while (Date.now() - start < deadlineMs) {
     const result = await probe();
-    if (result) return result;
+    if (result) return result as T;
     if (Date.now() - lastBeat >= 5000) {
       log(`${label}… ${((Date.now() - start) / 1000).toFixed(0)}s elapsed`);
       lastBeat = Date.now();
@@ -56,9 +71,9 @@ async function withDeadline(label, deadlineMs, intervalMs, probe) {
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(`${label}: timed out after ${(deadlineMs / 1000).toFixed(0)}s`);
-}
+};
 
-function adbDevices() {
+const adbDevices = (): string[] => {
   const r = sh(adb, ["devices"]);
   if (r.code !== 0) return [];
   return r.out
@@ -66,11 +81,12 @@ function adbDevices() {
     .slice(1)
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("*"))
-    .map((l) => l.split(/\s+/)[0]);
-}
+    .map((l) => l.split(/\s+/)[0]!)
+    .filter((s): s is string => Boolean(s));
+};
 
-async function start() {
-  if (!existsSync(adb)) {
+const start = async (): Promise<void> => {
+  if (!(await fileExists(adb))) {
     log(`adb not found at ${adb} (set ANDROID_HOME)`);
     process.exit(1);
   }
@@ -79,19 +95,20 @@ async function start() {
     log(adbDevices().join(", "));
     return;
   }
-  if (!existsSync(avdmanager) || !existsSync(emulator)) {
+  if (!(await fileExists(avdmanager)) || !(await fileExists(emulator))) {
     log(`emulator/avdmanager not found in ${sdk} (install via Android Studio)`);
     process.exit(1);
   }
   const list = sh(avdmanager, ["list", "avd"]).out;
   if (!new RegExp(`Name:\\s+${name}\\b`).test(list)) {
     log(`creating AVD '${name}' from ${image}`);
-    const create = spawnSync(avdmanager, ["create", "avd", "-n", name, "-k", image, "-d", "pixel_6", "--force"], {
-      input: "no\n",
-      encoding: "utf8",
-    });
+    const create = spawnSync(
+      avdmanager,
+      ["create", "avd", "-n", name, "-k", image, "-d", "pixel_6", "--force"],
+      { input: "no\n", encoding: "utf8" },
+    );
     if (create.status !== 0) {
-      log(create.stdout + create.stderr);
+      log((create.stdout ?? "") + (create.stderr ?? ""));
       process.exit(1);
     }
   }
@@ -117,24 +134,25 @@ async function start() {
     { stdio: ["ignore", out, out], detached: true },
   );
   child.unref();
-  writeFileSync(pidFile, String(child.pid));
+  await Bun.write(pidFile, String(child.pid));
 
-  await withDeadline("waiting for adb device", 60_000, 1000, async () =>
+  await withDeadline("waiting for adb device", 60_000, 1000, () =>
     adbDevices().some((d) => d.startsWith("emulator-")),
   );
-  await withDeadline("waiting for sys.boot_completed", 180_000, 2000, async () => {
+  await withDeadline("waiting for sys.boot_completed", 180_000, 2000, () => {
     const r = sh(adb, ["shell", "getprop", "sys.boot_completed"]);
     return r.code === 0 && r.out.trim() === "1";
   });
   sh(adb, ["shell", "input", "keyevent", "82"]);
   log(`emulator ready: ${adbDevices().join(", ")}`);
-}
+};
 
-function stop() {
+const stop = async (): Promise<void> => {
   const r = sh(adb, ["-s", "emulator-5554", "emu", "kill"]);
   if (r.code === 0) log("sent emu kill");
-  if (existsSync(pidFile)) {
-    const pid = Number(readFileSync(pidFile, "utf8").trim());
+  const pidF = Bun.file(pidFile);
+  if (await pidF.exists()) {
+    const pid = Number((await pidF.text()).trim());
     if (Number.isInteger(pid) && pid > 0) {
       try {
         process.kill(pid);
@@ -145,16 +163,16 @@ function stop() {
     } catch {}
   }
   log("emulator stopped");
-}
+};
 
 if (cmd === "start") {
-  start().catch((err) => {
+  start().catch((err: Error) => {
     log(`FAIL ${err.message}`);
     process.exit(1);
   });
 } else if (cmd === "stop") {
-  stop();
+  await stop();
 } else {
-  log("usage: android-emu.mjs start|stop [--name wt] [--image ...]");
+  log("usage: android-emu.ts start|stop [--name wt] [--image ...]");
   process.exit(2);
 }

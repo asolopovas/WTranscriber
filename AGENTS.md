@@ -9,14 +9,14 @@ src/             Vue 3 frontend (api.ts, types.ts mirrors Rust)
 src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler!), bin/wt.rs, api.rs, config.rs, paths.rs, error.rs, models/, transcriber/, diarizer/, audio/, runtimes/, llm/, engine/
 src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
 xtask/src/       bump / publish / release / android orchestration
-scripts/         run.mjs, parallel.mjs, android-emu.mjs, cdp.mjs, lint-vue.mjs, clean-temp.mjs, install-*.ps1
+scripts/         run.ts, parallel.ts, android-emu.ts, cdp.ts, lint-vue.ts, clean-temp.ts, doctor.ts, install-*.ps1, bootstrap-*
 docs/            android · dev-loop · release · rust-build-speed
 .pi/agents/      diagnose · runner
 ```
 
 ## Task contract
 
-Every `just` recipe runs through `scripts/run.mjs`: line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0`; `just android` is finite (it bootstraps a detached session and exits). Anything quiet >30 s is a bug.
+Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0`; `just android` is finite (it bootstraps a detached session and exits). Anything quiet >30 s is a bug.
 
 ## Commands
 
@@ -29,7 +29,7 @@ just check             parallel pre-release gate
 just release-stable    check + bump + tag + build + publish
 ```
 
-`just check` runs in parallel via `scripts/parallel.mjs`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …).
+`just check` runs **8 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 
 `just --list` for the rest.
 
@@ -45,7 +45,11 @@ just release-stable    check + bump + tag + build + publish
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden. Auto-formats touched files (Rust via `cargo fmt`, TS/Vue/docs via `prettier --write`), re-stages, then gates on `bun run typecheck`. Heavy checks live in `just check`.
+`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt`, TS/Vue/docs via `prettier --write`), re-stages, then gates on `bun run typecheck`. Rust correctness (clippy, tests) is **not** in the hook — it lives in `just check` and CI. Run `just check` before opening a PR.
+
+## Scratch artefacts
+
+`tmp/` is the dev-loop source of truth (PIDs, logs, agent reports). See [`docs/tmp.md`](docs/tmp.md) for the full inventory and cleanup rules.
 
 ## Live dev invariant
 

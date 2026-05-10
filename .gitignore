@@ -31,6 +31,9 @@ dist-ssr
 bun.lockb
 bun.lock
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Tauri build outputs
 src-tauri/target/
 xtask/target/

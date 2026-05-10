@@ -22,8 +22,11 @@
 
 ## Artifacts
 
+Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb", "app"]`):
+
 - Windows host: `wtranscriber-setup-*.exe` (NSIS)
 - Linux host: `wtranscriber_*_amd64.deb`
+- macOS host (manual): `WTranscriber.app` bundle (not in the release matrix)
 - Windows + WSL: `.deb` at `$HOME/.cache/wtranscriber-wsl-target/`
 - Android: `wtranscriber-*.apk` (signed if `keystore.properties` present)
 - `SHA256SUMS[-<ver>]` and `release-manifest-<ver>.json`
@@ -31,14 +34,14 @@
 
 ## Gates
 
-| Stage             | Gate                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `release-bump`    | Working tree clean; tag does not exist                                                 |
-| `release-stable`  | `just check` (parallel: fmt + clippy + typecheck + vue-lint + tests + machete + audit) |
-| `release-publish` | Stable: clean tree, local tag exists                                                   |
-| `release-build`   | Stable: refuses unsigned APK; dev: warns and continues                                 |
+| Stage             | Gate                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| `release-bump`    | Working tree clean; tag does not exist                                                                     |
+| `release-stable`  | `just check` (8 parallel jobs: fmt-check, clippy, typecheck, vue-lint, rust-test, js-test, machete, audit) |
+| `release-publish` | Stable: clean tree, local tag exists                                                                       |
+| `release-build`   | Stable: refuses unsigned APK; dev: warns and continues                                                     |
 
-The bump commit uses `--no-verify` because `just check` already ran.
+The bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
 
 ## Version sync (on bump)
 

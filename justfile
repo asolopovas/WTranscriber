@@ -23,8 +23,8 @@ export ANDROID_NDK_HOME := _android_ndk
 export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else { '' })
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 
-_run := "bun scripts/run.mjs"
-_par := "bun scripts/parallel.mjs"
+_run := "bun scripts/run.ts"
+_par := "bun scripts/parallel.ts"
 
 default:
     @just --list --unsorted
@@ -144,16 +144,16 @@ android-debug-attach device="":
 
 [group('android')]
 android-debug-eval expr:
-    {{_run}} --tag android-eval --idle 15 --max 30 -- node scripts/cdp.mjs {{quote(expr)}}
+    {{_run}} --tag android-eval --idle 15 --max 30 -- bun scripts/cdp.ts {{quote(expr)}}
 
 # Headless x86_64 emulator (cross-platform; bounded boot wait, ≤180s).
 [group('android')]
 android-emu name="wt":
-    {{_run}} --tag emu-start --idle 30 --max 240 -- bun scripts/android-emu.mjs start --name {{name}}
+    {{_run}} --tag emu-start --idle 30 --max 240 -- bun scripts/android-emu.ts start --name {{name}}
 
 [group('android')]
 android-emu-stop:
-    {{_run}} --tag emu-stop --idle 10 --max 30 -- bun scripts/android-emu.mjs stop
+    {{_run}} --tag emu-stop --idle 10 --max 30 -- bun scripts/android-emu.ts stop
 
 # ─── android: build / install / cli ───────────────────────────────────────────
 
@@ -213,7 +213,7 @@ fmt-check:
 lint:
     {{_run}} --tag clippy --idle 120 --max 900 -- cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
     {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
-    {{_run}} --tag vue-lint --idle 30 --max 120 -- bun run scripts/lint-vue.mjs
+    {{_run}} --tag vue-lint --idle 30 --max 120 -- bun run scripts/lint-vue.ts
 
 [group('quality')]
 test:
@@ -231,7 +231,7 @@ dep-check: _ensure-machete
 
 [group('quality')]
 audit: _ensure-audit
-    {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
+    {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock
     {{_run}} --tag bun-audit --idle 30 --max 120 -- bun audit
 
 # Pre-release gate: 8 jobs in parallel (fmt-check, clippy, typecheck, vue-lint, rust-test, js-test, machete, audit).
@@ -241,12 +241,17 @@ check: _ensure-machete _ensure-audit
         --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"' \
         --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'typecheck=bun run typecheck' \
-        --job 'vue-lint=bun run scripts/lint-vue.mjs' \
+        --job 'vue-lint=bun run scripts/lint-vue.ts' \
         --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
         --job 'js-test=bun run test' \
         --job 'machete=cargo machete src-tauri' \
-        --job 'audit=cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429 && bun audit'
+        --job 'audit=cargo audit --file src-tauri/Cargo.lock && bun audit'
     @echo "✓ check passed"
+
+# Desktop dev prerequisites check (rust ≥1.85, bun, just, hooks, audit config).
+[group('quality')]
+doctor:
+    {{_run}} --tag doctor --idle 30 --max 60 -- bun scripts/doctor.ts
 
 _ensure-machete:
     @command -v cargo-machete >/dev/null 2>&1 || {{_run}} --tag install-machete --idle 60 --max 600 -- cargo install --locked cargo-machete
@@ -258,7 +263,7 @@ _ensure-audit:
 
 [group('clean')]
 clean-temp *args:
-    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.mjs {{args}}
+    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.ts {{args}}
 
 [group('clean')]
 clean: clean-temp
@@ -268,7 +273,7 @@ clean: clean-temp
 
 [group('clean')]
 clean-force:
-    {{_run}} --tag clean-force --idle 30 --max 120 -- bun scripts/clean-temp.mjs --force
+    {{_run}} --tag clean-force --idle 30 --max 120 -- bun scripts/clean-temp.ts --force
     @just clean
 
 # ─── icons ────────────────────────────────────────────────────────────────────
