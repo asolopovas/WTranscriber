@@ -106,6 +106,11 @@ build-cli:
 build-cpu:
     {{_run}} --tag build-cpu --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
 
+# Linux .deb built inside Debian 12 container (glibc 2.36 floor).
+[group('build')]
+build-deb-docker:
+    {{_run}} --tag build-deb-docker --idle 180 --max 3600 -- bash docker/build-deb.sh
+
 # Windows: NSIS + MSI bundles.
 [windows, group('build')]
 build-all:

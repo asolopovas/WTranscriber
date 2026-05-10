@@ -16,6 +16,22 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         std::env::remove_var("SHERPA_ONNX_LIB");
         std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
     }
+    if cfg!(target_os = "linux") && std::env::var("WT_HOST_NO_DOCKER").is_err() {
+        let docker_ok = std::process::Command::new("docker")
+            .arg("version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if docker_ok {
+            println!("[host] building .deb inside debian:12 container (glibc 2.36 floor)");
+            return run_streamed("host", "bash", &["docker/build-deb.sh"], &[], lock);
+        }
+        eprintln!(
+            "[host] docker unavailable; falling back to native build (resulting .deb will require host glibc)"
+        );
+    }
     run_streamed(
         "host",
         "bun",
