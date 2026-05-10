@@ -80,15 +80,14 @@ pub enum Device {
 pub enum DiarizerChoice {
     #[serde(alias = "auto")]
     Nemo,
-    #[serde(alias = "sherpa")]
-    Eres2net,
+    #[serde(alias = "sherpa", alias = "eres2net")]
     Titanet,
 }
 
 impl Default for DiarizerChoice {
     fn default() -> Self {
         if cfg!(any(target_os = "android", target_os = "ios")) {
-            Self::Eres2net
+            Self::Titanet
         } else {
             Self::Nemo
         }
@@ -100,17 +99,13 @@ impl DiarizerChoice {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Nemo => "nemo-sortformer-v2",
-            Self::Eres2net => "diar-eres2net-base",
             Self::Titanet => "sherpa-pyannote-titanet",
         }
     }
 
     #[must_use]
     pub const fn embedding_rel(self) -> &'static str {
-        match self {
-            Self::Titanet => "titanet_large.onnx",
-            _ => "3dspeaker_eres2net_base.onnx",
-        }
+        "titanet_large.onnx"
     }
 }
 
@@ -284,7 +279,6 @@ mod tests {
     #[test]
     fn diarizer_choice_maps_to_catalog_ids() {
         assert_eq!(DiarizerChoice::Nemo.as_str(), "nemo-sortformer-v2");
-        assert_eq!(DiarizerChoice::Eres2net.as_str(), "diar-eres2net-base");
         assert_eq!(DiarizerChoice::Titanet.as_str(), "sherpa-pyannote-titanet");
     }
 
@@ -294,16 +288,14 @@ mod tests {
             DiarizerChoice::Titanet.embedding_rel(),
             "titanet_large.onnx"
         );
-        assert_eq!(
-            DiarizerChoice::Eres2net.embedding_rel(),
-            "3dspeaker_eres2net_base.onnx"
-        );
     }
 
     #[test]
-    fn diarizer_choice_deserialises_sherpa_alias_to_eres2net() {
+    fn diarizer_choice_deserialises_legacy_aliases_to_titanet() {
         let v: DiarizerChoice = serde_json::from_str("\"sherpa\"").unwrap();
-        assert!(matches!(v, DiarizerChoice::Eres2net));
+        assert!(matches!(v, DiarizerChoice::Titanet));
+        let v: DiarizerChoice = serde_json::from_str("\"eres2net\"").unwrap();
+        assert!(matches!(v, DiarizerChoice::Titanet));
     }
 
     #[test]

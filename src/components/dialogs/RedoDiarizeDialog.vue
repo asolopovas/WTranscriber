@@ -40,7 +40,6 @@ function onDiarizerChange(value: DiarizerChoice) {
             @change="onDiarizerChange(($event.target as HTMLSelectElement).value as DiarizerChoice)"
           >
             <option v-if="!props.sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-            <option value="eres2net">3D-Speaker ERes2Net</option>
             <option value="titanet">NVIDIA TitaNet</option>
           </select>
         </label>

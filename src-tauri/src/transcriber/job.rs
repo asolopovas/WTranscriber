@@ -459,10 +459,10 @@ fn run_diarize_streaming(
                 && backend_name == "nemo-sortformer" =>
         {
             logfile::warn(&format!(
-                "diarizer nemo failed at runtime ({e}); falling back to sherpa"
+                "diarizer nemo failed at runtime ({e}); falling back to titanet"
             ));
             let fallback =
-                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Eres2net)?;
+                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Titanet)?;
             let fallback_name = fallback.name();
             sink.set_diarize_backend(&fallback_name);
             let mut fb_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);

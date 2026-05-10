@@ -354,14 +354,14 @@ onMounted(async () => {
   if (config.value && sys.value && !sys.value.cuda_available && config.value.device === "cuda") {
     config.value.device = "cpu";
   }
-  if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
-    config.value.diarizer = "eres2net";
+  if (config.value && sys.value?.is_mobile && config.value.diarizer !== "titanet") {
+    config.value.diarizer = "titanet";
   }
-  if (
-    config.value &&
-    ((config.value.diarizer as string) === "sherpa" || (config.value.diarizer as string) === "auto")
-  ) {
-    config.value.diarizer = sys.value?.is_mobile ? "eres2net" : "nemo";
+  if (config.value) {
+    const d = config.value.diarizer as string;
+    if (d === "sherpa" || d === "auto" || d === "eres2net") {
+      config.value.diarizer = sys.value?.is_mobile ? "titanet" : "nemo";
+    }
   }
   if (config.value && !config.value.llm_model) {
     const defaultLlm =

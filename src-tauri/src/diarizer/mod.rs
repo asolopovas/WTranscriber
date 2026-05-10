@@ -32,16 +32,8 @@ pub trait Backend {
 pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        let primary = match choice {
-            DiarizerChoice::Titanet => DiarizerChoice::Titanet,
-            _ => DiarizerChoice::Eres2net,
-        };
-        let fallback = match primary {
-            DiarizerChoice::Titanet => DiarizerChoice::Eres2net,
-            _ => DiarizerChoice::Titanet,
-        };
-        return SherpaDiarizer::new(num_speakers, primary.embedding_rel())
-            .or_else(|_| SherpaDiarizer::new(num_speakers, fallback.embedding_rel()))
+        let _ = choice;
+        return SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
             .map(|d| Box::new(d) as Box<dyn Backend>);
     }
 
@@ -52,23 +44,16 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
                 Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
                 Err(e) => {
                     crate::logfile::warn(&format!(
-                        "diarizer nemo failed at init ({e}); falling back to sherpa"
+                        "diarizer nemo failed at init ({e}); falling back to titanet"
                     ));
-                    sherpa_default(num_speakers).map(|d| Box::new(d) as Box<dyn Backend>)
+                    SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
+                        .map(|d| Box::new(d) as Box<dyn Backend>)
                 }
             },
-            DiarizerChoice::Eres2net | DiarizerChoice::Titanet => {
-                SherpaDiarizer::new(num_speakers, choice.embedding_rel())
-                    .map(|d| Box::new(d) as Box<dyn Backend>)
-            }
+            DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())
+                .map(|d| Box::new(d) as Box<dyn Backend>),
         }
     }
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn sherpa_default(num_speakers: u32) -> Result<SherpaDiarizer> {
-    SherpaDiarizer::new(num_speakers, DiarizerChoice::Eres2net.embedding_rel())
-        .or_else(|_| SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel()))
 }
 
 pub fn speaker_id_for_time(

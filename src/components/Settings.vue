@@ -93,7 +93,6 @@ async function refreshModels() {
 
 const DIARIZER_BY_ID: Record<string, DiarizerChoice> = {
   "nemo-sortformer-v2": "nemo",
-  "diar-eres2net-base": "eres2net",
   "sherpa-pyannote-titanet": "titanet",
 };
 

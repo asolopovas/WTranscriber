@@ -291,7 +291,6 @@ const headerAriaLabel = computed(() => {
               :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
             >
               <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-              <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
               <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
             </select>
           </FormField>
