@@ -397,7 +397,7 @@ fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Result<i32> {
         "scp",
         &[
             helper_local.to_string_lossy().as_ref(),
-            "windows-vm:/c/wt-build/wt-windows-build.bat",
+            "windows-vm:C:/wt-build/wt-windows-build.bat",
         ],
         &[],
         lock,
@@ -413,7 +413,7 @@ fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Result<i32> {
             "windows-vm",
             "cmd",
             "//c",
-            &format!("C:\\wt-build\\wt-windows-build.bat {sha}"),
+            &format!("C:/wt-build/wt-windows-build.bat {sha}"),
         ],
         &[],
         lock,
@@ -429,12 +429,15 @@ fn fetch_windows_vm_exe(
     let probe = std::process::Command::new("ssh")
         .args([
             "windows-vm",
-            "bash",
-            "-lc",
-            "ls /c/WTranscriber/src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null | head -1",
+            "bash -lc 'ls /c/WTranscriber/src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null | head -1'",
         ])
         .output()?;
-    let remote_path = String::from_utf8_lossy(&probe.stdout).trim().to_string();
+    let remote_path = String::from_utf8_lossy(&probe.stdout)
+        .lines()
+        .map(|l| l.trim())
+        .find(|l| l.contains("-setup.exe"))
+        .unwrap_or("")
+        .to_string();
     if remote_path.is_empty() {
         return Ok(None);
     }
@@ -445,10 +448,9 @@ fn fetch_windows_vm_exe(
         format!("wtranscriber-setup-{ver}.exe")
     };
     let dst = out_channel_dir.join(&dst_name);
-    let scp_src = if let Some(stripped) = remote_path.strip_prefix("/c/") {
-        format!("windows-vm:/C:/{stripped}")
-    } else {
-        format!("windows-vm:{remote_path}")
+    let scp_src = match remote_path.strip_prefix("/c/") {
+        Some(stripped) => format!("windows-vm:C:/{stripped}"),
+        None => format!("windows-vm:{remote_path}"),
     };
     let st = std::process::Command::new("scp")
         .args([&scp_src, dst.to_string_lossy().as_ref()])
