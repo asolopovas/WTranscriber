@@ -184,19 +184,60 @@ fn resolve_python() -> Result<PathBuf> {
             return Ok(path);
         }
     }
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        let bundled_roots = [
+            dir.join("_up_").join("resources").join("nemo-runtime"),
+            dir.join("..")
+                .join("lib")
+                .join("WTranscriber")
+                .join("_up_")
+                .join("resources")
+                .join("nemo-runtime"),
+            dir.join("resources").join("nemo-runtime"),
+            dir.join("..").join("Resources").join("nemo-runtime"),
+        ];
+        for root in bundled_roots {
+            push_runtime_python(&mut candidates, &root);
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        push_runtime_python(
+            &mut candidates,
+            &cwd.join("src-tauri").join("resources").join("nemo-runtime"),
+        );
+        push_runtime_python(&mut candidates, &cwd.join("resources").join("nemo-runtime"));
+    }
     let data = paths::data_dir()?;
-    let candidates = [
+    candidates.extend([
         data.join("python").join("Scripts").join("python.exe"),
         data.join("python").join("bin").join("python"),
-    ];
-    for candidate in candidates {
+    ]);
+    for candidate in &candidates {
         if candidate.exists() {
-            return Ok(candidate);
+            return Ok(candidate.clone());
         }
     }
     which::which("python")
         .or_else(|_| which::which("python3"))
         .map_err(|_| Error::Config("python not found for NeMo Sortformer diarization".into()))
+}
+
+fn push_runtime_python(candidates: &mut Vec<PathBuf>, root: &std::path::Path) {
+    if !root.exists() {
+        return;
+    }
+    let python_root = root.join("python");
+    candidates.push(python_root.join("bin").join("python3.12"));
+    candidates.push(python_root.join("bin").join("python3"));
+    candidates.push(python_root.join("bin").join("python"));
+    candidates.push(python_root.join("Scripts").join("python.exe"));
+    candidates.push(root.join("bin").join("python3.12"));
+    candidates.push(root.join("bin").join("python3"));
+    candidates.push(root.join("bin").join("python"));
+    candidates.push(root.join("Scripts").join("python.exe"));
 }
 
 fn resolve_script() -> Result<PathBuf> {

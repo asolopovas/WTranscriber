@@ -302,6 +302,14 @@ sherpa-cuda version="v1.13.0":
 nemo-deps:
     {{_run}} --tag nemo-deps --idle 120 --max 1800 -- pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
 
+# Linux/macOS: provision the NeMo Sortformer Python runtime under
+# ~/.local/share/wtranscriber/python (uv + python-build-standalone +
+# nemo_toolkit[asr]). The desktop app runs this in the background on first
+# launch; this recipe is for manual/CI runs.
+[unix, group('runtime-deps')]
+nemo-deps:
+    {{_run}} --tag nemo-deps --idle 300 --max 3600 -- bash scripts/install-nemo-deps.sh
+
 # ─── release ──────────────────────────────────────────────────────────────────
 
 [group('release')]
