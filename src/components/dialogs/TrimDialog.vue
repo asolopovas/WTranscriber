@@ -1,6 +1,26 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "@/api";
+
+function guessMime(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return (
+    (
+      {
+        mp3: "audio/mpeg",
+        m4a: "audio/mp4",
+        mp4: "audio/mp4",
+        aac: "audio/aac",
+        wav: "audio/wav",
+        flac: "audio/flac",
+        ogg: "audio/ogg",
+        oga: "audio/ogg",
+        opus: "audio/ogg",
+        webm: "audio/webm",
+      } as Record<string, string>
+    )[ext] ?? "audio/*"
+  );
+}
 import type { AudioMeta, DirEntry } from "@/types";
 import { fmtMs } from "@utils/format";
 import Modal from "@components/ui/Modal.vue";
@@ -44,14 +64,26 @@ const playheadFrac = computed(() =>
   duration.value > 0 ? Math.max(0, Math.min(1, playheadMs.value / duration.value)) : 0,
 );
 const audioLoading = ref(false);
-let audioCtx: AudioContext | null = null;
-let audioBuffer: AudioBuffer | null = null;
-let audioSource: AudioBufferSourceNode | null = null;
-let playStartCtx = 0;
+const audioEl = ref<HTMLAudioElement | null>(null);
+const audioSrc = ref<string>("");
+let currentObjectUrl: string | null = null;
 let playOffsetMs = 0;
-let audioPath: string | null = null;
-let stopTimer: ReturnType<typeof setTimeout> | null = null;
 let playheadRaf: number | null = null;
+
+async function loadAudioBlob(target: DirEntry) {
+  audioLoading.value = true;
+  try {
+    const bytes = await api.readAudioBytes(target.path);
+    const blob = new Blob([new Uint8Array(bytes)], { type: guessMime(target.path) });
+    if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = URL.createObjectURL(blob);
+    audioSrc.value = currentObjectUrl;
+  } catch (e) {
+    localError.value = `audio load: ${String(e)}`;
+  } finally {
+    audioLoading.value = false;
+  }
+}
 
 const MIN_GAP_MS = 3_000;
 
@@ -92,12 +124,9 @@ async function load(target: DirEntry) {
     initialEnd.value = e;
     initialDuration.value = dur;
     playOffsetMs = s;
-    audioBuffer = null;
-    audioPath = null;
+    playheadMs.value = s;
     await renderWaveform();
-    void ensureBuffer().catch(() => {
-      /* prewarm only; first user-initiated play will surface real errors */
-    });
+    void loadAudioBlob(target);
   } catch (e) {
     emit("error", `prepare: ${String(e)}`);
     emit("close");
@@ -135,53 +164,19 @@ async function renderWaveform() {
   });
 }
 
-function seekTo(ms: number) {
-  if (duration.value === 0) return;
-  const clamped = Math.min(end.value, Math.max(start.value, Math.round(ms)));
-  const wasPlaying = playing.value;
-  if (wasPlaying) clearSource();
-  playOffsetMs = clamped;
-  playheadMs.value = clamped;
-  if (wasPlaying) {
-    void resumeFromOffset();
-  }
-}
-
 async function resumeFromOffset() {
-  if (!audioBuffer || !audioCtx) return;
-  if (audioCtx.state === "suspended") await audioCtx.resume();
-  const offsetMs = playOffsetMs;
-  const durMs = Math.max(0, end.value - offsetMs);
-  if (durMs <= 0) {
-    playing.value = false;
-    stopPlayheadLoop();
-    return;
+  const el = audioEl.value;
+  if (!el) return;
+  let offsetMs = playOffsetMs;
+  if (offsetMs < start.value || offsetMs >= end.value) offsetMs = start.value;
+  el.currentTime = offsetMs / 1000;
+  try {
+    await el.play();
+    playing.value = true;
+    startPlayheadLoop();
+  } catch (e) {
+    localError.value = `play: ${String(e)}`;
   }
-  const src = audioCtx.createBufferSource();
-  src.buffer = audioBuffer;
-  src.connect(audioCtx.destination);
-  src.onended = () => {
-    if (audioSource === src) {
-      audioSource = null;
-      playOffsetMs = start.value;
-      playheadMs.value = start.value;
-      playing.value = false;
-      stopPlayheadLoop();
-    }
-  };
-  audioSource = src;
-  playStartCtx = audioCtx.currentTime;
-  src.start(0, offsetMs / 1000, durMs / 1000);
-  playing.value = true;
-  startPlayheadLoop();
-  if (stopTimer) clearTimeout(stopTimer);
-  stopTimer = setTimeout(() => {
-    if (audioSource === src) clearSource();
-    playOffsetMs = start.value;
-    playheadMs.value = start.value;
-    playing.value = false;
-    stopPlayheadLoop();
-  }, durMs + 200);
 }
 
 function handleWaveformPointerDown(ev: PointerEvent) {
@@ -190,32 +185,42 @@ function handleWaveformPointerDown(ev: PointerEvent) {
   if (!box || duration.value === 0) return;
   ev.preventDefault();
   seekScrubActive = true;
-  const target = ev.target as Element;
-  try {
-    target.setPointerCapture(ev.pointerId);
-  } catch {
-    /* */
-  }
-  const seekFromEvent = (e: PointerEvent) => {
+  const wasPlaying = playing.value;
+  // Pause audio at scrub start. The playhead updates visually during the
+  // scrub; audio re-starts once on pointerup with the final position.
+  if (wasPlaying && audioEl.value) audioEl.value.pause();
+  playing.value = false;
+  stopPlayheadLoop();
+
+  const computeMs = (e: PointerEvent): number => {
     const rect = box.getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-    seekTo((x / rect.width) * duration.value);
+    const ms = (x / rect.width) * duration.value;
+    return Math.min(end.value, Math.max(start.value, Math.round(ms)));
   };
-  seekFromEvent(ev);
+  const updateVisual = (e: PointerEvent) => {
+    const ms = computeMs(e);
+    playOffsetMs = ms;
+    playheadMs.value = ms;
+  };
+  updateVisual(ev);
+
   const move = (e: PointerEvent) => {
     if (!seekScrubActive) return;
-    seekFromEvent(e);
+    updateVisual(e);
   };
   const up = (e: PointerEvent) => {
     seekScrubActive = false;
-    try {
-      target.releasePointerCapture(e.pointerId);
-    } catch {
-      /* */
-    }
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     window.removeEventListener("pointercancel", up);
+    updateVisual(e);
+    if (audioEl.value) audioEl.value.currentTime = playOffsetMs / 1000;
+    if (wasPlaying) {
+      void resumeFromOffset().catch(() => {
+        /* fall through silently; user can hit play again */
+      });
+    }
   };
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
@@ -247,22 +252,6 @@ function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
   window.addEventListener("pointercancel", up);
 }
 
-async function ensureBuffer(): Promise<AudioBuffer | null> {
-  const target = props.target;
-  if (!target) return null;
-  if (audioBuffer && audioPath === target.path) return audioBuffer;
-  audioLoading.value = true;
-  try {
-    const bytes = await api.readAudioBytes(target.path);
-    if (!audioCtx) audioCtx = new AudioContext();
-    audioBuffer = await audioCtx.decodeAudioData(new Uint8Array(bytes).buffer);
-    audioPath = target.path;
-    return audioBuffer;
-  } finally {
-    audioLoading.value = false;
-  }
-}
-
 function stopPlayheadLoop() {
   if (playheadRaf !== null) cancelAnimationFrame(playheadRaf);
   playheadRaf = null;
@@ -271,49 +260,48 @@ function stopPlayheadLoop() {
 function startPlayheadLoop() {
   stopPlayheadLoop();
   const tick = () => {
-    if (!playing.value || !audioCtx) {
+    const el = audioEl.value;
+    if (!playing.value || !el) {
       playheadRaf = null;
       return;
     }
-    const ms = playOffsetMs + (audioCtx.currentTime - playStartCtx) * 1000;
+    const ms = el.currentTime * 1000;
+    if (ms >= end.value) {
+      el.pause();
+      playOffsetMs = end.value;
+      playheadMs.value = end.value;
+      playing.value = false;
+      stopPlayheadLoop();
+      return;
+    }
+    playOffsetMs = ms;
     playheadMs.value = Math.min(end.value, Math.max(start.value, ms));
     playheadRaf = requestAnimationFrame(tick);
   };
   playheadRaf = requestAnimationFrame(tick);
 }
 
-function clearSource() {
-  if (audioSource) {
-    try {
-      audioSource.onended = null;
-      audioSource.stop();
-    } catch {
-      /* */
-    }
-    try {
-      audioSource.disconnect();
-    } catch {
-      /* */
-    }
-    audioSource = null;
-  }
-  if (stopTimer) clearTimeout(stopTimer);
-  stopTimer = null;
-}
-
 function pause() {
-  if (playing.value && audioCtx) {
-    const elapsed = (audioCtx.currentTime - playStartCtx) * 1000;
-    playOffsetMs = Math.min(end.value, playOffsetMs + elapsed);
+  const el = audioEl.value;
+  if (el) {
+    el.pause();
+    playOffsetMs = el.currentTime * 1000;
     playheadMs.value = playOffsetMs;
   }
-  clearSource();
   playing.value = false;
   stopPlayheadLoop();
 }
 
 function stop() {
-  clearSource();
+  const el = audioEl.value;
+  if (el) {
+    try {
+      el.pause();
+      el.currentTime = start.value / 1000;
+    } catch {
+      /* */
+    }
+  }
   playOffsetMs = start.value;
   playheadMs.value = start.value;
   playing.value = false;
@@ -321,45 +309,59 @@ function stop() {
 }
 
 async function togglePlay() {
+  const el = audioEl.value;
+  if (!el) return;
   if (playing.value) {
     pause();
     return;
   }
-  const buffer = await ensureBuffer().catch((e) => {
-    localError.value = `load: ${String(e)}`;
-    return null;
-  });
-  if (!buffer || !audioCtx) return;
-  if (audioCtx.state === "suspended") await audioCtx.resume();
   let offsetMs = playOffsetMs;
   if (offsetMs < start.value || offsetMs >= end.value) offsetMs = start.value;
-  const durMs = Math.max(0, end.value - offsetMs);
-  const src = audioCtx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(audioCtx.destination);
-  src.onended = () => {
-    if (audioSource === src) {
-      audioSource = null;
-      playOffsetMs = start.value;
-      playheadMs.value = start.value;
-      playing.value = false;
-      stopPlayheadLoop();
-    }
-  };
-  audioSource = src;
-  playStartCtx = audioCtx.currentTime;
-  playOffsetMs = offsetMs;
-  src.start(0, offsetMs / 1000, durMs / 1000);
-  playheadMs.value = offsetMs;
-  playing.value = true;
-  startPlayheadLoop();
-  stopTimer = setTimeout(() => {
-    if (audioSource === src) clearSource();
-    playOffsetMs = start.value;
-    playheadMs.value = start.value;
-    playing.value = false;
-    stopPlayheadLoop();
-  }, durMs + 200);
+  audioLoading.value = el.readyState < 2;
+  try {
+    el.currentTime = offsetMs / 1000;
+    await el.play();
+    playOffsetMs = offsetMs;
+    playheadMs.value = offsetMs;
+    playing.value = true;
+    startPlayheadLoop();
+  } catch (e) {
+    localError.value = `play: ${String(e)}`;
+  } finally {
+    audioLoading.value = false;
+  }
+}
+
+function onAudioLoaded() {
+  audioLoading.value = false;
+}
+
+function onAudioEnded() {
+  playOffsetMs = start.value;
+  playheadMs.value = start.value;
+  playing.value = false;
+  stopPlayheadLoop();
+}
+
+function onAudioError(ev: Event) {
+  const el = ev.target as HTMLAudioElement | null;
+  const code = el?.error?.code ?? -1;
+  const msg = el?.error?.message ?? "";
+  const codeStr =
+    code === 1
+      ? "ABORTED"
+      : code === 2
+        ? "NETWORK"
+        : code === 3
+          ? "DECODE"
+          : code === 4
+            ? "SRC_NOT_SUPPORTED"
+            : `code=${code}`;
+  console.error("audio error", { code: codeStr, msg, src: el?.currentSrc });
+  localError.value = `audio failed to load (${codeStr}): ${msg || el?.currentSrc || "unknown"}`;
+  audioLoading.value = false;
+  playing.value = false;
+  stopPlayheadLoop();
 }
 
 function reset() {
@@ -432,6 +434,7 @@ watch(open, (isOpen) => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleShortcut);
+  cleanup();
 });
 
 function isDirty(): boolean {
@@ -505,9 +508,22 @@ async function applyPermanent() {
 
 function cleanup() {
   stop();
-  audioBuffer = null;
-  audioPath = null;
   playOffsetMs = 0;
+  const el = audioEl.value;
+  if (el) {
+    try {
+      el.pause();
+      el.removeAttribute("src");
+      el.load();
+    } catch {
+      /* */
+    }
+  }
+  audioSrc.value = "";
+  if (currentObjectUrl) {
+    URL.revokeObjectURL(currentObjectUrl);
+    currentObjectUrl = null;
+  }
 }
 
 async function close() {
@@ -540,6 +556,18 @@ async function close() {
     </template>
 
     <ErrorBanner v-if="localError">{{ localError }}</ErrorBanner>
+
+    <audio
+      v-if="audioSrc"
+      ref="audioEl"
+      :src="audioSrc"
+      preload="metadata"
+      class="hidden"
+      @loadedmetadata="onAudioLoaded"
+      @canplay="onAudioLoaded"
+      @ended="onAudioEnded"
+      @error="onAudioError"
+    ></audio>
 
     <div class="rounded-lg border border-outline-variant/50 bg-surface-container-low p-md relative">
       <div

@@ -62,8 +62,9 @@ pub async fn apply_trim(path: PathBuf) -> Result<Option<u64>> {
 }
 
 #[tauri::command]
-pub fn read_audio_bytes(path: PathBuf) -> Result<Vec<u8>> {
-    Ok(std::fs::read(&path)?)
+pub fn read_audio_bytes(path: PathBuf) -> Result<tauri::ipc::Response> {
+    let bytes = std::fs::read(&path)?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 fn safe_filename(filename: &str) -> String {
