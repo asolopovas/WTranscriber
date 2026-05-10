@@ -140,45 +140,46 @@ mod android_jni {
     use std::sync::OnceLock;
 
     use jni::{
-        JNIEnv, JavaVM,
-        objects::{GlobalRef, JClass, JObject},
+        Env, EnvUnowned, JavaVM,
+        errors::LogErrorAndDefault,
+        objects::{Global, JClass, JObject},
         sys::{JNI_VERSION_1_6, jint},
     };
+    pub(super) use jni::{jni_sig, jni_str};
 
     static JVM: OnceLock<JavaVM> = OnceLock::new();
-    static ACTIVITY: OnceLock<GlobalRef> = OnceLock::new();
+    static ACTIVITY: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 
     #[unsafe(no_mangle)]
     pub extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _: *mut std::ffi::c_void) -> jint {
-        if let Ok(vm) = unsafe { JavaVM::from_raw(vm) } {
-            let _ = JVM.set(vm);
-        }
+        let vm = unsafe { JavaVM::from_raw(vm) };
+        let _ = JVM.set(vm);
         JNI_VERSION_1_6
     }
 
     #[unsafe(no_mangle)]
-    pub extern "system" fn Java_com_asolopovas_wtranscriber_MainActivity_wtSetActivity(
-        env: JNIEnv,
-        _class: JClass,
-        activity: JObject,
+    pub extern "system" fn Java_com_asolopovas_wtranscriber_MainActivity_wtSetActivity<'local>(
+        mut env: EnvUnowned<'local>,
+        _class: JClass<'local>,
+        activity: JObject<'local>,
     ) {
-        if let Ok(g) = env.new_global_ref(&activity) {
+        env.with_env(|env| -> jni::errors::Result<()> {
+            let g = env.new_global_ref(&activity)?;
             let _ = ACTIVITY.set(g);
-        }
+            Ok(())
+        })
+        .resolve::<LogErrorAndDefault>();
     }
 
     pub fn with_activity<F, R>(default: R, f: F) -> R
     where
-        F: FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<R>,
+        F: FnOnce(&mut Env, &JObject) -> jni::errors::Result<R>,
     {
         let Some(vm) = JVM.get() else { return default };
         let Some(activity) = ACTIVITY.get() else {
             return default;
         };
-        let Ok(mut env) = vm.attach_current_thread() else {
-            return default;
-        };
-        match f(&mut env, activity.as_obj()) {
+        match vm.attach_current_thread(|env| f(env, &activity)) {
             Ok(v) => v,
             Err(e) => {
                 crate::logfile::error(&format!("jni call: {e}"));
@@ -191,15 +192,25 @@ mod android_jni {
 #[cfg(target_os = "android")]
 fn android_has_all_files_access() -> bool {
     android_jni::with_activity(false, |env, activity| {
-        env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?
-            .z()
+        env.call_method(
+            activity,
+            android_jni::jni_str!("hasAllFilesAccess"),
+            android_jni::jni_sig!(() -> bool),
+            &[],
+        )?
+        .z()
     })
 }
 
 #[cfg(target_os = "android")]
 fn android_request_all_files_access() {
     android_jni::with_activity((), |env, activity| {
-        env.call_method(activity, "requestAllFilesAccess", "()V", &[])?;
+        env.call_method(
+            activity,
+            android_jni::jni_str!("requestAllFilesAccess"),
+            android_jni::jni_sig!(() -> void),
+            &[],
+        )?;
         Ok(())
     });
 }
@@ -210,8 +221,8 @@ pub fn android_start_transcription_service(title: &str) {
         let s = env.new_string(title)?;
         env.call_method(
             activity,
-            "startTranscriptionService",
-            "(Ljava/lang/String;)V",
+            android_jni::jni_str!("startTranscriptionService"),
+            android_jni::jni_sig!((arg0: JString) -> void),
             &[(&s).into()],
         )?;
         Ok(())
@@ -221,7 +232,12 @@ pub fn android_start_transcription_service(title: &str) {
 #[cfg(target_os = "android")]
 pub fn android_stop_transcription_service() {
     android_jni::with_activity((), |env, activity| {
-        env.call_method(activity, "stopTranscriptionService", "()V", &[])?;
+        env.call_method(
+            activity,
+            android_jni::jni_str!("stopTranscriptionService"),
+            android_jni::jni_sig!(() -> void),
+            &[],
+        )?;
         Ok(())
     });
 }
@@ -233,8 +249,8 @@ pub fn android_notify_transcription_done(title: &str, text: &str, success: bool)
         let b = env.new_string(text)?;
         env.call_method(
             activity,
-            "notifyTranscriptionDone",
-            "(Ljava/lang/String;Ljava/lang/String;Z)V",
+            android_jni::jni_str!("notifyTranscriptionDone"),
+            android_jni::jni_sig!((arg0: JString, arg1: JString, arg2: bool) -> void),
             &[(&t).into(), (&b).into(), success.into()],
         )?;
         Ok(())

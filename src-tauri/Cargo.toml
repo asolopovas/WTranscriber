@@ -47,10 +47,10 @@ hex = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 tempfile = "3"
 regex = "1"
-reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "http2"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
-rubato = "0.16"
+rubato = "2"
 symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 base64 = "0.22"
@@ -58,7 +58,7 @@ byteorder = "1.5"
 sherpa-onnx = { version = "1.13", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+jni = "0.22"
 
 [profile.release]
 codegen-units = 16

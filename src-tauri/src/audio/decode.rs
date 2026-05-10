@@ -7,8 +7,10 @@
 
 use std::{fs::File, path::Path};
 
+use rubato::audioadapter_buffers::direct::SequentialSlice;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use symphonia::core::{
     audio::{AudioBufferRef, Signal},
@@ -183,27 +185,109 @@ fn resample(input: &[f32], from: u32, to: u32) -> Result<Vec<f32>> {
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
     };
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, chunk, 1)
+    let mut resampler = Async::<f32>::new_sinc(ratio, 2.0, &params, chunk, 1, FixedAsync::Input)
         .map_err(|e| Error::Transcribe(format!("resampler: {e}")))?;
 
+    let chunk_out_max = resampler.output_frames_max();
+    let mut chunk_in_buf = vec![0.0_f32; chunk];
+    let mut chunk_out_buf = vec![0.0_f32; chunk_out_max];
     let mut out: Vec<f32> = Vec::with_capacity((input.len() as f64 * ratio) as usize + chunk);
     let mut pos = 0;
     while pos + chunk <= input.len() {
-        let frame = &input[pos..pos + chunk];
-        let processed = resampler
-            .process(&[frame], None)
-            .map_err(|e| Error::Transcribe(format!("resample: {e}")))?;
-        out.extend_from_slice(&processed[0]);
+        chunk_in_buf.copy_from_slice(&input[pos..pos + chunk]);
+        let n_out = run_chunk(
+            &mut resampler,
+            &chunk_in_buf,
+            &mut chunk_out_buf,
+            chunk,
+            None,
+        )?;
+        out.extend_from_slice(&chunk_out_buf[..n_out]);
         pos += chunk;
     }
     if pos < input.len() {
-        let mut tail = input[pos..].to_vec();
-        tail.resize(chunk, 0.0);
-        let processed = resampler
-            .process(&[tail], None)
-            .map_err(|e| Error::Transcribe(format!("resample tail: {e}")))?;
-        let keep = ((input.len() - pos) as f64 * ratio) as usize;
-        out.extend_from_slice(&processed[0][..keep.min(processed[0].len())]);
+        let partial_len = input.len() - pos;
+        chunk_in_buf.fill(0.0);
+        chunk_in_buf[..partial_len].copy_from_slice(&input[pos..]);
+        let indexing = Indexing {
+            input_offset: 0,
+            output_offset: 0,
+            active_channels_mask: None,
+            partial_len: Some(partial_len),
+        };
+        let n_out = run_chunk(
+            &mut resampler,
+            &chunk_in_buf,
+            &mut chunk_out_buf,
+            chunk,
+            Some(&indexing),
+        )?;
+        let keep = ((partial_len as f64) * ratio) as usize;
+        out.extend_from_slice(&chunk_out_buf[..n_out.min(keep)]);
     }
     Ok(out)
+}
+
+fn run_chunk(
+    resampler: &mut Async<f32>,
+    in_buf: &[f32],
+    out_buf: &mut [f32],
+    chunk: usize,
+    indexing: Option<&Indexing>,
+) -> Result<usize> {
+    let input = SequentialSlice::new(in_buf, 1, chunk)
+        .map_err(|e| Error::Transcribe(format!("resample input adapter: {e}")))?;
+    let chunk_out_max = out_buf.len();
+    let mut output = SequentialSlice::new_mut(out_buf, 1, chunk_out_max)
+        .map_err(|e| Error::Transcribe(format!("resample output adapter: {e}")))?;
+    let (_, n_out) = resampler
+        .process_into_buffer(&input, &mut output, indexing)
+        .map_err(|e| Error::Transcribe(format!("resample: {e}")))?;
+    Ok(n_out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resample_empty_returns_empty() {
+        assert!(resample(&[], 44_100, 16_000).unwrap().is_empty());
+    }
+
+    #[test]
+    fn resample_downsamples_to_expected_length() {
+        let input = vec![0.0_f32; 44_100];
+        let out = resample(&input, 44_100, 16_000).unwrap();
+        let expected = 16_000_isize;
+        let actual = out.len() as isize;
+        assert!(
+            (actual - expected).abs() < 100,
+            "expected ~{expected} samples, got {actual}",
+        );
+    }
+
+    #[test]
+    fn resample_upsamples_to_expected_length() {
+        let input = vec![0.0_f32; 16_000];
+        let out = resample(&input, 16_000, 48_000).unwrap();
+        let expected = 48_000_isize;
+        let actual = out.len() as isize;
+        assert!(
+            (actual - expected).abs() < 200,
+            "expected ~{expected} samples, got {actual}",
+        );
+    }
+
+    #[test]
+    fn resample_preserves_dc_amplitude_within_tolerance() {
+        let input = vec![0.5_f32; 4_096];
+        let out = resample(&input, 16_000, 22_050).unwrap();
+        let mid = out.len() / 2;
+        let probe = out[mid];
+        assert!(
+            (probe - 0.5).abs() < 0.05,
+            "expected DC near 0.5, got {probe}",
+        );
+    }
 }
