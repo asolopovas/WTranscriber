@@ -23,8 +23,6 @@ function isSelected(m: ModelInfo): boolean {
   return props.selected?.[m.family] === m.id;
 }
 
-const SIZE_CAP_BYTES = 2_000_000_000;
-
 const grouped = computed(() => {
   const families: Record<string, ModelInfo[]> = { asr: [], diarizer: [], llm: [] };
   for (const m of props.models) families[m.family]?.push(m);
@@ -35,9 +33,7 @@ const grouped = computed(() => {
   ].filter((g) => g.items.length);
 });
 
-function sizePct(m: ModelInfo): number {
-  return Math.min(100, Math.round((m.size_bytes / SIZE_CAP_BYTES) * 100));
-}
+const SIZE_CAP_BYTES = 2_000_000_000;
 
 function perfPct(m: ModelInfo): number {
   const sizeFrac = Math.min(1, m.size_bytes / SIZE_CAP_BYTES);
@@ -145,7 +141,6 @@ function accPct(m: ModelInfo): number {
             v-for="row in [
               { label: 'Perf', val: perfPct(m), color: 'bg-tertiary' },
               { label: 'Acc', val: accPct(m), color: 'bg-primary' },
-              { label: 'Size', val: sizePct(m), color: 'bg-secondary' },
             ]"
             :key="row.label"
             class="flex items-center gap-xs"

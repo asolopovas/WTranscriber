@@ -128,11 +128,16 @@ pub(super) fn cmd_install(target: &str, fresh: bool) -> Result<()> {
     )?;
     let apk_dir = apk_release_dir();
     let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
-    if !unsigned.exists() {
-        bail!("unsigned APK not found at {}", unsigned.display());
-    }
     let signed = apk_dir.join("app-universal-release.apk");
-    sign_with_debug_keystore(&unsigned, &signed)?;
+    if unsigned.exists() {
+        sign_with_debug_keystore(&unsigned, &signed)?;
+    } else if !signed.exists() {
+        bail!(
+            "no APK found at {} or {}",
+            unsigned.display(),
+            signed.display()
+        );
+    }
     if fresh {
         println!("\n→ adb uninstall {ANDROID_PACKAGE} (--fresh)");
         let _ = Command::new("adb")
