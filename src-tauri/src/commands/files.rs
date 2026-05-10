@@ -136,3 +136,31 @@ pub fn export_transcript(
     logfile::info(&format!("export {:?} -> {}", format, dest.display()));
     Ok(dest)
 }
+
+#[tauri::command]
+pub fn format_transcript(transcript: Transcript, format: ExportFormat) -> Result<String> {
+    let mut buf: Vec<u8> = Vec::new();
+    transcriber::export::write_to(&transcript, &mut buf, format)?;
+    String::from_utf8(buf).map_err(|e| Error::Config(format!("format_transcript utf-8: {e}")))
+}
+
+#[tauri::command]
+#[allow(
+    clippy::needless_pass_by_value,
+    unused_variables,
+    clippy::unnecessary_wraps
+)]
+pub fn share_transcript(title: String, text: String) -> Result<bool> {
+    #[cfg(target_os = "android")]
+    {
+        if !crate::android_share_text(&title, &text) {
+            return Err(Error::Config("android share unavailable".into()));
+        }
+        logfile::info(&format!("share '{title}' ({} chars)", text.len()));
+        return Ok(true);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(false)
+    }
+}

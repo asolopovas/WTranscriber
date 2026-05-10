@@ -69,6 +69,22 @@ class MainActivity : TauriActivity() {
     TranscriptionService.notifyDone(applicationContext, title, text, success)
   }
 
+  @Keep
+  fun shareText(title: String, text: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+      type = "text/plain"
+      putExtra(Intent.EXTRA_TEXT, text)
+      if (title.isNotEmpty()) {
+        putExtra(Intent.EXTRA_SUBJECT, title)
+        putExtra(Intent.EXTRA_TITLE, title)
+      }
+    }
+    val chooser = Intent.createChooser(send, if (title.isNotEmpty()) title else null).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { applicationContext.startActivity(chooser) }
+  }
+
   private fun requestPostNotificationsIfNeeded() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==

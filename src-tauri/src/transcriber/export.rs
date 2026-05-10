@@ -27,15 +27,19 @@ pub fn write(transcript: &Transcript, dest: &Path, format: Format) -> Result<()>
     }
     let file = File::create(dest)?;
     let mut w = BufWriter::new(file);
-    match format {
-        Format::Txt => write_txt(&mut w, transcript)?,
-        Format::Csv => write_csv(&mut w, transcript)?,
-        Format::Json => write_json(&mut w, transcript)?,
-        Format::Srt => write_srt(&mut w, transcript)?,
-        Format::Vtt => write_vtt(&mut w, transcript)?,
-    }
+    write_to(transcript, &mut w, format)?;
     w.flush()?;
     Ok(())
+}
+
+pub fn write_to<W: Write>(transcript: &Transcript, w: &mut W, format: Format) -> Result<()> {
+    match format {
+        Format::Txt => write_txt(w, transcript),
+        Format::Csv => write_csv(w, transcript),
+        Format::Json => write_json(w, transcript),
+        Format::Srt => write_srt(w, transcript),
+        Format::Vtt => write_vtt(w, transcript),
+    }
 }
 
 fn speaker(u: &crate::transcriber::Utterance) -> &str {

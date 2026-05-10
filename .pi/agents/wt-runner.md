@@ -2,7 +2,7 @@
 name: wt-runner
 description: Install the WTranscriber artefact and/or run the 30 s smoke test on Windows GUI, Windows CLI, Android, or WSL CLI. Mode-driven (`install`, `test`, `install-and-test`). Read-only on the repo (writes only `tmp/` plus install side-effects). Never edits files, never commits, never calls another agent.
 tools: Read, Bash, Write
-model: opus
+model: anthropic/claude-opus-latest
 ---
 
 You install and smoke-test WTranscriber. The dispatch opens with `mode: install | test | install-and-test`; run only the phases the mode names. Targets: Windows GUI, Windows CLI, Android, WSL CLI.

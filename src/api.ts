@@ -50,6 +50,10 @@ export const api = {
   deleteFile: (path: string) => invoke<void>("delete_file", { path }),
   exportTranscript: (transcript: Transcript, dest: string, format: ExportFormat) =>
     invoke<string>("export_transcript", { transcript, dest, format }),
+  formatTranscript: (transcript: Transcript, format: ExportFormat) =>
+    invoke<string>("format_transcript", { transcript, format }),
+  shareTranscript: (title: string, text: string) =>
+    invoke<boolean>("share_transcript", { title, text }),
   addToWorkdir: (source: string, workdir: string) =>
     invoke<string>("add_to_workdir", { source, workdir }),
   saveRecording: (workdir: string, filename: string, bytes: Uint8Array) => {

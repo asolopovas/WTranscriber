@@ -247,6 +247,26 @@ pub fn android_stop_transcription_service() {
 }
 
 #[cfg(target_os = "android")]
+pub fn android_share_text(title: &str, text: &str) -> bool {
+    android_jni::with_activity(false, |env, activity| {
+        let t = env.new_string(title)?;
+        let b = env.new_string(text)?;
+        env.call_method(
+            activity,
+            android_jni::jni_str!("shareText"),
+            android_jni::jni_sig!((arg0: JString, arg1: JString) -> void),
+            &[(&t).into(), (&b).into()],
+        )?;
+        Ok(true)
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn android_share_text(_title: &str, _text: &str) -> bool {
+    false
+}
+
+#[cfg(target_os = "android")]
 pub fn android_notify_transcription_done(title: &str, text: &str, success: bool) {
     android_jni::with_activity((), |env, activity| {
         let t = env.new_string(title)?;
@@ -727,6 +747,8 @@ pub fn run() {
             commands::files::rename_file,
             commands::files::delete_file,
             commands::files::export_transcript,
+            commands::files::format_transcript,
+            commands::files::share_transcript,
             commands::audio_files::probe_duration,
             commands::files::list_directory,
             commands::files::default_dir,

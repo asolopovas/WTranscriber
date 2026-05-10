@@ -41,6 +41,7 @@ const emit = defineEmits<{
   (e: "auto-rename", entry: DirEntry): void;
   (e: "rename", entry: DirEntry): void;
   (e: "share", entry: DirEntry): void;
+  (e: "export", entry: DirEntry): void;
   (e: "redo-diarize", entry: DirEntry): void;
   (e: "delete", entry: DirEntry): void;
   (e: "toggle-select", path: string): void;
@@ -208,6 +209,16 @@ defineExpose({
                 "
               >
                 Share
+              </MenuItem>
+              <MenuItem
+                icon="file_save"
+                :disabled="!entry.cache_key"
+                @click="
+                  openMenuPath = null;
+                  emit('export', entry);
+                "
+              >
+                Export…
               </MenuItem>
               <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
               <MenuItem

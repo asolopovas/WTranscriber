@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
-import { readFile } from "@tauri-apps/plugin-fs";
+import { readFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, events } from "@/api";
 import type {
@@ -654,13 +654,47 @@ async function onTrimSaved() {
   await refreshListing();
 }
 
-async function openExport(entry?: DirEntry) {
-  const target = entry ?? selectedEntry.value;
-  if (!target || renaming.value || exporting.value) return;
+async function loadTranscriptFor(target: DirEntry): Promise<Transcript | null> {
   let t = transcript.value;
   if (!t || (selectedEntry.value && selectedEntry.value.path !== target.path)) {
     if (target.cache_key) t = await api.historyLoad(target.cache_key);
   }
+  return t ?? null;
+}
+
+function isAndroid(): boolean {
+  return /Android/i.test(navigator.userAgent);
+}
+
+async function onShare(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  const t = await loadTranscriptFor(target);
+  if (!t) {
+    await message("Transcribe this file first to enable sharing.", {
+      title: "Share",
+      kind: "info",
+    });
+    return;
+  }
+  const stem = target.name.replace(/\.[^.]+$/, "");
+  if (isAndroid()) {
+    try {
+      const text = await api.formatTranscript(t, "txt");
+      await api.shareTranscript(stem, text);
+      return;
+    } catch (e) {
+      error.value = String(e);
+      return;
+    }
+  }
+  await openExport(target);
+}
+
+async function openExport(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target || renaming.value || exporting.value) return;
+  const t = await loadTranscriptFor(target);
   if (!t) {
     await message("Transcribe this file first to enable export.", {
       title: "Export",
@@ -677,8 +711,7 @@ async function commitExport() {
   const target = exportTarget.value;
   const fmt = exportFormat.value;
   exporting.value = false;
-  let t = transcript.value;
-  if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
+  const t = await loadTranscriptFor(target);
   if (!t) return;
   const stem = target.name.replace(/\.[^.]+$/, "");
   const dest = await withDialog(() =>
@@ -689,7 +722,8 @@ async function commitExport() {
   );
   if (!dest) return;
   try {
-    await api.exportTranscript(t, dest, fmt);
+    const content = await api.formatTranscript(t, fmt);
+    await writeTextFile(dest, content);
   } catch (e) {
     error.value = String(e);
   }
@@ -803,7 +837,8 @@ const selectedProgress = computed(() =>
               @trim="openTrim"
               @auto-rename="autoRename"
               @rename="openRename"
-              @share="openExport"
+              @share="onShare"
+              @export="openExport"
               @redo-diarize="openRedoDiarize"
               @delete="deleteEntry"
               :selected-paths="selectedPaths"
