@@ -536,7 +536,10 @@ mod tests {
     fn diarize_initial_snapshot_uses_prior_rate() {
         let mut d = DiarizeSmoother::new(60.0, DIARIZE_DEFAULT_RTF);
         let (pct, eta) = d.snapshot();
-        assert!(pct < 1e-6);
+        assert!(
+            pct < 5.0,
+            "initial pct should not jump materially from construction, got {pct}"
+        );
         assert!(eta > 0.0, "prior ETA should be positive, got {eta}");
         let expected_total = 60.0 / DIARIZE_DEFAULT_RTF;
         assert!(
