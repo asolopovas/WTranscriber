@@ -9,7 +9,6 @@ import type {
   DirEntry,
   DirListing,
   ExportFormat,
-  FileProgress,
   ModelInfo,
   SystemInfo,
   TranscribeProgress,
@@ -33,6 +32,8 @@ import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
 import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
+import { useEssentials } from "@composables/useEssentials";
+import { useFileSelection } from "@composables/useFileSelection";
 import { recordOmit, recordSet } from "@composables/records";
 
 const tab = ref<Tab>("transcribe");
@@ -41,8 +42,8 @@ const config = ref<Config | null>(null);
 const models = ref<ModelInfo[]>([]);
 const listing = ref<DirListing | null>(null);
 const selectedPath = ref<string>("");
-const selectedPaths = ref(new Set<string>());
-let lastRangeAnchor: string | null = null;
+const selection = useFileSelection();
+const selectedPaths = selection.selected;
 const transcript = ref<Transcript | null>(null);
 const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
@@ -50,17 +51,11 @@ const dragOver = ref(false);
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
 
-const essentialIds = ref<string[]>([]);
-const essentialProgress = ref<Record<string, FileProgress>>({});
-const essentialErrors = ref<Record<string, true>>({});
-const essentialsForceReady = ref(false);
-const essentialsReady = computed(() => {
-  if (essentialsForceReady.value) return true;
-  if (!essentialIds.value.length) return true;
-  return essentialIds.value.every(
-    (id) => models.value.find((x) => x.id === id)?.status === "installed",
-  );
-});
+const essentials = useEssentials(models);
+const essentialIds = essentials.ids;
+const essentialProgress = essentials.progress;
+const essentialErrors = essentials.errors;
+const essentialsReady = essentials.ready;
 
 const dialogOpen = ref(false);
 const queueActive = ref(false);
@@ -303,11 +298,7 @@ async function loadCached(key: string) {
 const unlisten: (() => void)[] = [];
 
 onMounted(async () => {
-  try {
-    essentialIds.value = await api.essentialModels();
-  } catch {
-    essentialIds.value = [];
-  }
+  await essentials.init();
   const refreshModels = async (id?: string) => {
     models.value = await api.listModels();
     if (id && error.value && error.value.includes("not installed") && config.value?.model === id) {
@@ -316,21 +307,7 @@ onMounted(async () => {
   };
   unlisten.push(
     await events.onTranscribeProgress((p) => recordSet(progressByPath, p.path, p)),
-    await events.onModelProgress((p) => {
-      if (essentialIds.value.includes(p.id)) recordSet(essentialProgress, p.id, p);
-    }),
-    await events.onModelDone((id) => {
-      if (id) recordOmit(essentialErrors, id);
-      void refreshModels(id);
-    }),
-    await events.onModelError((id) => {
-      if (id) recordSet(essentialErrors, id, true);
-      void refreshModels();
-    }),
-    await events.onEssentialsDone(() => {
-      essentialsForceReady.value = true;
-      void refreshModels();
-    }),
+    ...(await essentials.attachListeners(refreshModels)),
     await getCurrentWebview().onDragDropEvent((event) => {
       if (tab.value !== "transcribe") return;
       if (event.payload.type === "over") dragOver.value = true;
@@ -348,7 +325,7 @@ onMounted(async () => {
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
-      selectedPaths.value = new Set(audioEntries.value.map((en) => en.path));
+      selection.selectAll(audioPathsList);
     } else if (e.key === "Escape" && selectedPaths.value.size > 0) {
       clearSelection();
     } else if ((e.key === "Delete" || e.key === "Backspace") && selectedPaths.value.size > 0) {
@@ -372,7 +349,7 @@ onMounted(async () => {
   }
 
   try {
-    await api.startEssentials();
+    await essentials.start();
   } catch (e) {
     error.value = `essentials start failed: ${String(e)}`;
   }
@@ -445,38 +422,15 @@ async function transcribeAll(targets?: DirEntry[]) {
   }
 }
 
+const audioPathsList = () => audioEntries.value.map((e) => e.path);
 function toggleSelect(path: string) {
-  const next = new Set(selectedPaths.value);
-  if (next.has(path)) next.delete(path);
-  else next.add(path);
-  selectedPaths.value = next;
-  lastRangeAnchor = path;
+  selection.toggle(path);
 }
-
 function rangeSelect(anchor: string) {
-  if (anchor === "__all__") {
-    if (selectedPaths.value.size === audioEntries.value.length) {
-      selectedPaths.value = new Set();
-    } else {
-      selectedPaths.value = new Set(audioEntries.value.map((e) => e.path));
-    }
-    return;
-  }
-  const paths = audioEntries.value.map((e) => e.path);
-  const anchorIdx = paths.indexOf(anchor);
-  const from = lastRangeAnchor ? paths.indexOf(lastRangeAnchor) : anchorIdx;
-  if (anchorIdx < 0 || from < 0) return;
-  const lo = Math.min(from, anchorIdx);
-  const hi = Math.max(from, anchorIdx);
-  const next = new Set(selectedPaths.value);
-  for (let i = lo; i <= hi; i++) next.add(paths[i]);
-  selectedPaths.value = next;
-  lastRangeAnchor = anchor;
+  selection.range(anchor, audioPathsList);
 }
-
 function clearSelection() {
-  selectedPaths.value = new Set();
-  lastRangeAnchor = null;
+  selection.clear();
 }
 
 async function bulkDelete() {
