@@ -44,6 +44,14 @@ fn nemo_python_path() -> Option<PathBuf> {
     Some(data.join("python").join("bin").join("python3.12"))
 }
 
+fn install_script_basename() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "install-nemo-deps.ps1"
+    } else {
+        "install-nemo-deps.sh"
+    }
+}
+
 fn locate_install_script() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("WT_NEMO_INSTALL_SCRIPT") {
         let path = PathBuf::from(p);
@@ -51,29 +59,40 @@ fn locate_install_script() -> Option<PathBuf> {
             return Some(path);
         }
     }
+    let basename = install_script_basename();
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
-        candidates.push(
-            dir.join("_up_")
-                .join("scripts")
-                .join("install-nemo-deps.sh"),
-        );
+        candidates.push(dir.join("_up_").join("scripts").join(basename));
         candidates.push(
             dir.join("..")
                 .join("lib")
                 .join("WTranscriber")
                 .join("_up_")
                 .join("scripts")
-                .join("install-nemo-deps.sh"),
+                .join(basename),
         );
-        candidates.push(dir.join("install-nemo-deps.sh"));
-        candidates.push(dir.join("resources").join("install-nemo-deps.sh"));
+        candidates.push(dir.join(basename));
+        candidates.push(dir.join("resources").join(basename));
+        candidates.push(dir.join("scripts").join(basename));
+        candidates.push(
+            dir.join("..")
+                .join("Resources")
+                .join("_up_")
+                .join("scripts")
+                .join(basename),
+        );
+        candidates.push(
+            dir.join("..")
+                .join("Resources")
+                .join("scripts")
+                .join(basename),
+        );
     }
     if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join("scripts").join("install-nemo-deps.sh"));
-        candidates.push(cwd.join("..").join("scripts").join("install-nemo-deps.sh"));
+        candidates.push(cwd.join("scripts").join(basename));
+        candidates.push(cwd.join("..").join("scripts").join(basename));
     }
     candidates.into_iter().find(|p| p.exists())
 }
@@ -100,7 +119,10 @@ fn spawn_nemo_runtime_install(app: tauri::AppHandle) {
         }
     }
     let Some(script) = locate_install_script() else {
-        logfile::warn("runtime nemo-python: install-nemo-deps.sh not found");
+        logfile::warn(&format!(
+            "runtime nemo-python: {} not found",
+            install_script_basename()
+        ));
         return;
     };
     tauri::async_runtime::spawn(async move {
@@ -115,8 +137,22 @@ fn spawn_nemo_runtime_install(app: tauri::AppHandle) {
                 "phase": "starting",
             }),
         );
-        let mut cmd = Command::new("bash");
-        cmd.arg(&script);
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = Command::new("powershell");
+            c.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ]);
+            c.arg(&script);
+            c
+        } else {
+            let mut c = Command::new("bash");
+            c.arg(&script);
+            c
+        };
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
         cmd.kill_on_drop(false);

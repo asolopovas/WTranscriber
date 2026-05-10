@@ -30,7 +30,7 @@ pub fn system_info() -> SystemInfo {
     let os = std::env::consts::OS;
     let is_mobile = matches!(os, "android" | "ios");
     let cpu_threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get) as u32;
-    let cuda_available = !is_mobile && cfg!(feature = "cuda");
+    let cuda_available = !is_mobile && (cfg!(feature = "cuda") || detect_nvidia_gpu());
     let nnapi_available = os == "android";
     SystemInfo {
         os,
@@ -48,6 +48,39 @@ pub fn system_info() -> SystemInfo {
             .and_then(|p| p.parent().map(|d| d.display().to_string())),
         total_memory_bytes: read_total_memory(),
     }
+}
+
+fn detect_nvidia_gpu() -> bool {
+    if std::env::var_os("WT_FORCE_CUDA_AVAILABLE").is_some() {
+        return true;
+    }
+    if std::env::var_os("WT_DISABLE_CUDA").is_some() {
+        return false;
+    }
+    if cfg!(target_os = "windows") {
+        for name in ["nvcuda.dll", "nvml.dll"] {
+            if std::path::Path::new(&format!("C:\\Windows\\System32\\{name}")).exists() {
+                return true;
+            }
+        }
+        return false;
+    }
+    if cfg!(target_os = "linux") {
+        for p in [
+            "/proc/driver/nvidia/version",
+            "/dev/nvidia0",
+            "/dev/nvidiactl",
+            "/usr/lib/x86_64-linux-gnu/libcuda.so.1",
+            "/usr/lib64/libcuda.so.1",
+            "/usr/lib/libcuda.so.1",
+        ] {
+            if std::path::Path::new(p).exists() {
+                return true;
+            }
+        }
+        return false;
+    }
+    false
 }
 
 fn read_total_memory() -> u64 {

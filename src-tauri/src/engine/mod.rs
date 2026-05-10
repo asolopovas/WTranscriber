@@ -68,6 +68,21 @@ fn use_in_process(config: &Config) -> bool {
     {
         return false;
     }
+    if std::env::var("WT_FORCE_INPROCESS")
+        .ok()
+        .is_some_and(|v| v == "1")
+    {
+        return matches!(
+            config.engine,
+            Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
+        );
+    }
+    // CUDA path: prefer the downloaded sherpa-onnx-offline subprocess (its
+    // RPATH locates the GPU shared libs; the in-process FFI is statically
+    // linked CPU-only on most builds, so we'd silently run on CPU).
+    if matches!(config.device, crate::config::Device::Cuda) {
+        return false;
+    }
     matches!(
         config.engine,
         Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc

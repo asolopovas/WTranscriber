@@ -30,7 +30,13 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "deb", "app"],
-    "resources": ["../scripts/diarize.py", "../scripts/install-nemo-deps.sh"],
+    "resources": [
+      "../scripts/diarize.py",
+      "../scripts/install-nemo-deps.sh",
+      "../scripts/install-nemo-deps.ps1",
+      "../scripts/install-cudnn.ps1",
+      "../scripts/install-sherpa-cuda.ps1"
+    ],
     "linux": {
       "deb": {
         "depends": [
