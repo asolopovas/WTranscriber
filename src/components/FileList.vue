@@ -40,6 +40,7 @@ const emit = defineEmits<{
   (e: "auto-rename", entry: DirEntry): void;
   (e: "rename", entry: DirEntry): void;
   (e: "export", entry: DirEntry): void;
+  (e: "redo-diarize", entry: DirEntry): void;
   (e: "delete", entry: DirEntry): void;
   (e: "toggle-select", path: string): void;
   (e: "range-select", path: string): void;
@@ -50,17 +51,10 @@ const selectionActive = computed(() => props.selectedPaths.size > 0);
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
   openMenuPath.value = openMenuPath.value === path ? null : path;
-  if (openMenuPath.value) infoPath.value = null;
-}
-const infoPath = ref<string | null>(null);
-function toggleInfo(path: string) {
-  infoPath.value = infoPath.value === path ? null : path;
-  if (infoPath.value) openMenuPath.value = null;
 }
 defineExpose({
   closeMenus: () => {
     openMenuPath.value = null;
-    infoPath.value = null;
   },
 });
 </script>
@@ -106,8 +100,7 @@ defineExpose({
             </span>
           </div>
           <div
-            class="items-center gap-xs font-mono text-labelSmall text-on-surface-variant leading-tight hidden md:flex"
-            :class="infoPath === entry.path ? '!flex' : ''"
+            class="flex flex-wrap items-center gap-x-xs gap-y-unit font-mono text-labelSmall text-on-surface-variant leading-tight"
           >
             <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
             <span class="text-outline-variant">·</span>
@@ -127,17 +120,6 @@ defineExpose({
           </div>
         </div>
         <div class="flex items-center gap-unit shrink-0" @click.stop>
-          <Button
-            class="md:hidden"
-            variant="ghost"
-            shape="icon"
-            size="sm"
-            icon="info"
-            :icon-size="18"
-            :title="infoPath === entry.path ? 'Hide info' : 'Show info'"
-            :aria-pressed="infoPath === entry.path"
-            @click="toggleInfo(entry.path)"
-          />
           <Button
             v-if="busy[entry.path]"
             variant="ghost-error"
@@ -248,6 +230,16 @@ defineExpose({
                 Export
               </MenuItem>
               <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
+              <MenuItem
+                icon="groups"
+                :disabled="!entry.cache_key"
+                @click="
+                  openMenuPath = null;
+                  emit('redo-diarize', entry);
+                "
+              >
+                Re-diarize…
+              </MenuItem>
               <MenuItem
                 icon="drive_file_rename_outline"
                 @click="

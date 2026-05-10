@@ -16,4 +16,4 @@ pub use format::{format_hms, output_filename};
 pub use job::{Job, run, run_with_sink};
 pub use transcript::Transcript;
 #[allow(unused_imports)]
-pub use transcript::{Meta, Segment, Token, Utterance, Word, build};
+pub use transcript::{Meta, Segment, Token, Utterance, Word, build, rediarize_words};

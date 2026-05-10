@@ -78,6 +78,62 @@ pub struct Segment {
 
 pub use diarizer::Segment as DiarSegment;
 
+pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Transcript {
+    let mut hint: Option<u32> = None;
+    let mut labels: HashMap<u32, String> = HashMap::new();
+    let mut next: u32 = 1;
+    let mut label_for = |id: Option<u32>| -> Option<String> {
+        let id = id?;
+        if let Some(l) = labels.get(&id) {
+            return Some(l.clone());
+        }
+        let l = format!("SPEAKER_{next:02}");
+        labels.insert(id, l.clone());
+        next += 1;
+        Some(l)
+    };
+
+    let mut words = words;
+    for w in &mut words {
+        let id = diarizer::speaker_id_for_time(
+            w.start_ms as f64 / 1000.0,
+            w.end_ms as f64 / 1000.0,
+            diar,
+            hint,
+        );
+        if let Some(v) = id {
+            hint = Some(v);
+        }
+        w.speaker = label_for(id);
+    }
+
+    smooth_flickers(&mut words);
+    let mut utterances = group_words(&words);
+    for u in &mut utterances {
+        u.language = detect_script_lang(&u.text);
+    }
+
+    let mut speakers = std::collections::HashSet::new();
+    for w in &words {
+        if let Some(s) = &w.speaker {
+            speakers.insert(s.clone());
+        }
+    }
+
+    let language = resolve_language(&meta.language, &utterances);
+
+    Transcript {
+        model: meta.model,
+        language,
+        duration_ms: meta.duration_ms,
+        diarizer: meta.diarizer,
+        device: meta.device,
+        speakers_detected: speakers.len(),
+        utterances,
+        words,
+    }
+}
+
 pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcript {
     let mut hint: Option<u32> = None;
     let mut labels: HashMap<u32, String> = HashMap::new();
@@ -277,6 +333,65 @@ mod tests {
             },
         ];
         assert_eq!(resolve_language("", &utts), "en,ru");
+    }
+
+    #[test]
+    fn rediarize_words_relabels_words_with_new_segments() {
+        let words = vec![
+            word("hello", 0, 1_000, Some("SPEAKER_99")),
+            word("world", 1_000, 2_000, Some("SPEAKER_99")),
+        ];
+        let diar = vec![
+            DiarSegment {
+                speaker: 4,
+                start_sec: 0.0,
+                end_sec: 1.0,
+            },
+            DiarSegment {
+                speaker: 5,
+                start_sec: 1.0,
+                end_sec: 2.0,
+            },
+        ];
+        let t = rediarize_words(
+            words,
+            &diar,
+            Meta {
+                model: "m".into(),
+                language: "en".into(),
+                duration_ms: 2_000,
+                diarizer: Some("sherpa-eres2net".into()),
+                device: None,
+            },
+        );
+        assert_eq!(t.speakers_detected, 2);
+        assert_eq!(t.words[0].speaker.as_deref(), Some("SPEAKER_01"));
+        assert_eq!(t.words[1].speaker.as_deref(), Some("SPEAKER_02"));
+        assert_eq!(t.diarizer.as_deref(), Some("sherpa-eres2net"));
+        assert_eq!(t.utterances.len(), 2);
+    }
+
+    #[test]
+    fn rediarize_words_clears_speakers_when_diar_empty() {
+        let words = vec![
+            word("a", 0, 500, Some("SPEAKER_01")),
+            word("b", 500, 1_000, Some("SPEAKER_02")),
+        ];
+        let t = rediarize_words(
+            words,
+            &[],
+            Meta {
+                model: "m".into(),
+                language: "en".into(),
+                duration_ms: 1_000,
+                diarizer: None,
+                device: None,
+            },
+        );
+        assert_eq!(t.speakers_detected, 0);
+        for w in &t.words {
+            assert!(w.speaker.is_none());
+        }
     }
 
     #[test]

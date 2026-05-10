@@ -29,6 +29,7 @@ import ErrorBanner from "@components/ui/ErrorBanner.vue";
 import Button from "@components/ui/Button.vue";
 import RenameDialog from "@components/dialogs/RenameDialog.vue";
 import ExportDialog from "@components/dialogs/ExportDialog.vue";
+import RedoDiarizeDialog from "@components/dialogs/RedoDiarizeDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
 import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
@@ -553,6 +554,47 @@ const exporting = ref(false);
 const exportTarget = ref<DirEntry | null>(null);
 const exportFormat = ref<ExportFormat>("txt");
 
+const redoDiarizeOpen = ref(false);
+const redoDiarizeTarget = ref<DirEntry | null>(null);
+const redoDiarizeDiarizer = ref<Config["diarizer"]>("auto");
+const redoDiarizeSpeakers = ref<number>(0);
+
+function openRedoDiarize(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target || !target.cache_key || busy.value[target.path]) return;
+  redoDiarizeTarget.value = target;
+  redoDiarizeDiarizer.value = config.value?.diarizer ?? "auto";
+  redoDiarizeSpeakers.value = config.value?.speakers ?? 0;
+  redoDiarizeOpen.value = true;
+}
+
+async function commitRedoDiarize() {
+  const target = redoDiarizeTarget.value;
+  if (!target || !target.cache_key || !config.value) return;
+  redoDiarizeOpen.value = false;
+  const overrideConfig: Config = {
+    ...config.value,
+    diarize: true,
+    diarizer: redoDiarizeDiarizer.value,
+    speakers: redoDiarizeSpeakers.value > 0 ? redoDiarizeSpeakers.value : null,
+  };
+  selectedPath.value = target.path;
+  status.value = "running";
+  error.value = null;
+  recordSet(busy, target.path, true);
+  try {
+    transcript.value = await api.redoDiarization(target.path, target.cache_key, overrideConfig);
+    status.value = "idle";
+    await refreshListing();
+  } catch (e) {
+    error.value = `Re-diarize failed: ${String(e)}`;
+    status.value = "error";
+  } finally {
+    recordOmit(busy, target.path);
+    redoDiarizeTarget.value = null;
+  }
+}
+
 const trimTarget = ref<DirEntry | null>(null);
 function openTrim(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
@@ -713,6 +755,7 @@ const selectedProgress = computed(() =>
               @auto-rename="autoRename"
               @rename="openRename"
               @export="openExport"
+              @redo-diarize="openRedoDiarize"
               @delete="deleteEntry"
               :selected-paths="selectedPaths"
               @toggle-select="toggleSelect"
@@ -749,6 +792,13 @@ const selectedProgress = computed(() =>
 
     <RenameDialog v-model:open="renaming" v-model:value="renameValue" @commit="commitRename" />
     <ExportDialog v-model:open="exporting" v-model:format="exportFormat" @commit="commitExport" />
+    <RedoDiarizeDialog
+      v-model:open="redoDiarizeOpen"
+      v-model:diarizer="redoDiarizeDiarizer"
+      v-model:speakers="redoDiarizeSpeakers"
+      :sys="sys"
+      @commit="commitRedoDiarize"
+    />
     <TrimDialog
       :target="trimTarget"
       @close="trimTarget = null"

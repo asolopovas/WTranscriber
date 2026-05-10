@@ -23,12 +23,13 @@ use super::config::sync_engine;
 use crate::{
     audio,
     config::Config,
+    diarizer,
     error::{Error, Result},
     logfile,
     models::{self, Family},
     paths,
     progress::{self, DiarizeSmoother, Phase, Sink, Smoother},
-    transcriber::{self, Job, Transcript},
+    transcriber::{self, Job, Transcript, cache, rediarize_words},
 };
 
 static TRANSCRIBE_CANCELS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
@@ -539,6 +540,180 @@ fn validate_transcription_model(config: &Config) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn redo_diarization(
+    app: AppHandle,
+    input: PathBuf,
+    old_cache_key: String,
+    mut config: Config,
+) -> Result<Transcript> {
+    sync_engine(&mut config);
+    let label = format!("redo_diarization {}", input.display());
+    logfile::process_start(&label);
+    let display_name = input
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio")
+        .to_string();
+    crate::android_start_transcription_service(&format!("Re-diarizing {display_name}"));
+
+    let audio_dur_ms = audio::probe_duration_ms(&input).unwrap_or(0);
+    let audio_dur_sec = if audio_dur_ms > 0 {
+        audio_dur_ms as f64 / 1000.0
+    } else {
+        1.0
+    };
+    let device_label = format!("{:?}", config.device).to_lowercase();
+    let initial_rtf = progress::load_rtf(&config.model, &device_label);
+    let diarize_backend_hint = config.diarizer.as_str().to_string();
+    let diarize_prior_rtf = progress::load_diarize_rtf(&diarize_backend_hint);
+    let input_key = input.to_string_lossy().into_owned();
+    let cancel = Arc::new(AtomicBool::new(false));
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.insert(input_key.clone(), cancel.clone());
+    }
+    let sink = Arc::new(TranscribeSink::new(
+        app,
+        Handle::current(),
+        input_key.clone(),
+        audio_dur_sec,
+        initial_rtf,
+        true,
+        diarize_backend_hint,
+        diarize_prior_rtf,
+        cancel.clone(),
+    ));
+
+    let result = redo_diarization_inner(input, old_cache_key, config, sink.clone()).await;
+    let outcome = match result {
+        Ok(t) => {
+            logfile::process_end(
+                &label,
+                "ok",
+                &format!(
+                    "{} utterances, {} speakers",
+                    t.utterances.len(),
+                    t.speakers_detected
+                ),
+            );
+            sink.emit(Phase::Done, 100.0, 0.0);
+            crate::android_notify_transcription_done(
+                "Re-diarization finished",
+                &format!("{display_name}: {} speakers", t.speakers_detected),
+                true,
+            );
+            Ok(t)
+        }
+        Err(Error::Cancelled) => {
+            logfile::process_end(&label, "cancelled", "user cancelled");
+            Err(Error::Cancelled)
+        }
+        Err(e) => {
+            logfile::error(&format!("{label}: {e}"));
+            logfile::process_end(&label, "failed", &e.to_string());
+            crate::android_notify_transcription_done(
+                "Re-diarization failed",
+                &format!("{display_name}: {e}"),
+                false,
+            );
+            Err(e)
+        }
+    };
+    crate::android_stop_transcription_service();
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.remove(&input_key);
+    }
+    outcome
+}
+
+async fn redo_diarization_inner(
+    input: PathBuf,
+    old_cache_key: String,
+    config: Config,
+    sink: Arc<TranscribeSink>,
+) -> Result<Transcript> {
+    tokio::task::spawn_blocking(move || -> Result<Transcript> {
+        let cached = cache::load(&old_cache_key)?
+            .ok_or_else(|| Error::Config("no cached transcript to re-diarize".into()))?;
+        if sink.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        sink.phase(Phase::Diarizing);
+        let speakers = config.speakers.unwrap_or(0);
+        let wav = audio::ensure_cached_wav(&input)?;
+        let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
+        let backend_name = backend.name();
+        sink.set_diarize_backend(&backend_name);
+        let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
+        let cancelled = || sink.is_cancelled();
+        let diar_t0 = std::time::Instant::now();
+        let segs = backend
+            .diarize(
+                &wav,
+                speakers,
+                cached.duration_ms as f64 / 1000.0,
+                &cancelled,
+                &mut on_progress,
+            )
+            .map_err(|e| Error::Transcribe(format!("diarize: {e}")))?;
+        logfile::info(&format!(
+            "re-diarized: {backend_name} · {} segments · {:.1}s",
+            segs.len(),
+            diar_t0.elapsed().as_secs_f64(),
+        ));
+
+        sink.phase(Phase::Writing);
+        let trim = audio::meta::load(&input).unwrap_or_default();
+        let key_params = cache::build_key_params(
+            &input,
+            &cached.model,
+            &cached.language,
+            speakers,
+            !config.diarize,
+            trim.trim_start_ms,
+            trim.trim_end_ms.unwrap_or(0),
+        )?;
+        let new_key = cache::compute_key(&key_params);
+
+        let new_transcript = rediarize_words(
+            cached.words.clone(),
+            &segs,
+            transcriber::Meta {
+                model: cached.model.clone(),
+                language: cached.language.clone(),
+                duration_ms: cached.duration_ms,
+                diarizer: Some(backend_name),
+                device: cached.device.clone(),
+            },
+        );
+
+        let entry = cache::Entry {
+            key: new_key.clone(),
+            source_path: key_params.source_path.clone(),
+            source_name: key_params
+                .source_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            model: cached.model.clone(),
+            language: cached.language.clone(),
+            speakers,
+            no_diarize: !config.diarize,
+            utterances: new_transcript.utterances.len(),
+            duration_ms: cached.duration_ms,
+            created_at: chrono::Utc::now(),
+            size_bytes: 0,
+        };
+        cache::store(entry, &new_transcript)?;
+        if new_key != old_cache_key {
+            let _ = cache::invalidate(&old_cache_key);
+        }
+        Ok(new_transcript)
+    })
+    .await
+    .map_err(|e| Error::Other(anyhow::anyhow!("join: {e}")))?
 }
 
 #[tauri::command]

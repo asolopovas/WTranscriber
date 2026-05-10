@@ -259,10 +259,10 @@ mod tests {
     fn resample_downsamples_to_expected_length() {
         let input = vec![0.0_f32; 44_100];
         let out = resample(&input, 44_100, 16_000).unwrap();
-        let expected = 16_000_isize;
-        let actual = out.len() as isize;
+        let expected = 16_000_usize;
+        let actual = out.len();
         assert!(
-            (actual - expected).abs() < 100,
+            actual.abs_diff(expected) < 100,
             "expected ~{expected} samples, got {actual}",
         );
     }
@@ -271,10 +271,10 @@ mod tests {
     fn resample_upsamples_to_expected_length() {
         let input = vec![0.0_f32; 16_000];
         let out = resample(&input, 16_000, 48_000).unwrap();
-        let expected = 48_000_isize;
-        let actual = out.len() as isize;
+        let expected = 48_000_usize;
+        let actual = out.len();
         assert!(
-            (actual - expected).abs() < 200,
+            actual.abs_diff(expected) < 200,
             "expected ~{expected} samples, got {actual}",
         );
     }
