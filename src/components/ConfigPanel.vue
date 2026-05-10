@@ -290,7 +290,6 @@ const headerAriaLabel = computed(() => {
               :disabled="!config.diarize"
               :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
             >
-              <option value="auto">Auto</option>
               <option v-if="!sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
               <option value="eres2net">pyannote-3.0 + ERes2Net-base</option>
               <option value="titanet">pyannote-3.0 + TitaNet-Large</option>

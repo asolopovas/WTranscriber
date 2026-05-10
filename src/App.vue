@@ -355,10 +355,13 @@ onMounted(async () => {
     config.value.device = "cpu";
   }
   if (config.value && sys.value?.is_mobile && config.value.diarizer === "nemo") {
-    config.value.diarizer = "auto";
-  }
-  if (config.value && (config.value.diarizer as string) === "sherpa") {
     config.value.diarizer = "eres2net";
+  }
+  if (
+    config.value &&
+    ((config.value.diarizer as string) === "sherpa" || (config.value.diarizer as string) === "auto")
+  ) {
+    config.value.diarizer = sys.value?.is_mobile ? "eres2net" : "nemo";
   }
 
   if (sys.value?.os === "android") {
@@ -367,7 +370,10 @@ onMounted(async () => {
       if (!granted && sessionStorage.getItem("wt:storageGateSkipped") !== "1") {
         showStorageGate.value = true;
       } else {
-        if (granted) await api.enablePersistentStorage();
+        if (granted) {
+          await api.enablePersistentStorage();
+          models.value = await api.listModels();
+        }
         storageGateResolved.value = true;
       }
     } catch {
@@ -390,9 +396,14 @@ async function startEssentialsSafely() {
   }
 }
 
-function onStorageGranted() {
+async function onStorageGranted() {
   showStorageGate.value = false;
   storageGateResolved.value = true;
+  try {
+    models.value = await api.listModels();
+  } catch (e) {
+    error.value = String(e);
+  }
   void startEssentialsSafely();
 }
 
@@ -603,14 +614,14 @@ const exportFormat = ref<ExportFormat>("txt");
 
 const redoDiarizeOpen = ref(false);
 const redoDiarizeTarget = ref<DirEntry | null>(null);
-const redoDiarizeDiarizer = ref<Config["diarizer"]>("auto");
+const redoDiarizeDiarizer = ref<Config["diarizer"]>("nemo");
 const redoDiarizeSpeakers = ref<number>(0);
 
 function openRedoDiarize(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.cache_key || busy.value[target.path]) return;
   redoDiarizeTarget.value = target;
-  redoDiarizeDiarizer.value = config.value?.diarizer ?? "auto";
+  redoDiarizeDiarizer.value = config.value?.diarizer ?? "nemo";
   redoDiarizeSpeakers.value = config.value?.speakers ?? 0;
   redoDiarizeOpen.value = true;
 }

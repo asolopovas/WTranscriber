@@ -23,7 +23,7 @@ mod transcriber;
 pub mod api;
 
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone, Serialize)]
@@ -306,14 +306,8 @@ fn restore_models_from_persistent(internal: &std::path::Path) {
             continue;
         };
         let dst = internal.join(name);
-        if dst.exists() {
-            continue;
-        }
-        match copy_recursive(&src, &dst) {
-            Ok(b) if b > 0 => restored = restored.saturating_add(b),
-            Ok(_) => {
-                let _ = remove_recursive(&dst);
-            }
+        match copy_recursive_merge(&src, &dst) {
+            Ok(b) => restored = restored.saturating_add(b),
             Err(e) => logfile::error(&format!(
                 "android: persistent restore {} failed: {e}",
                 src.display()
@@ -325,6 +319,37 @@ fn restore_models_from_persistent(internal: &std::path::Path) {
             "android: restored {restored} bytes from persistent storage"
         ));
     }
+}
+
+#[cfg(target_os = "android")]
+fn copy_recursive_merge(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<u64> {
+    let meta = std::fs::metadata(src)?;
+    if meta.is_file() {
+        if let Some(p) = dst.parent() {
+            std::fs::create_dir_all(p)?;
+        }
+        if dst.exists() {
+            let dst_meta = std::fs::metadata(dst)?;
+            if dst_meta.is_file() && dst_meta.len() == meta.len() {
+                return Ok(0);
+            }
+        }
+        return std::fs::copy(src, dst);
+    }
+    if !meta.is_dir() {
+        return Ok(0);
+    }
+    std::fs::create_dir_all(dst)?;
+    let mut total: u64 = 0;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let Some(name) = from.file_name() else {
+            continue;
+        };
+        total = total.saturating_add(copy_recursive_merge(&from, &dst.join(name))?);
+    }
+    Ok(total)
 }
 
 #[cfg(target_os = "android")]
@@ -388,7 +413,7 @@ fn request_persistent_storage() {
 
 #[tauri::command]
 #[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
-fn enable_persistent_storage() -> std::result::Result<bool, String> {
+fn enable_persistent_storage(app: AppHandle) -> std::result::Result<bool, String> {
     #[cfg(target_os = "android")]
     {
         if !android_has_all_files_access() {
@@ -397,6 +422,9 @@ fn enable_persistent_storage() -> std::result::Result<bool, String> {
         let mut cfg = config::Config::load().map_err(|e| e.to_string())?;
         cfg.use_persistent_models = true;
         cfg.save().map_err(|e| e.to_string())?;
+        if let Ok(internal_config) = paths::config_file() {
+            restore_config_from_persistent(&internal_config);
+        }
         if let Ok(internal) = paths::models_dir() {
             if std::path::Path::new(PERSISTENT_MODELS_DIR).exists() {
                 restore_models_from_persistent(&internal);
@@ -404,10 +432,12 @@ fn enable_persistent_storage() -> std::result::Result<bool, String> {
             backup_models_to_persistent(&internal);
         }
         backup_config_to_persistent();
+        let _ = app.emit("models:changed", true);
         return Ok(true);
     }
     #[cfg(not(target_os = "android"))]
     {
+        let _ = app;
         Ok(true)
     }
 }
@@ -452,6 +482,46 @@ pub fn android_mirror_after_install() {
     {
         maybe_backup_after_install();
         backup_config_to_persistent();
+    }
+}
+
+#[cfg(target_os = "android")]
+fn backup_single_model(model_id: &str) {
+    if !android_has_all_files_access() {
+        return;
+    }
+    let Ok(internal_root) = paths::models_dir() else {
+        return;
+    };
+    let src = internal_root.join(model_id);
+    if !src.exists() {
+        return;
+    }
+    let public_root = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    if std::fs::create_dir_all(public_root).is_err() {
+        return;
+    }
+    let dst = public_root.join(model_id);
+    match copy_recursive_merge(&src, &dst) {
+        Ok(bytes) if bytes > 0 => logfile::info(&format!(
+            "android: backed up {model_id} ({bytes} bytes) to persistent storage"
+        )),
+        Ok(_) => {}
+        Err(e) => logfile::error(&format!(
+            "android: persistent backup of {model_id} failed: {e}"
+        )),
+    }
+}
+
+pub fn android_backup_model(model_id: &str) {
+    #[cfg(target_os = "android")]
+    {
+        backup_single_model(model_id);
+        backup_config_to_persistent();
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = model_id;
     }
 }
 
@@ -618,6 +688,7 @@ pub fn auto_install_essentials(app: tauri::AppHandle) {
                 match manager.install(&id, &mut on_progress).await {
                     Ok(()) => {
                         logfile::info(&format!("auto_install {id} ok"));
+                        android_backup_model(&id);
                         let _ = app.emit("model:done", &id);
                         true
                     }

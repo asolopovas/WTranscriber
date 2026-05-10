@@ -48,39 +48,20 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         match choice {
-            DiarizerChoice::Nemo => {
-                nemo::NemoDiarizer::new().map(|d| Box::new(d) as Box<dyn Backend>)
-            }
+            DiarizerChoice::Nemo => match nemo::NemoDiarizer::new() {
+                Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
+                Err(e) => {
+                    crate::logfile::warn(&format!(
+                        "diarizer nemo failed at init ({e}); falling back to sherpa"
+                    ));
+                    sherpa_default(num_speakers).map(|d| Box::new(d) as Box<dyn Backend>)
+                }
+            },
             DiarizerChoice::Eres2net | DiarizerChoice::Titanet => {
                 SherpaDiarizer::new(num_speakers, choice.embedding_rel())
                     .map(|d| Box::new(d) as Box<dyn Backend>)
             }
-            DiarizerChoice::Auto => {
-                if num_speakers > 0 {
-                    new_sherpa_or_nemo(num_speakers)
-                } else {
-                    new_nemo_or_sherpa(num_speakers)
-                }
-            }
         }
-    }
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn new_nemo_or_sherpa(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    match nemo::NemoDiarizer::new() {
-        Ok(d) => Ok(Box::new(d)),
-        Err(primary) => sherpa_default(num_speakers)
-            .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
-    }
-}
-
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-fn new_sherpa_or_nemo(num_speakers: u32) -> Result<Box<dyn Backend>> {
-    match sherpa_default(num_speakers) {
-        Ok(d) => Ok(Box::new(d)),
-        Err(primary) => nemo::NemoDiarizer::new()
-            .map_or_else(|_| Err(primary), |d| Ok(Box::new(d) as Box<dyn Backend>)),
     }
 }
 

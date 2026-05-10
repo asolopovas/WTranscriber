@@ -75,22 +75,30 @@ pub enum Device {
     Cuda,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiarizerChoice {
-    #[default]
-    Auto,
+    #[serde(alias = "auto")]
     Nemo,
     #[serde(alias = "sherpa")]
     Eres2net,
     Titanet,
 }
 
+impl Default for DiarizerChoice {
+    fn default() -> Self {
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            Self::Eres2net
+        } else {
+            Self::Nemo
+        }
+    }
+}
+
 impl DiarizerChoice {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Auto => "auto",
             Self::Nemo => "nemo-sortformer-v2",
             Self::Eres2net => "diar-eres2net-base",
             Self::Titanet => "sherpa-pyannote-titanet",
@@ -119,9 +127,9 @@ impl Default for Config {
             speakers: None,
             diarizer: DiarizerChoice::default(),
             auto_rename: false,
-            llm_model: None,
+            llm_model: default_llm_model(),
             last_dir: None,
-            use_persistent_models: false,
+            use_persistent_models: cfg!(target_os = "android"),
         }
     }
 }
@@ -138,11 +146,22 @@ fn default_asr() -> (String, Engine) {
     ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
 }
 
+fn default_llm_model() -> Option<String> {
+    default_id(Family::Llm).map(String::from)
+}
+
 fn migrate_for_platform(cfg: &mut Config) -> bool {
-    if !cfg!(target_os = "android") {
-        return false;
-    }
     let mut dirty = false;
+    if cfg.llm_model.is_none() {
+        let next = default_llm_model();
+        if next.is_some() {
+            cfg.llm_model = next;
+            dirty = true;
+        }
+    }
+    if !cfg!(target_os = "android") {
+        return dirty;
+    }
     if let Some(p) = cfg.last_dir.as_ref() {
         let s = p.to_string_lossy();
         if s.starts_with("/sdcard/Documents/WTranscriber")
@@ -267,7 +286,6 @@ mod tests {
         assert_eq!(DiarizerChoice::Nemo.as_str(), "nemo-sortformer-v2");
         assert_eq!(DiarizerChoice::Eres2net.as_str(), "diar-eres2net-base");
         assert_eq!(DiarizerChoice::Titanet.as_str(), "sherpa-pyannote-titanet");
-        assert_eq!(DiarizerChoice::Auto.as_str(), "auto");
     }
 
     #[test]
@@ -286,5 +304,20 @@ mod tests {
     fn diarizer_choice_deserialises_sherpa_alias_to_eres2net() {
         let v: DiarizerChoice = serde_json::from_str("\"sherpa\"").unwrap();
         assert!(matches!(v, DiarizerChoice::Eres2net));
+    }
+
+    #[test]
+    fn diarizer_choice_deserialises_auto_alias_to_nemo() {
+        let v: DiarizerChoice = serde_json::from_str("\"auto\"").unwrap();
+        assert!(matches!(v, DiarizerChoice::Nemo));
+    }
+
+    #[test]
+    fn default_config_has_concrete_llm_model() {
+        let cfg = Config::default();
+        assert!(
+            cfg.llm_model.is_some(),
+            "llm_model must always default to a concrete id"
+        );
     }
 }

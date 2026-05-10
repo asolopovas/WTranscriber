@@ -455,11 +455,11 @@ fn run_diarize_streaming(
     match backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress) {
         Ok(segs) => Ok((segs, backend_name)),
         Err(e)
-            if config.diarizer == crate::config::DiarizerChoice::Auto
+            if config.diarizer == crate::config::DiarizerChoice::Nemo
                 && backend_name == "nemo-sortformer" =>
         {
             logfile::warn(&format!(
-                "diarizer auto: nemo failed at runtime ({e}); falling back to sherpa"
+                "diarizer nemo failed at runtime ({e}); falling back to sherpa"
             ));
             let fallback =
                 diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Eres2net)?;
