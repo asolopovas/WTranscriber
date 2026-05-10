@@ -288,6 +288,14 @@ function chooseEntry(entry: DirEntry) {
   selectedPath.value = entry.path;
   transcript.value = null;
   error.value = null;
+}
+
+function viewEntry(entry: DirEntry) {
+  if (entry.path !== selectedPath.value) {
+    selectedPath.value = entry.path;
+    transcript.value = null;
+    error.value = null;
+  }
   if (entry.cache_key) void loadCached(entry.cache_key);
 }
 
@@ -789,6 +797,7 @@ const selectedProgress = computed(() =>
               :drag-over="dragOver"
               :has-listing="!!listing"
               @choose="chooseEntry"
+              @view="viewEntry"
               @transcribe="runTranscribe"
               @stop="stopTranscribe"
               @trim="openTrim"

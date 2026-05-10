@@ -34,6 +34,7 @@ const rows = computed(() =>
 
 const emit = defineEmits<{
   (e: "choose", entry: DirEntry): void;
+  (e: "view", entry: DirEntry): void;
   (e: "transcribe", entry: DirEntry): void;
   (e: "stop", entry: DirEntry): void;
   (e: "trim", entry: DirEntry): void;
@@ -153,7 +154,7 @@ defineExpose({
             icon="visibility"
             :icon-size="18"
             title="Transcript ready — view"
-            @click="emit('choose', entry)"
+            @click="emit('view', entry)"
           />
           <div class="relative">
             <Button
