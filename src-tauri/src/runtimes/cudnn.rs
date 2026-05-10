@@ -71,7 +71,7 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
     }
 
     let url = url().ok_or_else(|| Error::Config("cuDNN url unavailable".into()))?;
-    let asset = asset_name().unwrap();
+    let asset = asset_name().expect("asset_name is Some when url() is Some");
 
     let cache = paths::cache_dir()?.join("cudnn");
     std::fs::create_dir_all(&cache)?;

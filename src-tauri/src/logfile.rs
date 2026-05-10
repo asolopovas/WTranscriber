@@ -67,7 +67,9 @@ fn prune_archives() {
 fn write_line(level: &str, msg: &str) {
     let _ = (|| -> Result<()> {
         rotate_if_needed()?;
-        let mut guard = LOG.lock().unwrap();
+        let mut guard = LOG
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if guard.is_none() {
             *guard = Some(open()?);
         }
@@ -138,7 +140,9 @@ pub fn read_tail(max_bytes: u64) -> String {
 
 pub fn clear() -> Result<()> {
     {
-        let mut guard = LOG.lock().unwrap();
+        let mut guard = LOG
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = None;
     }
     let path = log_path()?;

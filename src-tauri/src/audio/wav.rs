@@ -37,7 +37,11 @@ pub fn read_pcm16_wav(path: &Path) -> Result<Vec<f32>> {
             break;
         }
         let id = &chunk[0..4];
-        let size = u32::from_le_bytes(chunk[4..8].try_into().unwrap());
+        let size = u32::from_le_bytes(
+            chunk[4..8]
+                .try_into()
+                .expect("slice of 4 bytes converts to [u8; 4]"),
+        );
 
         match id {
             b"fmt " => {
@@ -46,10 +50,20 @@ pub fn read_pcm16_wav(path: &Path) -> Result<Vec<f32>> {
                 }
                 let mut buf = [0u8; 16];
                 r.read_exact(&mut buf)?;
-                format = u16::from_le_bytes(buf[0..2].try_into().unwrap());
-                channels = u16::from_le_bytes(buf[2..4].try_into().unwrap());
-                sample_rate = u32::from_le_bytes(buf[4..8].try_into().unwrap());
-                bits = u16::from_le_bytes(buf[14..16].try_into().unwrap());
+                let two = |start: usize| -> [u8; 2] {
+                    buf[start..start + 2]
+                        .try_into()
+                        .expect("slice of 2 bytes converts to [u8; 2]")
+                };
+                let four = |start: usize| -> [u8; 4] {
+                    buf[start..start + 4]
+                        .try_into()
+                        .expect("slice of 4 bytes converts to [u8; 4]")
+                };
+                format = u16::from_le_bytes(two(0));
+                channels = u16::from_le_bytes(two(2));
+                sample_rate = u32::from_le_bytes(four(4));
+                bits = u16::from_le_bytes(two(14));
                 let remaining = i64::from(size) - 16;
                 if remaining > 0 {
                     r.seek(SeekFrom::Current(remaining))?;

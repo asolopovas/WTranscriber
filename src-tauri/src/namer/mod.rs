@@ -41,8 +41,10 @@ struct LlmReply {
     topic: String,
 }
 
-static SLUG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^a-z0-9-]+").unwrap());
-static MULTI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-+").unwrap());
+static SLUG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^a-z0-9-]+").expect("static slug regex must compile"));
+static MULTI_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"-+").expect("static dash-collapse regex must compile"));
 
 #[must_use]
 pub fn extract_text(transcript: &Transcript) -> String {

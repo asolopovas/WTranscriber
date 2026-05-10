@@ -118,7 +118,9 @@ pub async fn ensure(
     let url = variant
         .url()
         .ok_or_else(|| Error::Config("no sherpa-onnx asset for this platform".into()))?;
-    let asset = variant.asset_name().unwrap();
+    let asset = variant
+        .asset_name()
+        .expect("asset_name is Some when url() is Some");
 
     let cache = paths::cache_dir()?.join("sherpa-onnx");
     std::fs::create_dir_all(&cache)?;
