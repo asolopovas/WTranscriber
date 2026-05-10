@@ -208,6 +208,31 @@ pub fn invalidate(key: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn invalidate_for_source(source: &Path) -> Result<usize> {
+    let abs = std::path::absolute(source).unwrap_or_else(|_| source.to_path_buf());
+    let _g = INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut removed = 0_usize;
+    let mut keep: Vec<Entry> = Vec::new();
+    for e in load_index() {
+        if e.source_path == abs {
+            if let Ok(p) = transcript_path(&e.key)
+                && p.exists()
+            {
+                let _ = std::fs::remove_file(&p);
+            }
+            removed += 1;
+        } else {
+            keep.push(e);
+        }
+    }
+    if removed > 0 {
+        save_index(&keep)?;
+    }
+    Ok(removed)
+}
+
 pub fn clear_all() -> Result<u64> {
     let root = cache_root()?;
     let mut removed = 0_u64;

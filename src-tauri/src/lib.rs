@@ -135,6 +135,7 @@ pub fn run() {
             commands::audio_files::audio_waveform,
             commands::audio_files::load_audio_meta,
             commands::audio_files::save_audio_meta,
+            commands::audio_files::apply_trim,
             commands::transcribe::transcribe_file,
             commands::transcribe::redo_diarization,
             commands::transcribe::cancel_transcribe,

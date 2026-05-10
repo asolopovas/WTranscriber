@@ -30,6 +30,7 @@ export const api = {
   audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
   loadAudioMeta: (path: string) => invoke<AudioMeta>("load_audio_meta", { path }),
   saveAudioMeta: (path: string, meta: AudioMeta) => invoke<void>("save_audio_meta", { path, meta }),
+  applyTrim: (path: string) => invoke<number | null>("apply_trim", { path }),
   transcribeFile: (input: string, config: Config) =>
     invoke<Transcript>("transcribe_file", { input, config }),
   redoDiarization: (input: string, oldCacheKey: string, config: Config) =>

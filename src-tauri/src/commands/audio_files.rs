@@ -40,6 +40,28 @@ pub fn save_audio_meta(path: PathBuf, meta: audio::AudioMeta) -> Result<()> {
 }
 
 #[tauri::command]
+pub async fn apply_trim(path: PathBuf) -> Result<Option<u64>> {
+    tokio::task::spawn_blocking(move || -> Result<Option<u64>> {
+        let meta = audio::meta::load(&path).unwrap_or_default();
+        if meta.is_default() {
+            return Ok(audio::probe_duration_ms(&path));
+        }
+        audio::ffmpeg::apply_trim(&path, meta.trim_start_ms, meta.trim_end_ms)?;
+        audio::meta::save(&path, &audio::AudioMeta::default())?;
+        let evicted = crate::transcriber::cache::invalidate_for_source(&path).unwrap_or(0);
+        logfile::info(&format!(
+            "apply_trim {} -> start={}ms end={:?}ms; cache evicted={evicted}",
+            path.display(),
+            meta.trim_start_ms,
+            meta.trim_end_ms
+        ));
+        Ok(audio::probe_duration_ms(&path))
+    })
+    .await
+    .map_err(|e| Error::Transcribe(format!("apply_trim join: {e}")))?
+}
+
+#[tauri::command]
 pub fn read_audio_bytes(path: PathBuf) -> Result<Vec<u8>> {
     Ok(std::fs::read(&path)?)
 }

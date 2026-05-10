@@ -119,6 +119,52 @@ fn parse_ffmpeg_duration(stderr: &str) -> Option<u64> {
     (total > 0.0).then_some((total * 1000.0) as u64)
 }
 
+pub fn apply_trim(input: &Path, start_ms: u64, end_ms: Option<u64>) -> Result<()> {
+    let ffmpeg = find_ffmpeg().ok_or_else(|| {
+        Error::Transcribe(
+            "ffmpeg not found on PATH; install it (e.g. `sudo apt install ffmpeg`)".into(),
+        )
+    })?;
+    if let Some(end) = end_ms
+        && end <= start_ms
+    {
+        return Err(Error::Transcribe(format!(
+            "trim end ({end} ms) must be greater than start ({start_ms} ms)"
+        )));
+    }
+    let ext = input.extension().and_then(|s| s.to_str()).unwrap_or("wav");
+    let mut tmp_name = input
+        .file_stem()
+        .map(std::ffi::OsString::from)
+        .unwrap_or_default();
+    tmp_name.push(format!(".trim-tmp.{ext}"));
+    let tmp = input.with_file_name(tmp_name);
+    if tmp.exists() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    let start_s = start_ms as f64 / 1000.0;
+    let mut cmd = quiet_command(ffmpeg.as_os_str());
+    cmd.args(["-loglevel", "error", "-y", "-i"]).arg(input);
+    cmd.args(["-ss", &format!("{start_s:.3}")]);
+    if let Some(end) = end_ms {
+        let end_s = end as f64 / 1000.0;
+        cmd.args(["-to", &format!("{end_s:.3}")]);
+    }
+    cmd.args(["-c", "copy", "-avoid_negative_ts", "make_zero"])
+        .arg(&tmp);
+    let out = cmd.output()?;
+    if !out.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(Error::Transcribe(format!("ffmpeg trim failed: {msg}")));
+    }
+    if let Err(e) = std::fs::rename(&tmp, input) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(Error::Transcribe(format!("replace original failed: {e}")));
+    }
+    Ok(())
+}
+
 pub fn run(ffmpeg: &Path, input: &Path, output: &Path) -> Result<()> {
     let out = quiet_command(ffmpeg.as_os_str())
         .args(["-loglevel", "error", "-y", "-i"])
