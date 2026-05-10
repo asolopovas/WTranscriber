@@ -1,104 +1,97 @@
 # AGENTS.md
 
-Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `just` (wraps `cargo xtask`).
+Stack: Tauri 2 · Rust edition 2024 (MSRV 1.85) · Vue 3 + TS + Vite · Bun · `just`.
 
 ## Layout
 
 ```
-src/                  Vue 3 frontend (api.ts, types.ts mirrors Rust)
-src-tauri/src/        commands/ (per-domain modules), lib.rs (invoke_handler), bin/wt.rs (CLI), config/models/paths/error/transcriber/
-src-tauri/            tauri.conf.json, capabilities/default.json, Cargo.toml, gen/android/
-xtask/src/            build / release / android orchestration
-scripts/              cdp.mjs, error-monitor.mjs, diarize.py, install-*.ps1
-docs/                 android · agents · dev-loop · release · rust-build-speed
-.pi/agents/           diagnose · runner
+src/             Vue 3 frontend (api.ts, types.ts mirrors Rust)
+src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler), bin/wt.rs, config/models/paths/error/transcriber/
+src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
+xtask/src/       build / release / android orchestration
+scripts/         run.mjs, parallel.mjs, android-emu.mjs, cdp.mjs, error-monitor.mjs, install-*.ps1
+docs/            android · dev-loop · release · rust-build-speed
+.pi/agents/      diagnose · runner
 ```
+
+## Task contract
+
+Every `just` recipe runs through `scripts/run.mjs`: line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Interactive recipes (`dev`, `dev-cpu`, `watch`, `android`) use `--idle 0 --max 0`. Anything quiet >30 s is a bug.
 
 ## Commands
 
 ```
-just dev                 desktop (HMR)
-just android             Android dev session on USB device or running emulator
-just android-stop        stop detached Android dev session
-just android-emu         boot headless x86_64 emulator (creates AVD on first run)
-just android-emu-stop    shut down emulator
-just check               pre-release gate (fmt + clippy + vue-tsc + tests + machete + audit)
-just release-stable      check + bump + tag + build + publish
+just dev               desktop HMR (Linux/Windows)
+just android           Android USB/emu HMR session (idempotent)
+just android-stop      stop the session
+just android-emu       headless x86_64 emulator (cross-platform)
+just check             parallel pre-release gate
+just release-stable    check + bump + tag + build + publish
 ```
 
-`just android` is the only command needed to start an Android dev session. It bootstraps USB mode, streams build logs live, fast-fails on errors, auto-recovers signature mismatches, idempotently no-ops when a healthy session is already running, and prints `BOOTSTRAP OK` when ready. Use `just android-status` for a bounded health check, `node scripts/cdp.mjs "<expr>"` to evaluate JS in the live WebView. For headless dev without a physical phone, run `just android-emu` first then `just android`.
+`just check` runs in parallel via `scripts/parallel.mjs`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …).
 
 `just --list` for the rest.
 
 ## Conventions
 
 - Rust edition 2024 (`LazyLock`, `let-else`); errors crossing JS use `error::Error` (`Serialize`).
-- Respect Tauri's process split: Vue/WebView owns presentation; Rust core owns filesystem, model, native, and long-running work; cross the boundary only through commands/events.
-- Use commands for request/response and events for progress streams or fire-and-forget notifications.
-- `src/types.ts` mirrors Rust structs. TS/Vue imports use aliases (`@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`).
-- New Tauri command = handler in the matching `commands/<domain>.rs` + `lib.rs` `invoke_handler![…]` (full path, e.g. `commands::models::install_model`) + `api.ts` wrapper + `types.ts` mirror; add or tighten `src-tauri/capabilities/default.json` permissions when the frontend calls a new plugin/API.
-- Keep capability permissions least-privilege. If IPC fails, inspect console + `RustStdoutStderr` before widening permissions.
-- No comments in code. No `sleep` in scripts; poll a real signal with timeout.
+- Tauri process split: Vue/WebView owns presentation; Rust owns filesystem, models, native, long work. Cross only via commands/events.
+- `src/types.ts` mirrors Rust structs. Use aliases `@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`.
+- New Tauri command = `commands/<domain>.rs` handler + `lib.rs` `invoke_handler![…]` (full path) + `api.ts` wrapper + `types.ts` mirror + `src-tauri/capabilities/default.json` permission if it touches a plugin/API.
+- Capability permissions: least-privilege. If IPC fails, inspect console + `RustStdoutStderr` before widening.
+- No comments in code. No `sleep` in scripts; poll with timeout.
 - Conventional commits, simple British English.
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden. The hook auto-formats touched files (Rust via `cargo fmt`, TS/Vue/docs via `prettier --write`) and re-stages them, then gates on `bun run typecheck` for TS/Vue. Heavy checks (`clippy`, `cargo check`, full tests) run in `just check` / CI, not on every commit.
-
-## Agent roster
-
-Two agents, both opus, both read-only on the repo. Selection: _diagnosing a failure? installing/testing on a device?_ Everything else (search, edits, commits, code review) is done by the main thread, optionally with built-in `Explore` / `Plan` / `general-purpose` and the project's `code-review` / `simplify` / `security-review` skills.
-
-| Agent         | Job                                                                                      | Writes                                                                   | Forbidden                                                        |
-| ------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `wt-diagnose` | Root-cause one failing signal from `tmp/*.log` + `adb`/`netstat`/`tasklist`/`git log -p` | `tmp/diagnose-<slug>.md`                                                 | edits, builds, commits, device installs, agent-to-agent calls    |
-| `wt-runner`   | Install + 30 s smoke test on Win GUI / Win CLI / Android / WSL CLI                       | `tmp/install-report.json`, `tmp/test-report.json` + install side-effects | git, source edits, dev-session APK rebuild, agent-to-agent calls |
-
-Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in their notes/artefact files — never in chat.
-
-## Tauri workflow by change type
-
-| Change                              | Touch                                                  | Fast verification                                     | Dev-session action                              |
-| ----------------------------------- | ------------------------------------------------------ | ----------------------------------------------------- | ----------------------------------------------- |
-| Vue / TS / CSS UI                   | `src/**`                                               | `bun run typecheck`; CDP eval for layout/state        | No restart; confirm Vite HMR line on Android    |
-| Rust command / IPC shape            | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + `bun run typecheck`         | Android needs bootstrap restart                 |
-| Rust long-running/native work       | `src-tauri/src/**`                                     | Focused Rust test/check; inspect `RustStdoutStderr`   | Android needs bootstrap restart                 |
-| Tauri config/capability/plugin use  | `tauri.conf.json`, `capabilities/*.json`               | Reproduce the exact invoke/API path; check IPC errors | Restart bootstrap                               |
-| Android scaffold/resources/manifest | `src-tauri/gen/android/**`                             | Device smoke via `wt-runner` when install is needed   | Restart bootstrap; avoid release build mid-HMR  |
-| Release/build orchestration         | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check` before release    | Stop live dev first if it would replace the APK |
-
-Prefer live inspection over screenshots: `node scripts/cdp.mjs "<expr>"` for DOM, computed styles, console state, and route checks. Use screenshots only for visual judgement.
+`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden. Auto-formats touched files (Rust via `cargo fmt`, TS/Vue/docs via `prettier --write`), re-stages, then gates on `bun run typecheck`. Heavy checks live in `just check`.
 
 ## Live dev invariant
 
-Desktop loads `http://localhost:1420/` (confirm via `tmp/error-monitor.log`, no `:1421 failed`). Android `location.href` is `http://tauri.localhost/`; liveness signal is fresh `connecting to 127.0.0.1:1420` from `RustStdoutStderr` in `tmp/logcat.log`. Absent → `just android` to restart.
-
-While a dev session is live (`tmp/_pids.json` exists and Vite owns `:1420`), do not run `just android-install`, `just android-build`, `cargo tauri build`, or any `wtranscriber` release build — each replaces the debug-dev APK and strands HMR.
+- Desktop: Vite owns `http://localhost:1420/`. No `:1421 failed` lines in `tmp/error-monitor.log`.
+- Android: liveness = fresh `connecting to 127.0.0.1:1420` in `tmp/logcat.log` (`RustStdoutStderr`). `location.href` is **not** a signal — Tauri reports `http://tauri.localhost/` even when HMR is stale.
+- While `tmp/_pids.json` exists and Vite owns `:1420`, do **not** run `just android-install`, `just android-build`, `cargo tauri build`, or any release build — each replaces the debug-dev APK and strands HMR.
 
 ## Per-turn during a live dev session
 
-- Capture the relevant log line count before work and compare it before responding.
-- **Desktop**: line-count diff `tmp/error-monitor.log`; new lines → `wt-diagnose`.
-- **Android**: line-count diff `tmp/logcat.log`; new `am_kill` / app `am_proc_died` / `am_crash` → `wt-diagnose`.
-- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log` for the touched file. Rust/native/config/capability edit requires `just android-stop && just android`.
-- Do not use `location.href` as Android liveness; Tauri's custom scheme reports `http://tauri.localhost/` even when Vite/HMR is stale.
+- Diff `tmp/error-monitor.log` (desktop) / `tmp/logcat.log` (Android) line counts. New lines → `wt-diagnose`.
+- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just android-stop && just android`.
+- New `am_kill` / `am_proc_died` / `am_crash` for the app → `wt-diagnose`.
+
+## Tauri workflow by change type
+
+| Change                        | Touch                                                  | Verify                                              | Session action               |
+| ----------------------------- | ------------------------------------------------------ | --------------------------------------------------- | ---------------------------- |
+| Vue / TS / CSS                | `src/**`                                               | `bun run typecheck`; CDP eval                       | No restart; confirm HMR line |
+| Rust command / IPC shape      | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + typecheck                 | Android: restart bootstrap   |
+| Rust native / long-running    | `src-tauri/src/**`                                     | Focused Rust test/check; inspect `RustStdoutStderr` | Android: restart bootstrap   |
+| Tauri config / capability     | `tauri.conf.json`, `capabilities/*.json`               | Reproduce the exact invoke; check IPC errors        | Restart bootstrap            |
+| Android scaffold / manifest   | `src-tauri/gen/android/**`                             | Device smoke via `wt-runner`                        | Restart bootstrap            |
+| Release / build orchestration | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check`                 | Stop live dev first          |
+
+## Agent roster
+
+| Agent         | Job                                                                 | Writes                                                           | Forbidden                                        |
+| ------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ |
+| `wt-diagnose` | Root-cause one failing signal from `tmp/*.log` + `adb`/`git log -p` | `tmp/diagnose-<slug>.md`                                         | edits, builds, commits, installs, agent-to-agent |
+| `wt-runner`   | Install + 30 s smoke test on Win GUI / Win CLI / Android / WSL CLI  | `tmp/install-report.json`, `tmp/test-report.json` + side-effects | git, source edits, dev-session APK rebuild       |
+
+Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in artefact files.
 
 ## Decision table
 
-| Need                                  | Action                                                                                          |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Find code in the repo                 | Built-in `Explore` agent or main-thread `Grep`/`Glob`                                           |
-| Diagnose a failing log/runtime signal | `wt-diagnose`                                                                                   |
-| Debug Tauri/WebView/IPC live          | Load `tauri-debugging`; use CDP + logcat/RustStdoutStderr                                       |
-| Add or change Tauri command/API       | Main thread; keep Rust handler, invoke handler, API wrapper, TS types, and capabilities in sync |
-| Web research                          | Built-in `general-purpose` agent with `WebSearch`/`WebFetch`                                    |
-| Review a diff against conventions     | `code-review` skill                                                                             |
-| Edit project files                    | Main thread (pre-commit hook is the gate)                                                       |
-| Commit + push                         | Main thread (`git add <paths> && git commit && git push`)                                       |
-| Install + smoke-test                  | `wt-runner` (modes: `install`, `test`, `install-and-test`)                                      |
-| Release                               | `just release-stable` via `wt-runner`                                                           |
+| Need                          | Action                                                                |
+| ----------------------------- | --------------------------------------------------------------------- |
+| Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                         |
+| Diagnose a failing log signal | `wt-diagnose`                                                         |
+| Debug Tauri/WebView/IPC live  | Skill `tauri-debugging`; CDP + logcat/`RustStdoutStderr`              |
+| Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities |
+| Edit project files            | Main thread (pre-commit hook is the gate)                             |
+| Install + smoke-test          | `wt-runner` (modes: `install`, `test`, `install-and-test`)            |
+| Release                       | `just release-stable` via `wt-runner`                                 |
 
 ## Skills
 
-- `tauri` covers architecture, IPC commands/events, capabilities, plugins, mobile, and distribution — load before changing Tauri structure or workflow.
-- `tauri-debugging` covers WebView inspector, CDP, logcat, IPC — load before debugging.
+- `tauri` — load before architectural / IPC / capability / mobile / distribution changes.
+- `tauri-debugging` — load before WebView/CDP/logcat debugging.

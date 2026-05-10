@@ -25,7 +25,7 @@ steps:
 
       Output contract: tmp/test-report.json with per-target `{ status, transcript|screenshot, matched_keywords?, elapsed_s }` plus overall `PASS|FAIL`. Print summary table.
 
-      Failures: do not edit code or commit. Stop with a FIX block. The orchestrator routes failures to wt-investigate → wt-edit (default mode: edit); commit/push, when wanted, is a separate explicit wt-edit mode: finalise step.
+      Failures: do not edit code or commit. Stop with a FIX block. The orchestrator routes failures to wt-diagnose; edits and commits happen on the main thread.
     output: false
 ---
 
@@ -35,7 +35,7 @@ Install + smoke-test cycle for WTranscriber across Windows GUI, Windows CLI, And
 
 ## Prerequisites
 
-- `tmp/test-30s.m4a` exists (run `just test-prep` or trim manually).
+- `tmp/test-30s.m4a` exists (trim manually with ffmpeg).
 - `releases/dev/` populated (run `just release` first if missing APK / installer).
 - Android device with USB debugging on, plus `adb` on PATH.
 - WSL distro with `cargo` and `bun` installed.

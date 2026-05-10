@@ -1,6 +1,17 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 set dotenv-load := false
 
+# Universal task contract
+# ----------------------
+# Every recipe runs through `bun scripts/run.mjs --tag NAME --idle N --max N -- …`.
+# That wrapper guarantees:
+#   - stdout/stderr line-prefixed with [tag]
+#   - heartbeat every 10s of silence ("still running, Xs elapsed, Ys without output")
+#   - idle timeout: kills if no output for --idle seconds (default 90s)
+#   - hard timeout: kills if total wall-clock exceeds --max seconds (default 600s)
+#   - final summary: "OK in X.Ys" or "FAIL exit=N in X.Ys"
+# A task that hangs >10s without output is a visible problem, not a silent wait.
+
 _sep := if os() == 'windows' { ';' } else { ':' }
 _home := if os() == 'windows' { env_var('USERPROFILE') } else { env_var('HOME') }
 _android_sdk_default := if os() == 'windows' {
@@ -23,260 +34,291 @@ export ANDROID_NDK_HOME := _android_ndk
 export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else { '' })
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 
-default:
-    @just --list
+_run := "bun scripts/run.mjs"
+_par := "bun scripts/parallel.mjs"
 
+default:
+    @just --list --unsorted
+
+# ─── setup ────────────────────────────────────────────────────────────────────
+
+[group('setup')]
 setup:
-    bun install
+    {{_run}} --tag setup --idle 60 --max 300 -- bun install
     @just install-hooks
 
-[unix]
-bootstrap:
-    bash scripts/bootstrap-linux.sh
-
-[windows]
-bootstrap:
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
-
+[group('setup')]
 install-hooks:
     git config core.hooksPath .githooks
-    @echo "git hooks path -> .githooks"
+    @echo "git hooks path → .githooks"
 
-# develop
+[unix, group('setup')]
+bootstrap:
+    {{_run}} --tag bootstrap --idle 120 --max 1800 -- bash scripts/bootstrap-linux.sh
+
+[windows, group('setup')]
+bootstrap:
+    {{_run}} --tag bootstrap --idle 120 --max 1800 -- powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
+
+# ─── develop ──────────────────────────────────────────────────────────────────
+
+# Desktop HMR (Linux/Windows). Vite + tauri dev.
+[group('develop')]
 dev:
-    bun run tauri dev
+    {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
+# Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
+[group('develop')]
 dev-cpu:
-    bun run tauri dev -- --no-default-features --features sherpa-static
+    {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
 
+# Headless rebuild loop on Rust source changes.
+[group('develop')]
 watch:
-    cargo watch -w src-tauri/src --manifest-path src-tauri/Cargo.toml -x "build --release"
+    {{_run}} --tag watch --idle 0 --max 0 -- cargo watch -w src-tauri/src --manifest-path src-tauri/Cargo.toml -x "build --release"
 
-# build
-build:
-    bun run tauri build
-
-build-bin:
-    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wtranscriber
-
-build-app:
-    bun run tauri build --no-bundle
-
-build-all:
-    bun run tauri build --bundles nsis --bundles msi
-
-build-cpu:
-    bun run tauri build -- --no-default-features --features sherpa-static
-
-build-cli:
-    cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
-
-# android
-android-targets:
-    rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-
-android-prebuilts:
-    cargo xtask android prebuilts
-
-android-init: android-targets android-prebuilts
-    bun run tauri android init
-
-android-dev device="":
-    cargo xtask android dev {{device}}
-android-dev-host device="":
-    cargo xtask android dev --host {{device}}
-
-android device="":
-    cargo xtask android bootstrap usb {{device}}
-
-android-emu name="wt" image="system-images;android-34;google_apis_playstore;x86_64":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
-    AVDM="$SDK/cmdline-tools/latest/bin/avdmanager"
-    EMU="$SDK/emulator/emulator"
-    if ! "$AVDM" list avd 2>/dev/null | grep -q "Name: {{name}}$"; then
-      echo "creating AVD '{{name}}' from {{image}}"
-      echo no | "$AVDM" create avd -n "{{name}}" -k "{{image}}" -d pixel_6 --force
-    fi
-    if ! adb devices | grep -q emulator; then
-      mkdir -p tmp
-      echo "booting AVD '{{name}}' (headless, GPU swiftshader, KVM)"
-      nohup "$EMU" -avd "{{name}}" -no-window -no-audio -no-snapshot-save -gpu swiftshader_indirect -accel on -netdelay none -netspeed full >tmp/emulator.log 2>&1 &
-      echo $! >tmp/emulator.pid
-      adb wait-for-device
-      until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do sleep 1; done
-      adb shell input keyevent 82 >/dev/null 2>&1 || true
-    fi
-    adb devices
-
-android-emu-stop:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    adb -s emulator-5554 emu kill 2>/dev/null || true
-    [ -f tmp/emulator.pid ] && kill "$(cat tmp/emulator.pid)" 2>/dev/null || true
-    rm -f tmp/emulator.pid
-    echo emulator stopped
-
-android-bootstrap mode="usb" device="":
-    cargo xtask android bootstrap {{mode}} {{device}}
-
-android-status device="":
-    cargo xtask android status {{device}}
-
-android-status-json device="":
-    cargo xtask android status --json {{device}}
-
-android-smoke device="":
-    cargo xtask android smoke {{device}}
-
-android-stop device="":
-    cargo xtask android stop {{device}}
-
-android-build target="aarch64":
-    cargo xtask android build --target {{target}}
-
-android-install target="aarch64":
-    cargo xtask android install --target {{target}}
-
-android-install-fresh target="aarch64":
-    cargo xtask android install --target {{target}} --fresh
-
-android-doctor target="aarch64":
-    cargo xtask android doctor --target {{target}}
-    @rustup target list --installed
-
-android-cli target="aarch64":
-    cargo xtask android cli --target {{target}} --debug
-
-android-cli-push:
-    cargo xtask android cli-push
-
-android-cli-run *args:
-    cargo xtask android cli-run -- {{args}}
-
-android-debug-attach device="":
-    cargo xtask android attach {{device}}
-
-android-debug-eval expr:
-    @node scripts/cdp.mjs {{quote(expr)}}
-
-# headless cli
+# Headless wt CLI (single shot).
+[group('develop')]
 cli *args:
-    cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
+    {{_run}} --tag cli --idle 60 --max 600 -- cargo run --manifest-path src-tauri/Cargo.toml --quiet --bin wt -- {{args}}
 
-# frontend
+[group('develop')]
 preview:
-    bun run preview
+    {{_run}} --tag preview --idle 60 --max 60 -- bun run preview
 
+[group('develop')]
 typecheck:
-    bun run typecheck
+    {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
 
-# quality
+# ─── build ────────────────────────────────────────────────────────────────────
+
+# Full bundle (NSIS on Windows, .deb on Linux).
+[group('build')]
+build:
+    {{_run}} --tag build --idle 180 --max 1800 -- bun run tauri build
+
+# Fast iteration build: Tauri-patched binary, no installer.
+[group('build')]
+build-app:
+    {{_run}} --tag build-app --idle 180 --max 900 -- bun run tauri build --no-bundle
+
+# Raw Rust binary (no Tauri patching).
+[group('build')]
+build-bin:
+    {{_run}} --tag build-bin --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wtranscriber
+
+# wt CLI binary.
+[group('build')]
+build-cli:
+    {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+
+# CPU-only full build (no CUDA runtime).
+[group('build')]
+build-cpu:
+    {{_run}} --tag build-cpu --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
+
+# Windows: NSIS + MSI bundles.
+[windows, group('build')]
+build-all:
+    {{_run}} --tag build-all --idle 180 --max 1800 -- bun run tauri build --bundles nsis --bundles msi
+
+# ─── android: dev session ─────────────────────────────────────────────────────
+
+# Bootstrap Android USB/emu HMR session (idempotent; no-ops if healthy).
+[group('android')]
+android device="":
+    {{_run}} --tag android --idle 60 --max 600 -- cargo xtask android bootstrap usb {{device}}
+
+[group('android')]
+android-host device="":
+    {{_run}} --tag android-host --idle 60 --max 600 -- cargo xtask android bootstrap host {{device}}
+
+[group('android')]
+android-stop device="":
+    {{_run}} --tag android-stop --idle 30 --max 60 -- cargo xtask android stop {{device}}
+
+[group('android')]
+android-status device="":
+    {{_run}} --tag android-status --idle 30 --max 30 -- cargo xtask android status {{device}}
+
+[group('android')]
+android-status-json device="":
+    {{_run}} --tag android-status --idle 30 --max 30 -- cargo xtask android status --json {{device}}
+
+[group('android')]
+android-smoke device="":
+    {{_run}} --tag android-smoke --idle 30 --max 60 -- cargo xtask android smoke {{device}}
+
+[group('android')]
+android-debug-attach device="":
+    {{_run}} --tag android-attach --idle 15 --max 30 -- cargo xtask android attach {{device}}
+
+[group('android')]
+android-debug-eval expr:
+    {{_run}} --tag android-eval --idle 15 --max 30 -- node scripts/cdp.mjs {{quote(expr)}}
+
+# Headless x86_64 emulator (cross-platform; bounded boot wait, ≤180s).
+[group('android')]
+android-emu name="wt":
+    {{_run}} --tag emu-start --idle 30 --max 240 -- bun scripts/android-emu.mjs start --name {{name}}
+
+[group('android')]
+android-emu-stop:
+    {{_run}} --tag emu-stop --idle 10 --max 30 -- bun scripts/android-emu.mjs stop
+
+# ─── android: build / install / cli ───────────────────────────────────────────
+
+[group('android')]
+android-targets:
+    {{_run}} --tag a-targets --idle 60 --max 600 -- rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+[group('android')]
+android-prebuilts:
+    {{_run}} --tag a-prebuilts --idle 60 --max 1800 -- cargo xtask android prebuilts
+
+[group('android')]
+android-init: android-targets android-prebuilts
+    {{_run}} --tag a-init --idle 120 --max 1200 -- bun run tauri android init
+
+[group('android')]
+android-build target="aarch64":
+    {{_run}} --tag a-build --idle 180 --max 1800 -- cargo xtask android build --target {{target}}
+
+[group('android')]
+android-install target="aarch64":
+    {{_run}} --tag a-install --idle 180 --max 1800 -- cargo xtask android install --target {{target}}
+
+[group('android')]
+android-install-fresh target="aarch64":
+    {{_run}} --tag a-install --idle 180 --max 1800 -- cargo xtask android install --target {{target}} --fresh
+
+[group('android')]
+android-doctor target="aarch64":
+    {{_run}} --tag a-doctor --idle 30 --max 120 -- cargo xtask android doctor --target {{target}}
+
+[group('android')]
+android-cli target="aarch64":
+    {{_run}} --tag a-cli --idle 180 --max 1800 -- cargo xtask android cli --target {{target}} --debug
+
+[group('android')]
+android-cli-push:
+    {{_run}} --tag a-cli-push --idle 60 --max 300 -- cargo xtask android cli-push
+
+[group('android')]
+android-cli-run *args:
+    {{_run}} --tag a-cli-run --idle 60 --max 300 -- cargo xtask android cli-run -- {{args}}
+
+# ─── quality ──────────────────────────────────────────────────────────────────
+
+[group('quality')]
 fmt:
-    cargo fmt --manifest-path src-tauri/Cargo.toml --all
-    bun x prettier --write "src/**/*.{ts,vue}" "*.{json,html,md}"
+    {{_run}} --tag fmt --idle 30 --max 120 -- cargo fmt --manifest-path src-tauri/Cargo.toml --all
+    {{_run}} --tag fmt-js --idle 30 --max 120 -- bun x prettier --write "src/**/*.{ts,vue}" "*.{json,html,md}"
 
+[group('quality')]
 fmt-check:
-    cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-    bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"
+    {{_run}} --tag fmt-check --idle 30 --max 120 -- cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+    {{_run}} --tag fmt-check-js --idle 30 --max 120 -- bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"
 
+[group('quality')]
 lint:
-    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
-    bun run typecheck
-    bun run scripts/lint-vue.mjs
+    {{_run}} --tag clippy --idle 120 --max 900 -- cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
+    {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
+    {{_run}} --tag vue-lint --idle 30 --max 120 -- bun run scripts/lint-vue.mjs
 
+[group('quality')]
 test:
-    cargo test --manifest-path src-tauri/Cargo.toml --offline
-    bun run test
+    {{_run}} --tag rust-test --idle 90 --max 600 -- cargo test --manifest-path src-tauri/Cargo.toml --offline
+    {{_run}} --tag js-test --idle 60 --max 300 -- bun run test
 
-[windows]
-_ensure-machete:
-    @pwsh -NoLogo -NoProfile -Command "if (-not (Get-Command cargo-machete -EA SilentlyContinue)) { Write-Host 'installing cargo-machete' -ForegroundColor Cyan; cargo install --locked cargo-machete }"
-
-[unix]
-_ensure-machete:
-    @command -v cargo-machete >/dev/null 2>&1 || cargo install --locked cargo-machete
-
-[windows]
-_ensure-audit:
-    @pwsh -NoLogo -NoProfile -Command "if (-not (Get-Command cargo-audit -EA SilentlyContinue)) { Write-Host 'installing cargo-audit' -ForegroundColor Cyan; cargo install --locked cargo-audit }"
-
-[unix]
-_ensure-audit:
-    @command -v cargo-audit >/dev/null 2>&1 || cargo install --locked cargo-audit
-
+[group('quality')]
 dep-check: _ensure-machete
-    cargo machete src-tauri
+    {{_run}} --tag machete --idle 30 --max 120 -- cargo machete src-tauri
 
+[group('quality')]
 audit: _ensure-audit
-    cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
-    bun audit
+    {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
+    {{_run}} --tag bun-audit --idle 30 --max 120 -- bun audit
 
-check: fmt-check lint test dep-check audit
-    @echo "✓ check passed — fmt, lint, typecheck, vue-lint, test, dead-deps, audit"
+# Pre-release gate: parallel where safe; fmt-check + dep-check + audit + lint suite + tests.
+[group('quality')]
+check: _ensure-machete _ensure-audit
+    {{_par}} --idle 180 --max 1200 \
+        --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"' \
+        --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
+        --job 'typecheck=bun run typecheck' \
+        --job 'vue-lint=bun run scripts/lint-vue.mjs' \
+        --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
+        --job 'js-test=bun run test' \
+        --job 'machete=cargo machete src-tauri' \
+        --job 'audit=cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429 && bun audit'
+    @echo "✓ check passed"
 
-check-all: check
-    @echo "✓ check-all passed (alias for check)"
+_ensure-machete:
+    @command -v cargo-machete >/dev/null 2>&1 || {{_run}} --tag install-machete --idle 60 --max 600 -- cargo install --locked cargo-machete
 
+_ensure-audit:
+    @command -v cargo-audit >/dev/null 2>&1 || {{_run}} --tag install-audit --idle 60 --max 600 -- cargo install --locked cargo-audit
+
+# ─── clean ────────────────────────────────────────────────────────────────────
+
+[group('clean')]
 clean-temp *args:
-    bun scripts/clean-temp.mjs {{args}}
+    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.mjs {{args}}
 
-_clean-build:
-    cargo clean --manifest-path src-tauri/Cargo.toml
-    cargo clean --manifest-path xtask/Cargo.toml
-    node -e "const{rmSync}=require('fs');for(const p of ['dist','node_modules']){try{rmSync(p,{recursive:true,force:true,maxRetries:3,retryDelay:100});console.log('removed '+p)}catch(e){console.error(p+': '+e.message);process.exit(1)}}"
+[group('clean')]
+clean: clean-temp
+    {{_run}} --tag clean-rust --idle 60 --max 300 -- cargo clean --manifest-path src-tauri/Cargo.toml
+    {{_run}} --tag clean-xtask --idle 30 --max 120 -- cargo clean --manifest-path xtask/Cargo.toml
+    {{_run}} --tag clean-node --idle 30 --max 120 -- node -e "const{rmSync}=require('fs');for(const p of ['dist','node_modules']){try{rmSync(p,{recursive:true,force:true,maxRetries:3,retryDelay:100});console.log('removed '+p)}catch(e){console.error(p+': '+e.message);process.exit(1)}}"
 
-clean: clean-temp _clean-build
-
+[group('clean')]
 clean-force:
-    bun scripts/clean-temp.mjs --force
-    @just _clean-build
+    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.mjs --force
+    @just clean
 
+# ─── icons ────────────────────────────────────────────────────────────────────
+
+[group('build')]
 icons source="src-tauri/icons/icon.png":
-    bun run tauri icon {{source}}
+    {{_run}} --tag icons --idle 60 --max 300 -- bun run tauri icon {{source}}
 
-# windows-only runtime deps (CUDA, cuDNN, NeMo)
-[windows]
+# ─── runtime deps (Windows-only: CUDA / cuDNN / NeMo) ─────────────────────────
+
+[windows, group('runtime-deps')]
 cudnn version="9.21.1.3":
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
+    {{_run}} --tag cudnn --idle 120 --max 1800 -- pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1 -Version {{version}}
 
-[unix]
-cudnn version="9.21.1.3":
-    @echo "cudnn install is windows-only (CUDA / cuDNN runtime)" >&2 ; exit 1
-
-[windows]
+[windows, group('runtime-deps')]
 sherpa-cuda version="v1.13.0":
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1 -Version {{version}}
+    {{_run}} --tag sherpa-cuda --idle 120 --max 1800 -- pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1 -Version {{version}}
 
-[unix]
-sherpa-cuda version="v1.13.0":
-    @echo "sherpa-cuda install is windows-only (CUDA runtime)" >&2 ; exit 1
-
-[windows]
+[windows, group('runtime-deps')]
 nemo-deps:
-    pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
+    {{_run}} --tag nemo-deps --idle 120 --max 1800 -- pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
 
-[unix]
-nemo-deps:
-    @echo "nemo-deps install is windows-only (NeMo / CUDA runtime)" >&2 ; exit 1
+# ─── release ──────────────────────────────────────────────────────────────────
 
-# release
+[group('release')]
 release:
-    cargo xtask release --dev
-    cargo xtask publish dev
+    {{_run}} --tag release-dev --idle 180 --max 3600 -- cargo xtask release --dev
+    {{_run}} --tag publish-dev --idle 180 --max 1800 -- cargo xtask publish dev
 
+[group('release')]
 release-stable level="patch":
     @just check
-    cargo xtask bump {{level}}
-    cargo xtask release
-    cargo xtask publish stable
+    {{_run}} --tag bump --idle 30 --max 120 -- cargo xtask bump {{level}}
+    {{_run}} --tag release --idle 180 --max 3600 -- cargo xtask release
+    {{_run}} --tag publish --idle 180 --max 1800 -- cargo xtask publish stable
 
+[group('release')]
 release-bump level="patch":
-    cargo xtask bump {{level}}
+    {{_run}} --tag bump --idle 30 --max 120 -- cargo xtask bump {{level}}
 
+[group('release')]
 release-build *args:
-    cargo xtask release {{args}}
+    {{_run}} --tag release-build --idle 180 --max 3600 -- cargo xtask release {{args}}
 
+[group('release')]
 release-publish channel:
-    cargo xtask publish {{channel}}
+    {{_run}} --tag publish --idle 180 --max 1800 -- cargo xtask publish {{channel}}

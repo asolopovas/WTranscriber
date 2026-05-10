@@ -1,29 +1,57 @@
 # Dev loop
 
-Use the automated Android tasks; do not recreate bootstrap steps by hand.
+## Task contract
+
+Every `just` recipe runs through `scripts/run.mjs`:
+
+- Output line-prefixed with `[tag]`.
+- Heartbeat after 10 s of silence: `… still running, Xs elapsed, Ys without output`.
+- Idle timeout (`--idle`, default 90 s): kills with `FAIL IDLE_TIMEOUT`, exit 124.
+- Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
+- Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
+
+Interactive recipes (`dev`, `dev-cpu`, `watch`, `android`) use `--idle 0 --max 0` (heartbeat only). Anything quiet >30 s is a bug.
+
+`just check` runs eight gates in parallel via `scripts/parallel.mjs`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all complete.
+
+## Desktop
+
+```bash
+just dev          # HMR
+just dev-cpu      # HMR with sherpa-static (no CUDA)
+just build-app    # fast no-bundle build
+just build        # full bundle (NSIS on Windows, .deb on Linux)
+just check        # parallel pre-release gate
+```
 
 ## Android
 
 ```bash
-just android-bootstrap usb     # USB / emulator
-just android-bootstrap host    # Wi-Fi / LAN
-just android-status            # bounded health check: adb, reverse, Vite, CDP, IPC
-just android-smoke             # fail-fast end-to-end probe
-just android-stop              # stop detached dev session and forwards
+just android                  # bootstrap USB/emu HMR session (idempotent)
+just android-host             # bootstrap Wi-Fi/LAN session
+just android-status           # bounded health check (≤30 s)
+just android-status-json      # machine-readable health
+just android-smoke            # fail-fast end-to-end probe
+just android-stop             # stop session and forwards
 just android-debug-eval "document.title"
+just android-emu              # cross-platform headless x86_64 emulator
+just android-emu-stop
 ```
 
-`android-bootstrap` is implemented in `cargo xtask android bootstrap`. It validates the selected adb device, starts logcat, configures `adb reverse` for USB mode, starts Tauri Android dev, waits for Vite and the WebView connection, attaches CDP, and probes Tauri IPC through the live app.
+Pass a device serial when multiple are attached: `just android R5CXB2PGC2H`.
 
-Frontend edits (`src/**`) HMR in place. Backend/native/config edits require `just android-stop && just android-bootstrap usb` so the debug-dev APK and Vite dev URL stay paired.
+## Live-session signals
 
-Never run `just android-install`, `just android-build`, `cargo tauri build`, or release installers while `tmp/_pids.json` exists and Vite owns `:1420`.
+- HMR proof after JS/CSS edit: `[vite] hmr update /src/...` in `tmp/android-dev.log`.
+- Crash/OOM proof: `am_kill` / `am_proc_died` / `am_crash` in `tmp/logcat.log` for the app.
+- `location.href` is not a health signal on Android.
 
-## Signals
+## HMR rule
 
-- Health: `just android-status-json`
-- Live WebView eval: `just android-debug-eval "<expr>"`
-- HMR proof after JS/CSS edits: `[vite] hmr update /src/...` in `tmp/android-dev.log`
-- Crash/OOM proof: app-specific `am_kill`, `am_proc_died`, or `am_crash` in `tmp/logcat.log`
+`src/**` edits hot-reload. Any backend / native / config / capability edit:
 
-`location.href` is not a health signal on Android; Tauri reports `http://tauri.localhost/` even when HMR is stale.
+```bash
+just android-stop && just android
+```
+
+Never run `just android-install`, `just android-build`, `cargo tauri build`, or any release build while `tmp/_pids.json` exists and Vite owns `:1420`.
