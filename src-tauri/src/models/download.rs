@@ -156,9 +156,17 @@ async fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     let path = path.to_owned();
     let expected = expected.to_owned();
     tokio::task::spawn_blocking(move || -> Result<()> {
+        use std::io::Read as _;
         let mut file = std::fs::File::open(&path)?;
         let mut hasher = Sha256::new();
-        std::io::copy(&mut file, &mut hasher)?;
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
         let actual = hex::encode(hasher.finalize());
         if !actual.eq_ignore_ascii_case(&expected) {
             return Err(Error::Other(anyhow::anyhow!(
