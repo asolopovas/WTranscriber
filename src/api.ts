@@ -34,6 +34,7 @@ export const api = {
   redoDiarization: (input: string, oldCacheKey: string, config: Config) =>
     invoke<Transcript>("redo_diarization", { input, oldCacheKey, config }),
   cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),
+  cancelAllTranscribes: () => invoke<number>("cancel_all_transcribes"),
   historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
   suggestFilename: (transcript: Transcript) =>
     invoke<Suggestion>("suggest_filename", { transcript }),

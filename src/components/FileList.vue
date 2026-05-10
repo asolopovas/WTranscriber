@@ -80,8 +80,8 @@ defineExpose({
     <li
       v-for="{ entry, pretty, title } in rows"
       :key="entry.path"
-      class="group border-b border-outline-variant/20 px-margin py-xs cursor-pointer transition-colors hover:bg-surface-container-high/40"
-      :class="selectedPath === entry.path ? 'bg-primary/10' : ''"
+      class="group border-b border-outline-variant/20 pl-margin pr-unit py-xs cursor-pointer transition-colors"
+      :class="selectedPath === entry.path ? 'bg-primary/25' : ''"
       @click="selectionActive ? emit('toggle-select', entry.path) : emit('choose', entry)"
       @dblclick="emit('transcribe', entry)"
     >
@@ -118,9 +118,9 @@ defineExpose({
             v-if="busy[entry.path]"
             variant="ghost-error"
             shape="icon"
-            size="sm"
             icon="stop"
-            :icon-size="18"
+            :icon-size="24"
+            class="w-11 h-11"
             title="Stop"
             @click="emit('stop', entry)"
           />
@@ -128,32 +128,30 @@ defineExpose({
             v-else
             variant="ghost-primary"
             shape="icon"
-            size="sm"
+            class="w-11 h-11"
             title="Transcribe"
             @click="emit('transcribe', entry)"
           >
-            <TranscribeIcon :size="18" />
+            <TranscribeIcon :size="24" />
           </Button>
           <Button
-            class="hidden md:inline-flex"
+            class="hidden md:inline-flex w-11 h-11"
             variant="ghost"
             shape="icon"
-            size="sm"
             :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
             :disabled="autoRenamingPath === entry.path"
             @click="emit('auto-rename', entry)"
           >
-            <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-            <Icon v-else name="auto_awesome" :size="18" />
+            <Spinner v-if="autoRenamingPath === entry.path" :size="24" />
+            <Icon v-else name="auto_awesome" :size="24" />
           </Button>
           <Button
             v-if="entry.cache_key"
-            class="hidden md:inline-flex"
+            class="hidden md:inline-flex w-11 h-11"
             variant="ghost"
             shape="icon"
-            size="sm"
             icon="visibility"
-            :icon-size="18"
+            :icon-size="24"
             title="Transcript ready — view"
             @click="emit('view', entry)"
           />
@@ -161,9 +159,9 @@ defineExpose({
             <Button
               variant="ghost"
               shape="icon"
-              size="sm"
               icon="more_vert"
-              :icon-size="18"
+              :icon-size="24"
+              class="w-11 h-11"
               title="More"
               @click="toggleMenu(entry.path)"
             />

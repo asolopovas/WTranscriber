@@ -56,6 +56,7 @@ const error = ref<string | null>(null);
 const dragOver = ref(false);
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
+const cancelledPaths = ref<Set<string>>(new Set());
 
 const essentials = useEssentials(models);
 const essentialIds = essentials.ids;
@@ -323,7 +324,10 @@ onMounted(async () => {
     }
   };
   unlisten.push(
-    await events.onTranscribeProgress((p) => recordSet(progressByPath, p.path, p)),
+    await events.onTranscribeProgress((p) => {
+      if (cancelledPaths.value.has(p.path)) return;
+      recordSet(progressByPath, p.path, p);
+    }),
     ...(await essentials.attachListeners(refreshModels)),
     await getCurrentWebview().onDragDropEvent((event) => {
       if (tab.value !== "transcribe") return;
@@ -475,7 +479,30 @@ async function runTranscribe(entry?: DirEntry) {
 }
 
 async function stopTranscribe(entry: DirEntry) {
-  await api.cancelTranscribe(entry.path);
+  cancelledPaths.value.add(entry.path);
+  recordOmit(progressByPath, entry.path);
+  recordOmit(busy, entry.path);
+  if (status.value === "running" && selectedPath.value === entry.path) {
+    status.value = "idle";
+  }
+  if (queueActive.value) {
+    queueActive.value = false;
+    queueTotal.value = 0;
+    queueDone.value = 0;
+  }
+  for (const p of Object.keys(busy.value)) {
+    cancelledPaths.value.add(p);
+    recordOmit(progressByPath, p);
+    recordOmit(busy, p);
+  }
+  try {
+    await api.cancelAllTranscribes();
+  } finally {
+    const paths = Array.from(cancelledPaths.value);
+    setTimeout(() => {
+      for (const p of paths) cancelledPaths.value.delete(p);
+    }, 1500);
+  }
 }
 
 async function transcribeAll(targets?: DirEntry[]) {
@@ -487,7 +514,9 @@ async function transcribeAll(targets?: DirEntry[]) {
   queueDone.value = 0;
   try {
     for (const entry of items) {
+      if (!queueActive.value) break;
       await runTranscribe(entry);
+      if (!queueActive.value) break;
       queueDone.value += 1;
     }
   } finally {
@@ -813,7 +842,7 @@ const selectedProgress = computed(() =>
     >
       <template v-if="tab === 'transcribe'">
         <section
-          class="flex-1 flex flex-col overflow-hidden bg-surface relative"
+          class="flex-1 flex flex-col overflow-hidden bg-surface-container-lowest relative"
           :class="dragOver ? 'ring-2 ring-primary ring-inset' : ''"
         >
           <div
@@ -852,31 +881,37 @@ const selectedProgress = computed(() =>
             <Button variant="ghost" shape="link" @click="clearSelection">Clear</Button>
           </div>
 
-          <div class="flex-1 overflow-y-auto scroll-thin">
-            <FileList
-              ref="fileListRef"
-              :entries="audioEntries"
-              :selected-path="selectedPath"
-              :busy="busy"
-              :progress-by-path="progressByPath"
-              :auto-renaming-path="autoRenamingPath"
-              :drag-over="dragOver"
-              :has-listing="!!listing"
-              @choose="chooseEntry"
-              @view="viewEntry"
-              @transcribe="runTranscribe"
-              @stop="stopTranscribe"
-              @trim="openTrim"
-              @auto-rename="autoRename"
-              @rename="openRename"
-              @share="onShare"
-              @export="openExport"
-              @redo-diarize="openRedoDiarize"
-              @delete="deleteEntry"
-              :selected-paths="selectedPaths"
-              @toggle-select="toggleSelect"
-              @range-select="rangeSelect"
-            />
+          <div class="flex-1 flex flex-col overflow-hidden px-xs md:px-md py-md">
+            <div
+              class="flex-1 flex flex-col overflow-hidden bg-surface-container/40 rounded-xl border border-outline-variant/40"
+            >
+              <div class="flex-1 overflow-y-auto scroll-overlay">
+                <FileList
+                  ref="fileListRef"
+                  :entries="audioEntries"
+                  :selected-path="selectedPath"
+                  :busy="busy"
+                  :progress-by-path="progressByPath"
+                  :auto-renaming-path="autoRenamingPath"
+                  :drag-over="dragOver"
+                  :has-listing="!!listing"
+                  @choose="chooseEntry"
+                  @view="viewEntry"
+                  @transcribe="runTranscribe"
+                  @stop="stopTranscribe"
+                  @trim="openTrim"
+                  @auto-rename="autoRename"
+                  @rename="openRename"
+                  @share="onShare"
+                  @export="openExport"
+                  @redo-diarize="openRedoDiarize"
+                  @delete="deleteEntry"
+                  :selected-paths="selectedPaths"
+                  @toggle-select="toggleSelect"
+                  @range-select="rangeSelect"
+                />
+              </div>
+            </div>
           </div>
 
           <TranscriptPanel v-if="transcript" :transcript="transcript" @close="closeTranscript" />

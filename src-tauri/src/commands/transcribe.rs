@@ -35,6 +35,18 @@ use crate::{
 static TRANSCRIBE_CANCELS: LazyLock<Mutex<HashMap<String, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+static TRANSCRIBE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+async fn wait_cancelled(cancel: Arc<AtomicBool>) {
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {
@@ -398,6 +410,18 @@ pub async fn transcribe_file(
 ) -> Result<Transcript> {
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
+    let input_key_early = input.to_string_lossy().into_owned();
+    let cancel_early = Arc::new(AtomicBool::new(false));
+    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+        cancels.insert(input_key_early.clone(), cancel_early.clone());
+    }
+    let _guard = TRANSCRIBE_LOCK.lock().await;
+    if cancel_early.load(Ordering::SeqCst) {
+        if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
+            cancels.remove(&input_key_early);
+        }
+        return Err(Error::Cancelled);
+    }
     let label = format!("transcribe {}", input.display());
     logfile::process_start(&label);
     log_preflight(&input, &config);
@@ -426,11 +450,8 @@ pub async fn transcribe_file(
     } else {
         progress::DIARIZE_DEFAULT_RTF
     };
-    let input_key = input.to_string_lossy().into_owned();
-    let cancel = Arc::new(AtomicBool::new(false));
-    if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
-        cancels.insert(input_key.clone(), cancel.clone());
-    }
+    let input_key = input_key_early.clone();
+    let cancel = cancel_early.clone();
     let sink = Arc::new(TranscribeSink::new(
         app,
         Handle::current(),
@@ -444,7 +465,14 @@ pub async fn transcribe_file(
         cancel,
     ));
     let job = Job { input, config };
-    let result = match transcriber::run_with_sink(&job, sink.clone()).await {
+    let cancel_watch = cancel_early.clone();
+    let run_fut = transcriber::run_with_sink(&job, sink.clone());
+    let raced = tokio::select! {
+        biased;
+        res = run_fut => res,
+        () = wait_cancelled(cancel_watch) => Err(Error::Cancelled),
+    };
+    let result = match raced {
         Ok(t) => {
             logfile::process_end(
                 &label,
@@ -612,7 +640,13 @@ pub async fn redo_diarization(
         cancel.clone(),
     ));
 
-    let result = redo_diarization_inner(input, old_cache_key, config, sink.clone()).await;
+    let cancel_watch = cancel.clone();
+    let inner_fut = redo_diarization_inner(input, old_cache_key, config, sink.clone());
+    let result = tokio::select! {
+        biased;
+        res = inner_fut => res,
+        () = wait_cancelled(cancel_watch) => Err(Error::Cancelled),
+    };
     let outcome = match result {
         Ok(t) => {
             logfile::process_end(
@@ -754,6 +788,20 @@ pub fn cancel_transcribe(input: PathBuf) -> bool {
         logfile::info(&format!("cancel_transcribe {}", input.display()));
         true
     })
+}
+
+#[tauri::command]
+pub fn cancel_all_transcribes() -> usize {
+    let Ok(cancels) = TRANSCRIBE_CANCELS.lock() else {
+        return 0;
+    };
+    let mut count = 0_usize;
+    for (key, token) in cancels.iter() {
+        token.store(true, Ordering::SeqCst);
+        logfile::info(&format!("cancel_transcribe {key}"));
+        count += 1;
+    }
+    count
 }
 
 #[cfg(test)]
