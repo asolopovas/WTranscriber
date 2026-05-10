@@ -156,6 +156,7 @@ pub fn run() {
             commands::diagnostics::log_path,
             commands::diagnostics::log_tail,
             commands::diagnostics::log_clear,
+            commands::diagnostics::log_renderer,
             commands::diagnostics::reset_transcript_cache,
             commands::diagnostics::reset_audio_cache,
             android::has_persistent_storage,

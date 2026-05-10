@@ -52,14 +52,29 @@ bootstrap:
 # ─── develop ──────────────────────────────────────────────────────────────────
 
 # Desktop HMR (Linux/Windows). Vite + tauri dev.
-[group('develop')]
+# Diagnostic env vars are baked in so any renderer crash leaves a real trail:
+#   ulimit -c unlimited → WebKitWebProcess crashes drop a coredump
+#   RUST_BACKTRACE=1    → Rust panics include the backtrace
+#   GST_DEBUG=2         → GStreamer warnings/errors (covers media playback)
+# Renderer JS errors are bridged into the same log via src/utils/error-bridge.ts.
+[unix, group('develop')]
 dev:
-    {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
+    ulimit -c unlimited; RUST_BACKTRACE=1 GST_DEBUG=2 \
+        {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
+
+[windows, group('develop')]
+dev:
+    $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
 # Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
-[group('develop')]
+[unix, group('develop')]
 dev-cpu:
-    {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
+    ulimit -c unlimited; RUST_BACKTRACE=1 GST_DEBUG=2 \
+        {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
+
+[windows, group('develop')]
+dev-cpu:
+    $env:RUST_BACKTRACE='1'; {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
 
 # Headless rebuild loop on Rust source changes.
 [group('develop')]
@@ -78,6 +93,25 @@ preview:
 [group('develop')]
 typecheck:
     {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
+
+# Pull the latest renderer/main-process crash backtrace plus the dev tail.
+# Reads coredumpctl for wtranscriber + WebKitWebProcess and tails tmp/desktop-app.log.
+[unix, group('develop')]
+diagnose-crash:
+    @echo "─── latest wtranscriber + WebKit coredumps (last 1h) ───"
+    @sudo -n coredumpctl list --since '1h ago' 2>/dev/null \
+        | grep -E 'wtranscriber|WebKitWebProces' | tail -10 \
+        || echo '(no recent coredumps; ensure ulimit -c unlimited — just dev sets it)'
+    @echo
+    @echo "─── stack trace (most recent) ───"
+    @sudo -n coredumpctl info 2>/dev/null | sed -n '1,80p' || echo '(needs sudo)'
+    @echo
+    @echo "─── last 80 lines of tmp/desktop-app.log ───"
+    @tail -80 tmp/desktop-app.log 2>/dev/null || echo '(no dev log)'
+    @echo
+    @echo "─── last 60 lines of wt.log (renderer bridge writes here too) ───"
+    @tail -60 "$(find ~/.local/share/wtranscriber ~/.config/wtranscriber -name wt.log 2>/dev/null | head -1)" 2>/dev/null \
+        || echo '(no wt.log yet)'
 
 # ─── build ────────────────────────────────────────────────────────────────────
 

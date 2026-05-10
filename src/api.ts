@@ -61,7 +61,15 @@ export const api = {
     invoke<string>("add_to_workdir", { source, workdir }),
   saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
     invoke<string>("save_recording", { workdir, filename, bytes: uint8ToBase64(bytes) }),
-  readAudioBytes: (path: string) => invoke<number[]>("read_audio_bytes", { path }),
+  readAudioBytes: (path: string) => invoke<ArrayBuffer>("read_audio_bytes", { path }),
+  logRenderer: (payload: {
+    level: "error" | "warn" | "info";
+    message: string;
+    source?: string;
+    line?: number;
+    column?: number;
+    stack?: string;
+  }) => invoke<void>("log_renderer", payload),
   hasPersistentStorage: () => invoke<boolean>("has_persistent_storage"),
   requestPersistentStorage: () => invoke<void>("request_persistent_storage"),
   enablePersistentStorage: () => invoke<boolean>("enable_persistent_storage"),
