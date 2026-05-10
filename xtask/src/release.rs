@@ -374,29 +374,47 @@ fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Result<i32> {
         eprintln!("[win] git push origin HEAD failed (exit {push}) — VM cannot fetch latest commit");
         return Ok(push);
     }
-    let script = format!(
-        "set -e\n\
-         export PATH=\"$HOME/.cargo/bin:$HOME/.bun/bin:/c/Program Files/just:/c/Program Files/nodejs:/c/Program Files/Git/cmd:$PATH\"\n\
-         if ! command -v just >/dev/null 2>&1; then\n\
-             echo '[win] just missing in VM — run scripts/bootstrap-windows.ps1 inside the VM first' >&2\n\
-             exit 91\n\
-         fi\n\
-         cd /c\n\
-         if [ ! -d WTranscriber ]; then git clone https://github.com/asolopovas/WTranscriber.git WTranscriber; fi\n\
-         cd /c/WTranscriber\n\
-         git fetch --prune --force --tags origin\n\
-         git reset --hard {sha}\n\
-         git clean -fdx src-tauri/target/release/bundle/nsis 2>/dev/null || true\n\
-         just bootstrap\n\
-         bun install --frozen-lockfile --no-progress 2>&1 | tail -5\n\
-         just build-cpu\n\
-         ls src-tauri/target/release/bundle/nsis/*-setup.exe\n"
-    );
-    run_streamed_stdin(
+    let helper_local = root().join("scripts").join("wt-windows-build.bat");
+    if !helper_local.exists() {
+        bail!(
+            "missing helper script: {} — required to drive MSVC build inside windows-vm",
+            helper_local.display()
+        );
+    }
+    let mkdir = run_streamed(
         "win",
         "ssh",
-        &["windows-vm", "bash", "-l"],
-        &script,
+        &["windows-vm", "mkdir", "-p", "/c/wt-build"],
+        &[],
+        lock,
+    )?;
+    if mkdir != 0 {
+        eprintln!("[win] failed to create /c/wt-build on VM (exit {mkdir})");
+        return Ok(mkdir);
+    }
+    let scp = run_streamed(
+        "win",
+        "scp",
+        &[
+            helper_local.to_string_lossy().as_ref(),
+            "windows-vm:/c/wt-build/wt-windows-build.bat",
+        ],
+        &[],
+        lock,
+    )?;
+    if scp != 0 {
+        eprintln!("[win] scp helper to VM failed (exit {scp})");
+        return Ok(scp);
+    }
+    run_streamed(
+        "win",
+        "ssh",
+        &[
+            "windows-vm",
+            "cmd",
+            "//c",
+            &format!("C:\\wt-build\\wt-windows-build.bat {sha}"),
+        ],
         &[],
         lock,
     )

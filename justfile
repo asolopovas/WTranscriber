@@ -230,10 +230,6 @@ nemo-deps:
 
 # release
 release:
-    cargo xtask release --dev --no-windows-vm
-    cargo xtask publish dev
-
-release-full:
     cargo xtask release --dev
     cargo xtask publish dev
 

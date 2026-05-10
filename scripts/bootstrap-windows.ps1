@@ -29,12 +29,25 @@ function Winget-Install($id) {
 $tmp = Join-Path $env:TEMP 'wtranscriber-bootstrap'
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 
+$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
+if (-not (Test-Path $vcvars)) {
+    Write-Host '-> Visual Studio 2022 Build Tools (VCTools workload)' -ForegroundColor Cyan
+    Write-Host '   (large download, ~5 GB; required because ort prebuilt binaries are MSVC-only)'
+    winget install --id Microsoft.VisualStudio.2022.BuildTools --silent --accept-package-agreements --accept-source-agreements `
+        --override '--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended' 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) { throw 'winget failed for Microsoft.VisualStudio.2022.BuildTools' }
+}
+
 if (-not (Have rustup)) {
-    Write-Host '-> Rust (rustup, gnu host)' -ForegroundColor Cyan
+    Write-Host '-> Rust (rustup, msvc host)' -ForegroundColor Cyan
     $exe = "$tmp\rustup-init.exe"
     Invoke-WebRequest 'https://win.rustup.rs/x86_64' -OutFile $exe
-    & $exe -y --default-host x86_64-pc-windows-gnu --default-toolchain stable --profile minimal
+    & $exe -y --default-host x86_64-pc-windows-msvc --default-toolchain stable --profile minimal
     Add-Path "$env:USERPROFILE\.cargo\bin"
+} else {
+    & "$env:USERPROFILE\.cargo\bin\rustup.exe" set default-host x86_64-pc-windows-msvc | Out-Host
+    & "$env:USERPROFILE\.cargo\bin\rustup.exe" default stable-x86_64-pc-windows-msvc | Out-Host
+    & "$env:USERPROFILE\.cargo\bin\rustup.exe" target add x86_64-pc-windows-msvc | Out-Host
 }
 
 if (-not (Have bun)) {
