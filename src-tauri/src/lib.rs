@@ -262,7 +262,8 @@ pub fn android_share_text(title: &str, text: &str) -> bool {
 }
 
 #[cfg(not(target_os = "android"))]
-pub fn android_share_text(_title: &str, _text: &str) -> bool {
+#[must_use]
+pub const fn android_share_text(_title: &str, _text: &str) -> bool {
     false
 }
 
@@ -412,7 +413,11 @@ fn request_persistent_storage() {
 }
 
 #[tauri::command]
-#[allow(clippy::unnecessary_wraps, clippy::missing_const_for_fn)]
+#[allow(
+    clippy::unnecessary_wraps,
+    clippy::missing_const_for_fn,
+    clippy::needless_pass_by_value
+)]
 fn enable_persistent_storage(app: AppHandle) -> std::result::Result<bool, String> {
     #[cfg(target_os = "android")]
     {
@@ -477,7 +482,7 @@ fn backup_config_to_persistent() {
     }
 }
 
-pub fn android_mirror_after_install() {
+pub const fn android_mirror_after_install() {
     #[cfg(target_os = "android")]
     {
         maybe_backup_after_install();
@@ -513,7 +518,7 @@ fn backup_single_model(model_id: &str) {
     }
 }
 
-pub fn android_backup_model(model_id: &str) {
+pub const fn android_backup_model(model_id: &str) {
     #[cfg(target_os = "android")]
     {
         backup_single_model(model_id);
@@ -525,7 +530,7 @@ pub fn android_backup_model(model_id: &str) {
     }
 }
 
-pub fn android_remove_from_persistent(model_id: &str) {
+pub const fn android_remove_from_persistent(model_id: &str) {
     #[cfg(target_os = "android")]
     {
         if !android_has_all_files_access() {

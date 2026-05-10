@@ -12,7 +12,7 @@ Every `just` recipe runs through `scripts/run.ts`:
 
 Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits). Anything quiet >30 s is a bug.
 
-`just check` runs **8 gates** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all complete. The same recipe runs in CI on every push and PR.
+`just check` runs **9 gates** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all complete. The same recipe runs in CI on every push and PR.
 
 ## Desktop
 

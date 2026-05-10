@@ -24,7 +24,7 @@ pub struct ByteProgress {
 
 pub type Progress = ByteProgress;
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 pub async fn download_file(
     dst: &Path,
     url: &str,

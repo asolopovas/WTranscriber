@@ -214,6 +214,7 @@ lint:
     {{_run}} --tag clippy --idle 120 --max 900 -- cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings
     {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
     {{_run}} --tag vue-lint --idle 30 --max 120 -- bun run scripts/lint-vue.ts
+    {{_run}} --tag knip --idle 30 --max 120 -- bun x knip
 
 [group('quality')]
 test:
@@ -234,7 +235,7 @@ audit: _ensure-audit
     {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock
     {{_run}} --tag bun-audit --idle 30 --max 120 -- bun audit
 
-# Pre-release gate: 8 jobs in parallel (fmt-check, clippy, typecheck, vue-lint, rust-test, js-test, machete, audit).
+# Pre-release gate: 9 jobs in parallel (fmt-check, clippy, typecheck, vue-lint, knip, rust-test, js-test, machete, audit).
 [group('quality')]
 check: _ensure-machete _ensure-audit
     {{_par}} --idle 180 --max 1200 \
@@ -242,6 +243,7 @@ check: _ensure-machete _ensure-audit
         --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'typecheck=bun run typecheck' \
         --job 'vue-lint=bun run scripts/lint-vue.ts' \
+        --job 'knip=bun x knip' \
         --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
         --job 'js-test=bun run test' \
         --job 'machete=cargo machete src-tauri' \

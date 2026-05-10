@@ -65,7 +65,8 @@ fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
     }
     if dst.exists() {
         return Err(Error::Config(format!(
-            "too many copies of {file_name:?} in workdir"
+            "too many copies of '{}' in workdir",
+            file_name.to_string_lossy()
         )));
     }
     std::fs::copy(source, &dst)?;

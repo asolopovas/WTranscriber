@@ -4,7 +4,7 @@ Audio transcription desktop app. [Tauri 2](https://tauri.app) · Vue 3 + TS · R
 
 ## Prerequisites
 
-- Rust stable (MSRV 1.85, enforced via `rust-version` in `Cargo.toml`)
+- Rust stable (MSRV 1.88, enforced via `rust-version` in `Cargo.toml` and pinned in `rust-toolchain.toml`)
 - Bun
 - [`just`](https://github.com/casey/just)
 - Tauri platform toolchain ([docs](https://tauri.app/start/prerequisites/))

@@ -34,12 +34,12 @@ Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["ns
 
 ## Gates
 
-| Stage             | Gate                                                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- |
-| `release-bump`    | Working tree clean; tag does not exist                                                                     |
-| `release-stable`  | `just check` (8 parallel jobs: fmt-check, clippy, typecheck, vue-lint, rust-test, js-test, machete, audit) |
-| `release-publish` | Stable: clean tree, local tag exists                                                                       |
-| `release-build`   | Stable: refuses unsigned APK; dev: warns and continues                                                     |
+| Stage             | Gate                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `release-bump`    | Working tree clean; tag does not exist                                                                           |
+| `release-stable`  | `just check` (9 parallel jobs: fmt-check, clippy, typecheck, vue-lint, knip, rust-test, js-test, machete, audit) |
+| `release-publish` | Stable: clean tree, local tag exists                                                                             |
+| `release-build`   | Stable: refuses unsigned APK; dev: warns and continues                                                           |
 
 The bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
 

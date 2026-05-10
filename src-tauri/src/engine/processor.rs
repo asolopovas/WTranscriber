@@ -32,14 +32,11 @@ impl ChunkProcessor for Processor<'_> {
     }
 }
 
-pub fn resolve_variant<T, F, const N: usize>(
+pub fn resolve_variant<T>(
     model_id: &str,
     label: &str,
-    variants: [F; N],
-) -> Result<T>
-where
-    F: Fn(&Path) -> Option<T>,
-{
+    variants: &[fn(&Path) -> Option<T>],
+) -> Result<T> {
     let dir = crate::models::model_dir(model_id)?;
     for build in variants {
         if let Some(p) = build(&dir) {

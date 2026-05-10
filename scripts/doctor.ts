@@ -44,8 +44,8 @@ add("rustc", () => {
   if (!m) return warn(r.out);
   const maj = Number(m[1]);
   const min = Number(m[2]);
-  if (maj > 1 || (maj === 1 && min >= 85)) return ok(r.out);
-  return fail(`${r.out} (need ≥1.85)`);
+  if (maj > 1 || (maj === 1 && min >= 88)) return ok(r.out);
+  return fail(`${r.out} (need ≥1.88)`);
 });
 
 add("cargo", () => {

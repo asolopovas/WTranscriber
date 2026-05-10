@@ -27,10 +27,10 @@ jobs:
           bun-version: latest
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
           components: rustfmt, clippy
-          toolchain: 1.85
+          toolchain: "1.88"
 
       - name: Install Linux build deps (Tauri)
         run: |

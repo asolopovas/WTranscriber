@@ -23,9 +23,9 @@ fn resolve(model_id: &str) -> Result<Paths> {
     resolve_variant(
         model_id,
         "canary",
-        [
-            |dir: &std::path::Path| build_paths(dir, "encoder.int8.onnx", "decoder.int8.onnx"),
-            |dir: &std::path::Path| build_paths(dir, "encoder.onnx", "decoder.onnx"),
+        &[
+            |dir| build_paths(dir, "encoder.int8.onnx", "decoder.int8.onnx"),
+            |dir| build_paths(dir, "encoder.onnx", "decoder.onnx"),
         ],
     )
 }

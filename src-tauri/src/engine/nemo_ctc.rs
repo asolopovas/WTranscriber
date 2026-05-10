@@ -30,9 +30,9 @@ fn resolve(model_id: &str) -> Result<Paths> {
     resolve_variant(
         model_id,
         "nemo-ctc",
-        [
-            |dir: &std::path::Path| build_paths(dir, "model.int8.onnx"),
-            |dir: &std::path::Path| build_paths(dir, "model.onnx"),
+        &[
+            |dir| build_paths(dir, "model.int8.onnx"),
+            |dir| build_paths(dir, "model.onnx"),
         ],
     )
 }

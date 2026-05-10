@@ -50,10 +50,7 @@ fn resolve(model_id: &str) -> Result<Paths> {
     resolve_variant(
         model_id,
         "transducer",
-        [
-            |dir: &std::path::Path| build_paths(dir, ".int8"),
-            |dir: &std::path::Path| build_paths(dir, ""),
-        ],
+        &[|dir| build_paths(dir, ".int8"), |dir| build_paths(dir, "")],
     )
 }
 
