@@ -4,11 +4,17 @@
     clippy::cast_precision_loss
 )]
 
+mod lang;
+mod words;
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::diarizer;
+
+use self::lang::{detect_script_lang, resolve_language};
+use self::words::{group_words, smooth_flickers};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transcript {
@@ -152,126 +158,10 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
     }
 }
 
-fn detect_script_lang(text: &str) -> Option<String> {
-    let mut latin = 0usize;
-    let mut cyrillic = 0usize;
-    let mut cjk = 0usize;
-    for c in text.chars() {
-        let u = c as u32;
-        if (0x0400..=0x04FF).contains(&u) || (0x0500..=0x052F).contains(&u) {
-            cyrillic += 1;
-        } else if (0x0041..=0x024F).contains(&u) {
-            latin += 1;
-        } else if (0x4E00..=0x9FFF).contains(&u)
-            || (0x3040..=0x30FF).contains(&u)
-            || (0xAC00..=0xD7AF).contains(&u)
-        {
-            cjk += 1;
-        }
-    }
-    let total = latin + cyrillic + cjk;
-    if total == 0 {
-        return None;
-    }
-    if cyrillic * 2 >= total {
-        Some("ru".into())
-    } else if cjk * 2 >= total {
-        Some("zh".into())
-    } else if latin > 0 {
-        Some("en".into())
-    } else {
-        None
-    }
-}
-
-fn resolve_language(meta_lang: &str, utts: &[Utterance]) -> String {
-    let explicit = !meta_lang.is_empty() && meta_lang != "auto";
-    if explicit {
-        return meta_lang.into();
-    }
-    let mut seen: Vec<String> = Vec::new();
-    for u in utts {
-        if let Some(l) = &u.language
-            && !seen.contains(l)
-        {
-            seen.push(l.clone());
-        }
-    }
-    match seen.len() {
-        0 => meta_lang.into(),
-        1 => seen.into_iter().next().unwrap(),
-        _ => seen.join(","),
-    }
-}
-
-fn smooth_flickers(words: &mut [Word]) {
-    let n = words.len();
-    if n < 3 {
-        return;
-    }
-    for i in 1..n - 1 {
-        if words[i].speaker != words[i - 1].speaker && words[i - 1].speaker == words[i + 1].speaker
-        {
-            let prev = words[i - 1].speaker.clone();
-            words[i].speaker.clone_from(&prev);
-        }
-    }
-}
-
-fn is_sentence_end(text: &str) -> bool {
-    text.trim_end_matches(['"', '\'', ')', ']', '}', '\u{201D}', '\u{2019}'])
-        .chars()
-        .next_back()
-        .is_some_and(|c| matches!(c, '.' | '?' | '!'))
-}
-
-fn group_words(words: &[Word]) -> Vec<Utterance> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    let mut out = Vec::with_capacity(words.len() / 4 + 1);
-    let mut cur_start = words[0].start_ms;
-    let mut cur_end = words[0].end_ms;
-    let mut cur_spk = words[0].speaker.clone();
-    let mut parts = vec![words[0].text.clone()];
-    let mut prev_end = is_sentence_end(&words[0].text);
-
-    let flush =
-        |out: &mut Vec<Utterance>, start: u64, end: u64, spk: &Option<String>, parts: &[String]| {
-            out.push(Utterance {
-                start_ms: start,
-                end_ms: end,
-                speaker: spk.clone(),
-                text: join_words(parts),
-                language: None,
-            });
-        };
-
-    for w in &words[1..] {
-        if w.speaker != cur_spk || prev_end {
-            flush(&mut out, cur_start, cur_end, &cur_spk, &parts);
-            cur_start = w.start_ms;
-            cur_spk.clone_from(&w.speaker);
-            parts.clear();
-        }
-        cur_end = w.end_ms;
-        parts.push(w.text.clone());
-        prev_end = is_sentence_end(&w.text);
-    }
-    flush(&mut out, cur_start, cur_end, &cur_spk, &parts);
-    out
-}
-
-fn join_words(parts: &[String]) -> String {
-    let mut s = parts.join(" ");
-    for p in [" ,", " .", " ?", " !", " ;", " :"] {
-        s = s.replace(p, &p[1..]);
-    }
-    s
-}
-
 #[cfg(test)]
 mod tests {
+    use super::lang::{detect_script_lang, resolve_language};
+    use super::words::{group_words, is_sentence_end, join_words, smooth_flickers};
     use super::*;
 
     #[test]

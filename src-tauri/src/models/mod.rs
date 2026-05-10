@@ -1,4 +1,5 @@
 mod catalog;
+mod catalog_data;
 pub mod download;
 mod manager;
 
