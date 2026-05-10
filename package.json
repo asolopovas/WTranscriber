@@ -10,6 +10,8 @@
     "tauri": "tauri",
     "typecheck": "vue-tsc --noEmit",
     "knip": "knip",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:ui": "playwright test"
   },
   "dependencies": {
@@ -25,11 +27,14 @@
     "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
     "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^15",
     "knip": "^5",
     "prettier": "^3.8.3",
     "tailwindcss": "^4.2.4",
     "typescript": "~5.6.2",
     "vite": "^8.0.11",
+    "vitest": "^2",
     "vue-tsc": "^2.1.10"
   }
 }

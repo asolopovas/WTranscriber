@@ -156,6 +156,7 @@ lint:
 
 test:
     cargo test --manifest-path src-tauri/Cargo.toml --offline
+    bun run test
 
 [windows]
 _ensure-machete:
