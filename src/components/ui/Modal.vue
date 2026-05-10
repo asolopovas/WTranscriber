@@ -30,7 +30,7 @@ function onBackdrop() {
       v-if="open"
       class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-margin"
       @click.self="backdropClose && onBackdrop()"
-      @keydown.escape="emit('close')"
+      @keydown.escape="backdropClose && emit('close')"
     >
       <div
         class="bg-surface-container rounded-xl border border-outline-variant/40 w-full max-w-[90vw] flex flex-col overflow-hidden shadow-2xl"

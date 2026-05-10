@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "@/api";
 import type { AudioMeta, DirEntry } from "@/types";
 import { fmtMs } from "@utils/format";
@@ -11,10 +11,16 @@ import Spinner from "@components/icons/Spinner.vue";
 import CancelIcon from "@components/icons/CancelIcon.vue";
 import SaveIcon from "@components/icons/SaveIcon.vue";
 
+const applying = ref(false);
+const initialStart = ref(0);
+const initialEnd = ref(0);
+const initialDuration = ref(0);
+let seekScrubActive = false;
+
 const props = defineProps<{ target: DirEntry | null }>();
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "saved"): void;
+  (e: "saved", payload?: { path: string; durationMs: number | null; trimmed: boolean }): void;
   (e: "error", msg: string): void;
 }>();
 
@@ -82,10 +88,16 @@ async function load(target: DirEntry) {
     start.value = s;
     end.value = e;
     peaks.value = peaksArr;
+    initialStart.value = s;
+    initialEnd.value = e;
+    initialDuration.value = dur;
     playOffsetMs = s;
     audioBuffer = null;
     audioPath = null;
     await renderWaveform();
+    void ensureBuffer().catch(() => {
+      /* prewarm only; first user-initiated play will surface real errors */
+    });
   } catch (e) {
     emit("error", `prepare: ${String(e)}`);
     emit("close");
@@ -121,6 +133,93 @@ async function renderWaveform() {
     ctx.fillStyle = inside ? "#6750a4" : "rgba(103, 80, 164, 0.22)";
     ctx.fillRect(x, y, Math.max(1, step - 1), barHeight);
   });
+}
+
+function seekTo(ms: number) {
+  if (duration.value === 0) return;
+  const clamped = Math.min(end.value, Math.max(start.value, Math.round(ms)));
+  const wasPlaying = playing.value;
+  if (wasPlaying) clearSource();
+  playOffsetMs = clamped;
+  playheadMs.value = clamped;
+  if (wasPlaying) {
+    void resumeFromOffset();
+  }
+}
+
+async function resumeFromOffset() {
+  if (!audioBuffer || !audioCtx) return;
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  const offsetMs = playOffsetMs;
+  const durMs = Math.max(0, end.value - offsetMs);
+  if (durMs <= 0) {
+    playing.value = false;
+    stopPlayheadLoop();
+    return;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(audioCtx.destination);
+  src.onended = () => {
+    if (audioSource === src) {
+      audioSource = null;
+      playOffsetMs = start.value;
+      playheadMs.value = start.value;
+      playing.value = false;
+      stopPlayheadLoop();
+    }
+  };
+  audioSource = src;
+  playStartCtx = audioCtx.currentTime;
+  src.start(0, offsetMs / 1000, durMs / 1000);
+  playing.value = true;
+  startPlayheadLoop();
+  if (stopTimer) clearTimeout(stopTimer);
+  stopTimer = setTimeout(() => {
+    if (audioSource === src) clearSource();
+    playOffsetMs = start.value;
+    playheadMs.value = start.value;
+    playing.value = false;
+    stopPlayheadLoop();
+  }, durMs + 200);
+}
+
+function handleWaveformPointerDown(ev: PointerEvent) {
+  if (ev.button !== 0) return;
+  const box = waveformBox.value;
+  if (!box || duration.value === 0) return;
+  ev.preventDefault();
+  seekScrubActive = true;
+  const target = ev.target as Element;
+  try {
+    target.setPointerCapture(ev.pointerId);
+  } catch {
+    /* */
+  }
+  const seekFromEvent = (e: PointerEvent) => {
+    const rect = box.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    seekTo((x / rect.width) * duration.value);
+  };
+  seekFromEvent(ev);
+  const move = (e: PointerEvent) => {
+    if (!seekScrubActive) return;
+    seekFromEvent(e);
+  };
+  const up = (e: PointerEvent) => {
+    seekScrubActive = false;
+    try {
+      target.releasePointerCapture(e.pointerId);
+    } catch {
+      /* */
+    }
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
 }
 
 function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
@@ -268,9 +367,81 @@ function reset() {
   end.value = duration.value;
 }
 
-async function commit() {
-  if (!props.target) return;
-  const target = props.target;
+function markIn() {
+  if (duration.value === 0) return;
+  const playMs = playheadMs.value;
+  const gap = Math.min(MIN_GAP_MS, Math.max(100, Math.floor(duration.value / 4)));
+  const newStart = Math.max(0, Math.min(playMs, end.value - gap));
+  start.value = newStart;
+  if (playOffsetMs < newStart) {
+    playOffsetMs = newStart;
+    playheadMs.value = newStart;
+  }
+}
+
+function markOut() {
+  if (duration.value === 0) return;
+  const playMs = playheadMs.value;
+  const gap = Math.min(MIN_GAP_MS, Math.max(100, Math.floor(duration.value / 4)));
+  const newEnd = Math.min(duration.value, Math.max(playMs, start.value + gap));
+  end.value = newEnd;
+  if (playOffsetMs > newEnd) {
+    playOffsetMs = newEnd;
+    playheadMs.value = newEnd;
+  }
+}
+
+function handleShortcut(ev: KeyboardEvent) {
+  if (!open.value) return;
+  const target = ev.target as HTMLElement | null;
+  if (
+    target &&
+    (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+  ) {
+    return;
+  }
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  switch (ev.key) {
+    case " ":
+    case "k":
+    case "K":
+      ev.preventDefault();
+      void togglePlay();
+      break;
+    case "i":
+    case "I":
+      ev.preventDefault();
+      markIn();
+      break;
+    case "o":
+    case "O":
+      ev.preventDefault();
+      markOut();
+      break;
+    default:
+  }
+}
+
+watch(open, (isOpen) => {
+  if (isOpen) {
+    window.addEventListener("keydown", handleShortcut);
+  } else {
+    window.removeEventListener("keydown", handleShortcut);
+  }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleShortcut);
+});
+
+function isDirty(): boolean {
+  return (
+    Math.floor(start.value) !== Math.floor(initialStart.value) ||
+    Math.floor(end.value) !== Math.floor(initialEnd.value)
+  );
+}
+
+async function persistMeta(target: DirEntry): Promise<boolean> {
   const s = Math.max(0, Math.floor(start.value));
   const e = Math.min(duration.value, Math.floor(end.value));
   const meta: AudioMeta = {
@@ -279,10 +450,56 @@ async function commit() {
   };
   try {
     await api.saveAudioMeta(target.path, meta);
+    initialStart.value = s;
+    initialEnd.value = e;
+    return true;
+  } catch (err) {
+    localError.value = String(err);
+    return false;
+  }
+}
+
+async function commit() {
+  if (!props.target) return;
+  const target = props.target;
+  if (!(await persistMeta(target))) return;
+  cleanup();
+  emit("saved", { path: target.path, durationMs: null, trimmed: false });
+}
+
+async function applyPermanent() {
+  if (!props.target) return;
+  const target = props.target;
+  const willTrim = start.value > 0 || end.value < duration.value;
+  if (!willTrim) {
+    localError.value = "nothing to trim — selection covers the whole track";
+    return;
+  }
+  const ok = window.confirm(
+    `Replace ${target.name} with the trimmed version (${fmtMs(
+      Math.max(0, end.value - start.value),
+    )})? This rewrites the original file and cannot be undone.`,
+  );
+  if (!ok) return;
+  applying.value = true;
+  localError.value = null;
+  try {
+    if (isDirty() && !(await persistMeta(target))) return;
+    pause();
+    const newDuration = await api.applyTrim(target.path);
+    initialStart.value = 0;
+    initialEnd.value = 0;
+    initialDuration.value = 0;
     cleanup();
-    emit("saved");
-  } catch (e) {
-    localError.value = String(e);
+    emit("saved", {
+      path: target.path,
+      durationMs: newDuration ?? null,
+      trimmed: true,
+    });
+  } catch (err) {
+    localError.value = String(err);
+  } finally {
+    applying.value = false;
   }
 }
 
@@ -293,14 +510,17 @@ function cleanup() {
   playOffsetMs = 0;
 }
 
-function close() {
+async function close() {
+  if (props.target && isDirty()) {
+    await persistMeta(props.target);
+  }
   cleanup();
   emit("close");
 }
 </script>
 
 <template>
-  <Modal :open="open" :width="'768px'" @close="close">
+  <Modal :open="open" :width="'768px'" :backdrop-close="false" @close="close">
     <template #header>
       <Icon name="content_cut" :size="22" class="text-primary mt-unit" />
       <div class="flex-1 min-w-0">
@@ -329,7 +549,11 @@ function close() {
         <Icon name="graphic_eq" :size="20" class="animate-pulse" />
         <span class="font-mono text-labelSmall">analysing…</span>
       </div>
-      <div ref="waveformBox" class="relative select-none touch-none">
+      <div
+        ref="waveformBox"
+        class="relative select-none touch-none cursor-pointer"
+        @pointerdown="handleWaveformPointerDown"
+      >
         <canvas
           ref="canvas"
           width="720"
@@ -343,7 +567,7 @@ function close() {
         <div
           v-for="side in ['start', 'end'] as const"
           :key="side"
-          class="absolute -top-2 -bottom-2 -ml-7 w-14 cursor-ew-resize flex items-center justify-center touch-none"
+          class="absolute -top-2 -bottom-2 -ml-7 w-14 pointer-fine:-ml-1.5 pointer-fine:w-3 cursor-ew-resize flex items-center justify-center touch-none"
           :style="{ left: `${(side === 'start' ? startFrac : endFrac) * 100}%` }"
           @pointerdown="(e) => beginHandleDrag(side, e)"
         >
@@ -355,7 +579,7 @@ function close() {
           :style="{ left: `${playheadFrac * 100}%` }"
         >
           <div
-            class="absolute -top-1 -translate-x-1/2 left-0 w-2 h-2 rounded-full bg-tertiary"
+            class="absolute -top-1.5 -translate-x-1/2 left-0 w-3 h-3 rounded-full bg-tertiary shadow pointer-events-none"
           ></div>
         </div>
       </div>
@@ -385,13 +609,45 @@ function close() {
           variant="neutral"
           shape="circle"
           size="lg"
-          :title="playing ? 'Stop' : 'Play selection'"
+          title="Mark in (I) — set start to playhead"
+          :disabled="!target"
+          @click="markIn"
+        >
+          <Icon name="first_page" :size="22" />
+        </Button>
+        <Button
+          variant="neutral"
+          shape="circle"
+          size="lg"
+          :title="playing ? 'Pause (Space)' : 'Play selection (Space)'"
           :disabled="audioLoading || !target"
           class="text-primary"
           @click="togglePlay"
         >
           <Spinner v-if="audioLoading" :size="20" />
           <Icon v-else :name="playing ? 'pause' : 'play_arrow'" :size="22" fill />
+        </Button>
+        <Button
+          variant="neutral"
+          shape="circle"
+          size="lg"
+          title="Mark out (O) — set end to playhead"
+          :disabled="!target"
+          @click="markOut"
+        >
+          <Icon name="last_page" :size="22" />
+        </Button>
+        <span class="w-px self-stretch bg-outline-variant/40 mx-xs"></span>
+        <Button
+          variant="neutral"
+          shape="circle"
+          size="lg"
+          title="Apply trim permanently (rewrites the original file)"
+          :disabled="applying || !target"
+          @click="applyPermanent"
+        >
+          <Spinner v-if="applying" :size="20" />
+          <Icon v-else name="content_cut" :size="20" />
         </Button>
         <Button variant="neutral" shape="circle" size="lg" title="Cancel" @click="close">
           <CancelIcon :size="20" />

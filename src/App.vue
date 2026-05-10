@@ -673,8 +673,21 @@ function openTrim(entry?: DirEntry) {
   if (trimTarget.value || renaming.value || exporting.value) return;
   trimTarget.value = target;
 }
-async function onTrimSaved() {
+async function onTrimSaved(payload?: {
+  path: string;
+  durationMs: number | null;
+  trimmed: boolean;
+}) {
   trimTarget.value = null;
+  if (payload?.trimmed && listing.value) {
+    for (const entry of listing.value.entries) {
+      if (entry.path === payload.path) {
+        if (payload.durationMs != null) entry.duration_ms = payload.durationMs;
+        entry.trim_start_ms = null;
+        entry.trim_end_ms = null;
+      }
+    }
+  }
   await refreshListing();
 }
 
