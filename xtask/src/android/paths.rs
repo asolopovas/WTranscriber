@@ -119,10 +119,30 @@ mod tests {
     #[test]
     fn abi_for_maps_supported_targets() {
         let cases = [
-            ("aarch64", "arm64-v8a", "aarch64_linux_android", "aarch64-linux-android24-clang"),
-            ("armv7", "armeabi-v7a", "armv7_linux_androideabi", "armv7a-linux-androideabi24-clang"),
-            ("i686", "x86", "i686_linux_android", "i686-linux-android24-clang"),
-            ("x86_64", "x86_64", "x86_64_linux_android", "x86_64-linux-android24-clang"),
+            (
+                "aarch64",
+                "arm64-v8a",
+                "aarch64_linux_android",
+                "aarch64-linux-android24-clang",
+            ),
+            (
+                "armv7",
+                "armeabi-v7a",
+                "armv7_linux_androideabi",
+                "armv7a-linux-androideabi24-clang",
+            ),
+            (
+                "i686",
+                "x86",
+                "i686_linux_android",
+                "i686-linux-android24-clang",
+            ),
+            (
+                "x86_64",
+                "x86_64",
+                "x86_64_linux_android",
+                "x86_64-linux-android24-clang",
+            ),
         ];
 
         for (target, abi_name, rust, clang) in cases {

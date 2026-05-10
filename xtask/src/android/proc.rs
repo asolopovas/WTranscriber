@@ -132,10 +132,15 @@ pub(super) fn wait_for_port_with_guard(
             return Ok(());
         }
         if !guard() {
-            bail!("vite bind :{port} aborted — child process exited; check tmp/android-dev.err.log");
+            bail!(
+                "vite bind :{port} aborted — child process exited; check tmp/android-dev.err.log"
+            );
         }
         if Instant::now() >= next_tick {
-            eprintln!("  [{:>3}s] waiting for vite :{port}…", start.elapsed().as_secs());
+            eprintln!(
+                "  [{:>3}s] waiting for vite :{port}…",
+                start.elapsed().as_secs()
+            );
             next_tick = Instant::now() + Duration::from_secs(10);
         }
         thread::sleep(Duration::from_millis(100));

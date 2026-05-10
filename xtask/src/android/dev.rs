@@ -26,7 +26,9 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
     if session_already_healthy(device) {
-        eprintln!("BOOTSTRAP OK (already running) — use `just android-stop` first to force restart");
+        eprintln!(
+            "BOOTSTRAP OK (already running) — use `just android-stop` first to force restart"
+        );
         return Ok(());
     }
     if pids_path.exists() {
@@ -113,7 +115,9 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         true
     };
     let bring_up = || -> Result<()> {
-        eprintln!("[stage 4/6] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)");
+        eprintln!(
+            "[stage 4/6] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)"
+        );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err],
             "vite ready on :1420",
@@ -227,12 +231,8 @@ fn session_already_healthy(device_arg: Option<&str>) -> bool {
     if !tcp_open(1420) {
         return false;
     }
-    let reverse = adb_capture(
-        device_arg,
-        &["reverse", "--list"],
-        Duration::from_secs(2),
-    )
-    .unwrap_or_default();
+    let reverse =
+        adb_capture(device_arg, &["reverse", "--list"], Duration::from_secs(2)).unwrap_or_default();
     if !reverse.contains("tcp:1420") {
         return false;
     }

@@ -60,7 +60,11 @@ pub(super) fn wait_for_log_line_with_guard(
                 }
                 if last_progress.elapsed() >= Duration::from_secs(5) && is_progress_line(&line) {
                     if last_line.as_deref() != Some(line.as_str()) {
-                        eprintln!("  [{:>3}s] {}", start.elapsed().as_secs(), trim_log_line(&line));
+                        eprintln!(
+                            "  [{:>3}s] {}",
+                            start.elapsed().as_secs(),
+                            trim_log_line(&line)
+                        );
                         last_line = Some(line);
                     }
                     last_progress = Instant::now();
@@ -78,9 +82,9 @@ pub(super) fn wait_for_log_line_with_guard(
     let _ = tail.join();
     match result {
         Ok(()) => Ok(()),
-        Err(()) if !guard() => bail!(
-            "{label} aborted — child process exited; see {paths:?} for details"
-        ),
+        Err(()) if !guard() => {
+            bail!("{label} aborted — child process exited; see {paths:?} for details")
+        }
         Err(()) => bail!(
             "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
             timeout.as_secs()

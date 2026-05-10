@@ -113,9 +113,7 @@ pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Resu
     if rc == 0 {
         return Ok(0);
     }
-    eprintln!(
-        "[win] build failed (exit {rc}); attempting failsafe restart + single retry"
-    );
+    eprintln!("[win] build failed (exit {rc}); attempting failsafe restart + single retry");
     if !restart_vm(lock)? {
         eprintln!("[win] restart failed; not retrying");
         return Ok(rc);
@@ -124,11 +122,7 @@ pub(super) fn build_windows_vm(skip: bool, _dev: bool, lock: &SharedOut) -> Resu
     build_windows_vm_once(&sha, &helper_local, lock)
 }
 
-fn build_windows_vm_once(
-    sha: &str,
-    helper_local: &Path,
-    lock: &SharedOut,
-) -> Result<i32> {
+fn build_windows_vm_once(sha: &str, helper_local: &Path, lock: &SharedOut) -> Result<i32> {
     let mkdir = run_streamed(
         "win",
         "ssh",

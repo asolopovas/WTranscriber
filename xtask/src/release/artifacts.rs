@@ -328,10 +328,8 @@ mod tests {
 
     #[test]
     fn write_sha256sums_uses_file_names() {
-        let dir = std::env::temp_dir().join(format!(
-            "wtranscriber-xtask-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("wtranscriber-xtask-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let artifact = dir.join("artifact.bin");
