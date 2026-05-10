@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// Universal no-silence task runner.
-// - Streams child stdout/stderr line-by-line, prefixed with the tag.
-// - Heartbeat: every --heartbeat seconds with no child output, prints a "still
-//   running" line so a stalled task is visibly stalled.
-// - Idle timeout: kills the child if no output for --idle seconds.
-// - Hard timeout: --max seconds overall ceiling.
-// - Final summary: OK / FAIL with elapsed time.
-//
-// Usage:
-//   bun scripts/run.mjs --tag NAME [--idle 90] [--max 600] [--heartbeat 10] -- cmd args...
 
 import { spawn } from "node:child_process";
 

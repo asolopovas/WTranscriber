@@ -1,17 +1,6 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 set dotenv-load := false
 
-# Universal task contract
-# ----------------------
-# Every recipe runs through `bun scripts/run.mjs --tag NAME --idle N --max N -- …`.
-# That wrapper guarantees:
-#   - stdout/stderr line-prefixed with [tag]
-#   - heartbeat every 10s of silence ("still running, Xs elapsed, Ys without output")
-#   - idle timeout: kills if no output for --idle seconds (default 90s)
-#   - hard timeout: kills if total wall-clock exceeds --max seconds (default 600s)
-#   - final summary: "OK in X.Ys" or "FAIL exit=N in X.Ys"
-# A task that hangs >10s without output is a visible problem, not a silent wait.
-
 _sep := if os() == 'windows' { ';' } else { ':' }
 _home := if os() == 'windows' { env_var('USERPROFILE') } else { env_var('HOME') }
 _android_sdk_default := if os() == 'windows' {
@@ -143,7 +132,7 @@ android-status device="":
 
 [group('android')]
 android-status-json device="":
-    {{_run}} --tag android-status --idle 30 --max 30 -- cargo xtask android status --json {{device}}
+    {{_run}} --tag android-status-json --idle 30 --max 30 -- cargo xtask android status --json {{device}}
 
 [group('android')]
 android-smoke device="":
@@ -240,7 +229,7 @@ audit: _ensure-audit
     {{_run}} --tag cargo-audit --idle 60 --max 300 -- cargo audit --file src-tauri/Cargo.lock --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098 --ignore RUSTSEC-2024-0429
     {{_run}} --tag bun-audit --idle 30 --max 120 -- bun audit
 
-# Pre-release gate: parallel where safe; fmt-check + dep-check + audit + lint suite + tests.
+# Pre-release gate: 8 jobs in parallel (fmt-check, clippy, typecheck, vue-lint, rust-test, js-test, machete, audit).
 [group('quality')]
 check: _ensure-machete _ensure-audit
     {{_par}} --idle 180 --max 1200 \
@@ -274,7 +263,7 @@ clean: clean-temp
 
 [group('clean')]
 clean-force:
-    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.mjs --force
+    {{_run}} --tag clean-force --idle 30 --max 120 -- bun scripts/clean-temp.mjs --force
     @just clean
 
 # ─── icons ────────────────────────────────────────────────────────────────────

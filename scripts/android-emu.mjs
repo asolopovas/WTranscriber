@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// Cross-platform Android emulator boot/stop with bounded waits and heartbeats.
-// All operations have an explicit deadline; nothing waits forever.
-//
-// Usage:
-//   bun scripts/android-emu.mjs start [--name wt] [--image system-images;...]
-//   bun scripts/android-emu.mjs stop  [--name wt]
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, openSync, unlinkSync } from "node:fs";

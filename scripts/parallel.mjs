@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Run multiple labelled commands in parallel, each through run.mjs.
-// First failure becomes the overall exit code; all jobs run to completion so
-// every signal is captured.
-//
-// Usage:
-//   bun scripts/parallel.mjs [--idle 90] [--max 600] \
-//       --job 'tag1=cmd args...' --job 'tag2=cmd args...'
 
 import { spawn } from "node:child_process";
 import path from "node:path";

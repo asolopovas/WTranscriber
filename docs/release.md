@@ -56,7 +56,7 @@ src-tauri/gen/android/keystore.properties     (gitignored; see .example)
   keyPassword=
 ```
 
-`scripts/patch-android-signing.mjs` runs before each Android build. Idempotent; adds `signingConfigs.release` to the generated `app/build.gradle.kts`. Re-applies if Tauri regenerates. Falls back to `apksigner` if the keystore is outside the project.
+`xtask/src/android/patch.rs` runs before each Android build. Idempotent; adds `signingConfigs.release` to the generated `app/build.gradle.kts`. Re-applies if Tauri regenerates. Falls back to `apksigner` if the keystore is outside the project.
 
 Generate the keystore once (back it up; losing it forfeits app identity):
 

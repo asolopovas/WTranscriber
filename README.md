@@ -27,6 +27,7 @@ just check        # parallel pre-release gate
 ```powershell
 just sherpa-cuda     # prebuilt sherpa-onnx CUDA archive
 just cudnn           # cuDNN 9 for CUDA 12
+just nemo-deps       # Python venv + nemo_toolkit for Sortformer diarization
 just build-cpu       # CPU-only fallback (sherpa-static feature)
 ```
 
