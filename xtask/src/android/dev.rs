@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::json;
 use std::fs;
 use std::time::Duration;
@@ -25,13 +25,16 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     let tmp = root().join("tmp");
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
+    if session_already_healthy(device) {
+        eprintln!("BOOTSTRAP OK (already running) — use `just android-stop` first to force restart");
+        return Ok(());
+    }
     if pids_path.exists() {
-        eprintln!("[stage 0/6] stopping previous dev session");
+        eprintln!("[stage 0/6] previous session unhealthy — stopping");
         cmd_stop(false, device)?;
     } else if tcp_open(1420) {
-        bail!(
-            "port 1420 is already in use; stop the existing dev server before bootstrapping Android"
-        );
+        eprintln!("[stage 0/6] zombie vite on :1420 — stopping");
+        cmd_stop(false, device)?;
     }
     reap_tauri_logcat_orphans();
     eprintln!("[stage 1/6] preflight (node_modules, device)");
@@ -193,6 +196,28 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         pids
     );
     Ok(())
+}
+
+fn session_already_healthy(device_arg: Option<&str>) -> bool {
+    if !tcp_open(1420) {
+        return false;
+    }
+    let reverse = adb_capture(
+        device_arg,
+        &["reverse", "--list"],
+        Duration::from_secs(2),
+    )
+    .unwrap_or_default();
+    if !reverse.contains("tcp:1420") {
+        return false;
+    }
+    if !tcp_open(9222) {
+        let _ = attach_webview(device_arg, true);
+        if !tcp_open(9222) {
+            return false;
+        }
+    }
+    api_probe(Duration::from_secs(5)).is_some()
 }
 
 pub(super) fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {

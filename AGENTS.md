@@ -18,13 +18,15 @@ docs/                 android · agents · dev-loop · release · rust-build-spe
 
 ```
 just dev                 desktop (HMR)
-just android-bootstrap    Android USB / LAN detached HMR + logcat + CDP
-just android-status       bounded health check for adb / HMR / CDP
-just android-stop         stop detached Android dev session
-just android-debug-eval   evaluate JS in the live Android WebView
+just android             Android dev session on USB device or running emulator
+just android-stop        stop detached Android dev session
+just android-emu         boot headless x86_64 emulator (creates AVD on first run)
+just android-emu-stop    shut down emulator
 just check               pre-release gate (fmt + clippy + vue-tsc + tests + machete + audit)
 just release-stable      check + bump + tag + build + publish
 ```
+
+`just android` is the only command needed to start an Android dev session. It bootstraps USB mode, streams build logs live, fast-fails on errors, auto-recovers signature mismatches, idempotently no-ops when a healthy session is already running, and prints `BOOTSTRAP OK` when ready. Use `just android-status` for a bounded health check, `node scripts/cdp.mjs "<expr>"` to evaluate JS in the live WebView. For headless dev without a physical phone, run `just android-emu` first then `just android`.
 
 `just --list` for the rest.
 
@@ -65,29 +67,20 @@ Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in their notes/artefa
 | Android scaffold/resources/manifest | `src-tauri/gen/android/**`                             | Device smoke via `wt-runner` when install is needed   | Restart bootstrap; avoid release build mid-HMR  |
 | Release/build orchestration         | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check` before release    | Stop live dev first if it would replace the APK |
 
-Prefer live inspection over screenshots: `just android-debug-attach`, then `node scripts/cdp.mjs "<expr>"` for DOM, computed styles, console state, and route checks. Use screenshots only for visual judgement.
+Prefer live inspection over screenshots: `node scripts/cdp.mjs "<expr>"` for DOM, computed styles, console state, and route checks. Use screenshots only for visual judgement.
 
 ## Live dev invariant
 
-Desktop loads `http://localhost:1420/` (confirm via `tmp/error-monitor.log`, no `:1421 failed`). Android `location.href` is `http://tauri.localhost/`; liveness signal is fresh `connecting to 127.0.0.1:1420` from `RustStdoutStderr` in `tmp/android-dev.log`. Absent → restart bootstrap.
+Desktop loads `http://localhost:1420/` (confirm via `tmp/error-monitor.log`, no `:1421 failed`). Android `location.href` is `http://tauri.localhost/`; liveness signal is fresh `connecting to 127.0.0.1:1420` from `RustStdoutStderr` in `tmp/logcat.log`. Absent → `just android` to restart.
 
 While a dev session is live (`tmp/_pids.json` exists and Vite owns `:1420`), do not run `just android-install`, `just android-build`, `cargo tauri build`, or any `wtranscriber` release build — each replaces the debug-dev APK and strands HMR.
-
-## Bootstrap
-
-```
-just android-bootstrap usb
-just android-bootstrap host
-```
-
-Handled by `cargo xtask android bootstrap`: detached spawn, port-owner tracking, `adb reverse`, logcat, and CDP forwarding. Exits non-zero if Vite fails to bind `:1420`, the WebView fails to connect within 180 s, or CDP cannot attach. Writes `tmp/_platform`, `tmp/_pids.json`. After OK, run `just android-status` for a bounded health check.
 
 ## Per-turn during a live dev session
 
 - Capture the relevant log line count before work and compare it before responding.
 - **Desktop**: line-count diff `tmp/error-monitor.log`; new lines → `wt-diagnose`.
 - **Android**: line-count diff `tmp/logcat.log`; new `am_kill` / app `am_proc_died` / `am_crash` → `wt-diagnose`.
-- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log` for the touched file. Rust/native/config/capability edit requires bootstrap restart.
+- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log` for the touched file. Rust/native/config/capability edit requires `just android-stop && just android`.
 - Do not use `location.href` as Android liveness; Tauri's custom scheme reports `http://tauri.localhost/` even when Vite/HMR is stale.
 
 ## Decision table

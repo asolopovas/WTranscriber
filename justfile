@@ -86,6 +86,38 @@ android-dev device="":
 android-dev-host device="":
     cargo xtask android dev --host {{device}}
 
+android device="":
+    cargo xtask android bootstrap usb {{device}}
+
+android-emu name="wt" image="system-images;android-34;google_apis_playstore;x86_64":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SDK="${ANDROID_HOME:-$HOME/Android/Sdk}"
+    AVDM="$SDK/cmdline-tools/latest/bin/avdmanager"
+    EMU="$SDK/emulator/emulator"
+    if ! "$AVDM" list avd 2>/dev/null | grep -q "Name: {{name}}$"; then
+      echo "creating AVD '{{name}}' from {{image}}"
+      echo no | "$AVDM" create avd -n "{{name}}" -k "{{image}}" -d pixel_6 --force
+    fi
+    if ! adb devices | grep -q emulator; then
+      mkdir -p tmp
+      echo "booting AVD '{{name}}' (headless, GPU swiftshader, KVM)"
+      nohup "$EMU" -avd "{{name}}" -no-window -no-audio -no-snapshot-save -gpu swiftshader_indirect -accel on -netdelay none -netspeed full >tmp/emulator.log 2>&1 &
+      echo $! >tmp/emulator.pid
+      adb wait-for-device
+      until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do sleep 1; done
+      adb shell input keyevent 82 >/dev/null 2>&1 || true
+    fi
+    adb devices
+
+android-emu-stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    adb -s emulator-5554 emu kill 2>/dev/null || true
+    [ -f tmp/emulator.pid ] && kill "$(cat tmp/emulator.pid)" 2>/dev/null || true
+    rm -f tmp/emulator.pid
+    echo emulator stopped
+
 android-bootstrap mode="usb" device="":
     cargo xtask android bootstrap {{mode}} {{device}}
 
