@@ -132,7 +132,11 @@ fn progress_emitter(
 }
 
 #[cfg(target_os = "android")]
+const PERSISTENT_ROOT_DIR: &str = "/storage/emulated/0/WTranscriber";
+#[cfg(target_os = "android")]
 const PERSISTENT_MODELS_DIR: &str = "/storage/emulated/0/WTranscriber/models";
+#[cfg(target_os = "android")]
+const PERSISTENT_CONFIG_FILE: &str = "/storage/emulated/0/WTranscriber/config.yml";
 
 #[cfg(target_os = "android")]
 #[allow(unsafe_code)]
@@ -376,11 +380,72 @@ fn enable_persistent_storage() -> std::result::Result<bool, String> {
         if let Ok(internal) = paths::models_dir() {
             backup_models_to_persistent(&internal);
         }
+        backup_config_to_persistent();
         return Ok(true);
     }
     #[cfg(not(target_os = "android"))]
     {
         Ok(true)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn restore_config_from_persistent(internal_config: &std::path::Path) {
+    if internal_config.exists() {
+        return;
+    }
+    let public = std::path::Path::new(PERSISTENT_CONFIG_FILE);
+    if !public.exists() {
+        return;
+    }
+    if let Some(parent) = internal_config.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::copy(public, internal_config) {
+        Ok(_) => logfile::info("android: restored config.yml from persistent storage"),
+        Err(e) => logfile::error(&format!("android: restore config.yml failed: {e}")),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn backup_config_to_persistent() {
+    let Ok(internal) = paths::config_file() else {
+        return;
+    };
+    if !internal.exists() {
+        return;
+    }
+    if std::fs::create_dir_all(PERSISTENT_ROOT_DIR).is_err() {
+        return;
+    }
+    let public = std::path::Path::new(PERSISTENT_CONFIG_FILE);
+    if let Err(e) = std::fs::copy(&internal, public) {
+        logfile::error(&format!("android: backup config.yml failed: {e}"));
+    }
+}
+
+pub fn android_mirror_after_install() {
+    #[cfg(target_os = "android")]
+    {
+        maybe_backup_after_install();
+        backup_config_to_persistent();
+    }
+}
+
+pub fn android_remove_from_persistent(model_id: &str) {
+    #[cfg(target_os = "android")]
+    {
+        if !android_has_all_files_access() {
+            return;
+        }
+        let public = std::path::Path::new(PERSISTENT_MODELS_DIR).join(model_id);
+        if public.exists() {
+            let _ = remove_recursive(&public);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = model_id;
     }
 }
 
@@ -496,6 +561,7 @@ fn maybe_backup_after_install() {
     if let Ok(internal) = paths::models_dir() {
         backup_models_to_persistent(&internal);
     }
+    backup_config_to_persistent();
 }
 
 static ESSENTIALS_STARTED: std::sync::atomic::AtomicBool =
@@ -591,15 +657,27 @@ pub fn run() {
                     let _ = std::fs::create_dir_all(fallback.join("models"));
                     fallback
                 };
-                paths::set_config_file(data_dir.join("config.yml"));
+                let internal_config = data_dir.join("config.yml");
+                paths::set_config_file(internal_config.clone());
                 let cache_dir = data_dir.join("cache");
                 let _ = std::fs::create_dir_all(&cache_dir);
                 paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
                 let models_dir = data_dir.join("models");
                 let _ = std::fs::create_dir_all(&models_dir);
-                let cfg = config::Config::load().unwrap_or_default();
-                if cfg.use_persistent_models && android_has_all_files_access() {
-                    restore_models_from_persistent(&models_dir);
+                if android_has_all_files_access() {
+                    restore_config_from_persistent(&internal_config);
+                    if std::path::Path::new(PERSISTENT_MODELS_DIR).exists() {
+                        restore_models_from_persistent(&models_dir);
+                    }
+                    let mut cfg = config::Config::load().unwrap_or_default();
+                    if !cfg.use_persistent_models {
+                        cfg.use_persistent_models = true;
+                        if let Err(e) = cfg.save() {
+                            logfile::error(&format!(
+                                "android: enabling use_persistent_models: {e}"
+                            ));
+                        }
+                    }
                 }
                 paths::set_models_dir(models_dir);
 

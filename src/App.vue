@@ -17,6 +17,7 @@ import type {
 import Settings from "@components/Settings.vue";
 import LogViewer from "@components/LogViewer.vue";
 import SetupGate from "@components/SetupGate.vue";
+import StorageGate from "@components/StorageGate.vue";
 import BottomNav from "@components/BottomNav.vue";
 import type { Tab } from "@components/nav-tabs";
 import AppHeader from "@components/AppHeader.vue";
@@ -57,6 +58,9 @@ const essentialIds = essentials.ids;
 const essentialProgress = essentials.progress;
 const essentialErrors = essentials.errors;
 const essentialsReady = essentials.ready;
+
+const storageGateResolved = ref(false);
+const showStorageGate = ref(false);
 
 const dialogOpen = ref(false);
 const queueActive = ref(false);
@@ -349,12 +353,47 @@ onMounted(async () => {
     config.value.diarizer = "eres2net";
   }
 
+  if (sys.value?.os === "android") {
+    try {
+      const granted = await api.hasPersistentStorage();
+      if (!granted && sessionStorage.getItem("wt:storageGateSkipped") !== "1") {
+        showStorageGate.value = true;
+      } else {
+        if (granted) await api.enablePersistentStorage();
+        storageGateResolved.value = true;
+      }
+    } catch {
+      storageGateResolved.value = true;
+    }
+  } else {
+    storageGateResolved.value = true;
+  }
+
+  if (storageGateResolved.value) {
+    void startEssentialsSafely();
+  }
+});
+
+async function startEssentialsSafely() {
   try {
     await essentials.start();
   } catch (e) {
     error.value = `essentials start failed: ${String(e)}`;
   }
-});
+}
+
+function onStorageGranted() {
+  showStorageGate.value = false;
+  storageGateResolved.value = true;
+  void startEssentialsSafely();
+}
+
+function onStorageSkipped() {
+  sessionStorage.setItem("wt:storageGateSkipped", "1");
+  showStorageGate.value = false;
+  storageGateResolved.value = true;
+  void startEssentialsSafely();
+}
 
 onUnmounted(() => {
   unlisten.forEach((u) => u());
@@ -654,8 +693,9 @@ const selectedProgress = computed(() =>
 </script>
 
 <template>
+  <StorageGate v-if="showStorageGate" @granted="onStorageGranted" @skipped="onStorageSkipped" />
   <SetupGate
-    v-if="!essentialsReady"
+    v-else-if="!essentialsReady"
     :essential-ids="essentialIds"
     :models="models"
     :progress="essentialProgress"

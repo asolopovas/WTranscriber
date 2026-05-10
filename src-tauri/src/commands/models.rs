@@ -36,7 +36,10 @@ pub async fn install_model(app: AppHandle, id: String) -> Result<()> {
     logfile::info(&format!("install_model {id} starting"));
     let result = models::manager().install(&id, &mut on_progress).await;
     match &result {
-        Ok(()) => logfile::info(&format!("install_model {id} ok")),
+        Ok(()) => {
+            logfile::info(&format!("install_model {id} ok"));
+            crate::android_mirror_after_install();
+        }
         Err(e) => logfile::error(&format!("install_model {id}: {e}")),
     }
     let _ = app.emit(
@@ -64,6 +67,7 @@ pub fn delete_model(id: String) -> Result<()> {
     if dir.exists() && std::fs::read_dir(&dir).is_ok_and(|r| r.count() == 0) {
         std::fs::remove_dir(&dir).ok();
     }
+    crate::android_remove_from_persistent(&id);
     logfile::info(&format!("delete_model {id} ok"));
     Ok(())
 }
