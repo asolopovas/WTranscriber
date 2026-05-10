@@ -12,12 +12,13 @@ use super::adb::{
 };
 use super::build::{preflight_node_modules, prepare};
 use super::logs::{
-    api_probe, file_age_seconds, is_app_crash_signal, json_seconds, last_line_matching,
-    pids_device, read_pids, tail_any, wait_for_log_line,
+    LogStreamer, api_probe, file_age_seconds, install_signature_mismatch, is_app_crash_signal,
+    json_seconds, last_line_matching, pids_device, read_pids, tail_any,
+    wait_for_log_line_with_guard,
 };
 use super::proc::{
     kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,
-    tcp_open, wait_for_port,
+    tcp_open, wait_for_port, wait_for_port_with_guard,
 };
 
 pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
@@ -96,19 +97,32 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
 
     let dev_log = tmp.join("android-dev.log");
     let dev_err = tmp.join("android-dev.err.log");
+    let logcat_log = tmp.join("logcat.log");
+    let streamer = LogStreamer::start(vec![dev_log.clone(), dev_err.clone()]);
+    let alive = || pid_alive(dev_pid);
+    let healthy = || {
+        if !pid_alive(dev_pid) {
+            return false;
+        }
+        if install_signature_mismatch(&[&dev_log, &dev_err]) {
+            return false;
+        }
+        true
+    };
     let bring_up = || -> Result<()> {
-        eprintln!("[stage 4/6] waiting for vite to bind :1420 (≤300s, includes rust compile)");
-        wait_for_port(1420, Duration::from_secs(300))?;
+        eprintln!("[stage 4/6] waiting for vite :1420 (≤180s, live log streaming below)");
+        wait_for_port_with_guard(1420, Duration::from_secs(180), &healthy)?;
         eprintln!(
-            "[stage 5/6] waiting for WebView → :1420 connection (≤360s, includes apk build/install/launch)"
+            "[stage 5/6] waiting for WebView → :1420 connection (≤240s, fast-fail on child death/install error)"
         );
-        wait_for_log_line(
-            &[&dev_log, &dev_err],
+        wait_for_log_line_with_guard(
+            &[&dev_log, &dev_err, &logcat_log],
             "WebView connecting to :1420",
             |s| {
                 (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")
             },
-            Duration::from_secs(360),
+            Duration::from_secs(120),
+            &healthy,
         )?;
         eprintln!("[stage 6/6] attaching CDP and probing tauri IPC");
         wait_for_attach(device, Duration::from_secs(30))?;
@@ -116,7 +130,25 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             .context("Tauri IPC API probe failed after CDP attach")?;
         Ok(())
     };
-    if let Err(err) = bring_up() {
+    let bring_up_result = bring_up();
+    streamer.stop();
+    let _ = alive;
+    if let Err(err) = bring_up_result {
+        if install_signature_mismatch(&[&dev_log, &dev_err]) {
+            eprintln!(
+                "detected APK signature mismatch — uninstalling com.asolopovas.wtranscriber and retrying once"
+            );
+            kill_pid(dev_pid);
+            kill_pid(logcat_pid);
+            reap_tauri_logcat_orphans();
+            let _ = adb_run(
+                device,
+                &["uninstall", "com.asolopovas.wtranscriber"],
+                Duration::from_secs(30),
+            );
+            let _ = fs::remove_file(&pids_path);
+            return cmd_bootstrap(mode, device);
+        }
         eprintln!("bootstrap failed: {err:#}");
         eprintln!("--- last 10 lines of android-dev.err.log ---");
         if let Ok(raw) = fs::read_to_string(&dev_err) {
