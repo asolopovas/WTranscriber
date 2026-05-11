@@ -1,5 +1,6 @@
 mod artifacts;
 mod builders;
+mod config;
 mod windows_vm;
 
 use anyhow::{Result, bail};
@@ -13,6 +14,7 @@ use self::artifacts::{
     copy_into_channel, find_apk, find_host_bundle, find_wsl_deb, write_sha256sums,
 };
 use self::builders::{build_android, build_host, build_wsl};
+use self::config::ReleaseConfig;
 use self::windows_vm::{build_windows_vm, fetch_windows_vm_exe};
 use crate::util::{
     SharedOut, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed, shared_out,
@@ -60,6 +62,7 @@ pub fn run(args: Args) -> Result<()> {
         prewarm()?;
     }
 
+    let release_config = ReleaseConfig::load()?;
     let lock = shared_out();
     let mut tasks: Vec<BuildTask> = Vec::new();
     if !args.no_host {
@@ -88,9 +91,10 @@ pub fn run(args: Args) -> Result<()> {
         let l = lock.clone();
         let skip = args.skip_rebuild;
         let dev = args.dev;
+        let cfg = release_config.windows_vm.clone();
         tasks.push((
             "win",
-            Box::new(move |_| build_windows_vm(skip, dev, &l).unwrap_or(127)),
+            Box::new(move |_| build_windows_vm(skip, dev, &cfg, &l).unwrap_or(127)),
         ));
     }
 
@@ -163,7 +167,13 @@ pub fn run(args: Args) -> Result<()> {
         } else if rc != 0 {
             eprintln!("⚠  windows-vm build failed (exit {rc}); continuing without .exe");
         } else {
-            match fetch_windows_vm_exe(&ver, &branch, args.dev, &out_channel_dir) {
+            match fetch_windows_vm_exe(
+                &release_config.windows_vm,
+                &ver,
+                &branch,
+                args.dev,
+                &out_channel_dir,
+            ) {
                 Ok(Some(p)) => artifacts.push(p),
                 Ok(None) => eprintln!("⚠  windows-vm produced no -setup.exe"),
                 Err(e) => eprintln!("⚠  windows-vm scp failed: {e:#}"),

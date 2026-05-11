@@ -30,7 +30,7 @@ just release           rolling dev release (host + Android + Windows-VM → gh `
 just release-stable    check + bump + tag + build + publish
 ```
 
-`just release` builds host + Android + the Windows NSIS installer (via SSH alias `windows-vm` → `~/os/windows-vm` Tiny11 VM) in parallel, then publishes to the rolling `dev` prerelease. Self-healing on transient Windows failures (auto `docker restart` + 1 retry); persistent rustup corruption needs `make -C ~/os/windows-vm fix-rustup`. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
+`just release` builds host + Android + the Windows NSIS installer (via the `windowsVm` entry in `release.config.json`) in parallel, then publishes to the rolling `dev` prerelease. Self-healing on transient Windows failures uses the configured VM start/restart commands + 1 retry. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
 `just check` runs **11 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 

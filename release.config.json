@@ -1,0 +1,12 @@
+{
+  "windowsVm": {
+    "sshHost": "windows-vm",
+    "vmDir": "~/vms/win11",
+    "startCommand": ["make", "-C", "{vmDir}", "up"],
+    "restartCommand": ["make", "-C", "{vmDir}", "restart"],
+    "sshReadyCommand": "$PSVersionTable.PSVersion.ToString(); hostname",
+    "remoteWorkDir": "C:\\wt-build",
+    "remoteRepoDir": "C:\\WTranscriber",
+    "helperRemotePath": "C:\\wt-build\\wt-windows-build.bat"
+  }
+}

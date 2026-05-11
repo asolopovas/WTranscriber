@@ -1,7 +1,10 @@
 @echo off
 setlocal EnableExtensions
 set SHA=%1
-if "%SHA%"=="" ( echo Usage: wt-windows-build.bat ^<sha^> 1^>^&2 & exit /b 2 )
+set REPO=%~2
+set ARCHIVE=%~3
+if "%SHA%"=="" ( echo Usage: wt-windows-build.bat ^<sha^> [repo-dir] [source-archive] 1^>^&2 & exit /b 2 )
+if "%REPO%"=="" set "REPO=C:\WTranscriber"
 
 set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 if not exist "%VCVARS%" (
@@ -11,20 +14,19 @@ if not exist "%VCVARS%" (
 )
 call "%VCVARS%" >NUL || exit /b %ERRORLEVEL%
 
-set "PATH=%USERPROFILE%\.cargo\bin;%USERPROFILE%\.bun\bin;C:\Program Files\just;C:\Program Files\nodejs;C:\Program Files\Git\cmd;%PATH%"
+set "PATH=%USERPROFILE%\.cargo\bin;%USERPROFILE%\.bun\bin;C:\Program Files\just;C:\Program Files\nodejs;%PATH%"
 
-where git >NUL 2>&1 || ( echo [win] git missing on PATH 1>&2 & exit /b 91 )
+where tar >NUL 2>&1 || ( echo [win] tar missing on PATH 1>&2 & exit /b 91 )
 where just >NUL 2>&1 || ( echo [win] just missing on PATH; run scripts\bootstrap-windows.ps1 1>&2 & exit /b 92 )
 where bun  >NUL 2>&1 || ( echo [win] bun missing on PATH 1>&2 & exit /b 93 )
 where cargo >NUL 2>&1 || ( echo [win] cargo missing on PATH 1>&2 & exit /b 94 )
 
-if not exist C:\WTranscriber (
-  git clone https://github.com/asolopovas/WTranscriber.git C:\WTranscriber || exit /b %ERRORLEVEL%
-)
-cd /D C:\WTranscriber || exit /b %ERRORLEVEL%
-git fetch --prune --force --tags origin || exit /b %ERRORLEVEL%
-git reset --hard %SHA% || exit /b %ERRORLEVEL%
-if exist src-tauri\target\release\bundle\nsis ( rmdir /S /Q src-tauri\target\release\bundle\nsis 2>NUL )
+if "%ARCHIVE%"=="" ( echo [win] source archive argument missing 1>&2 & exit /b 96 )
+if not exist "%ARCHIVE%" ( echo [win] source archive not found: %ARCHIVE% 1>&2 & exit /b 97 )
+if exist "%REPO%" ( rmdir /S /Q "%REPO%" 2>NUL )
+mkdir "%REPO%" || exit /b %ERRORLEVEL%
+tar -xzf "%ARCHIVE%" -C "%REPO%" || exit /b %ERRORLEVEL%
+cd /D "%REPO%" || exit /b %ERRORLEVEL%
 
 rem --- self-heal rustup target if corrupt --------------------------------
 rustup target add x86_64-pc-windows-msvc 2>nul 1>nul
@@ -42,6 +44,6 @@ if errorlevel 1 (
 )
 
 call bun install --frozen-lockfile --no-progress || exit /b %ERRORLEVEL%
-call just build-cpu || exit /b %ERRORLEVEL%
+call just build || exit /b %ERRORLEVEL%
 
 dir src-tauri\target\release\bundle\nsis\*-setup.exe

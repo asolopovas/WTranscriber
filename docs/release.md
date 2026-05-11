@@ -15,33 +15,27 @@
 
 ## Windows VM preflight
 
-The Linux host builds the Windows NSIS installer by SSH-driving a Tiny11
-VM hosted in `~/os/windows-vm` (dockur/windows). `xtask release`
-resolves the VM via the SSH alias `windows-vm` (`localhost:2222`).
+The Linux host builds the Windows NSIS installer by SSH-driving the VM
+configured in `release.config.json` (`windowsVm`). The default config uses
+the `windows-vm` SSH alias and starts/restarts `/home/andrius/vms/win11`
+through its Makefile. Override the config path with `WT_RELEASE_CONFIG`.
 
 ```bash
-cd ~/os/windows-vm && make start    # resume the VM (idempotent)
-ssh windows-vm true                 # smoke-test; xtask retries for ~60 s
+make -C ~/vms/win11 up
+ssh windows-vm '$PSVersionTable.PSVersion.ToString(); hostname'
 ```
 
-If SSH probes get `kex_exchange_identification: Connection reset by
-peer`, the guest sshd is wedged behind a sign-in screen — run
-`make -C ~/os/windows-vm ssh-restart` (drives `Restart-Service sshd`
-over VNC). Without a healthy alias, `xtask release` warns
-`windows-vm SSH unreachable — skipping Windows build` and continues
-without the `.exe`.
-
-> If SSH still won’t connect after `ssh-restart`, the Windows guest is
-> frozen. Reboot it via the web viewer (http://127.0.0.1:8006/) and
-> wait 2–3 min for sshd to come back.
+`xtask release` runs the configured `startCommand` when SSH is down,
+polls the configured `sshReadyCommand`, and falls back to the configured
+`restartCommand` once before skipping the Windows `.exe`.
 
 ### Failsafe
 
 `xtask release` is self-healing for transient failures: if the initial
 SSH probe fails, or if the Windows build inside the VM exits non-zero,
-the task runs `docker restart windows`, polls SSH for up to 5 min, and
-retries the build **once** before giving up. The build script
-(`scripts/wt-windows-build.bat`) attempts a softer self-heal first —
+the task runs the configured Windows VM restart command, polls SSH for up
+to 5 min, and retries the build **once** before giving up. The build
+script (`scripts/wt-windows-build.bat`) attempts a softer self-heal first —
 `rustup component remove + self update + target add` — and as a last
 resort `rustup toolchain uninstall + install`. This catches transient
 rustup hiccups but **cannot** repair a persistent on-disk rustup state
@@ -56,12 +50,8 @@ run the manual nuke once from inside the VM:
 powershell -ExecutionPolicy Bypass -File \\host.lan\Data\fix-rustup.ps1
 ```
 
-(See `~/os/windows-vm/shared/fix-rustup.ps1`. It deletes `~/.rustup`
-and `~/.cargo/bin`, reinstalls via `rustup-init.exe`, and re-adds the
-msvc target. Same access pattern as `restart-sshd.ps1`: web viewer
-→ admin shell → run.) Then re-run `just release`.
-
-Full setup and recovery flow: see `~/os/windows-vm/AGENTS.md`.
+Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via
+`rustup-init.exe`, and re-add the msvc target. Then re-run `just release`.
 
 ## Channels
 
