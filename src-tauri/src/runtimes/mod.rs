@@ -28,6 +28,8 @@ pub fn extract(archive: &Path, dest: &Path) -> Result<()> {
         "-xjf"
     } else if name.ends_with(".tar.gz") || ext_eq(&name, "tgz") {
         "-xzf"
+    } else if name.ends_with(".tar.xz") || ext_eq(&name, "txz") {
+        "-xJf"
     } else if ext_eq(&name, "zip") {
         "-xf"
     } else {

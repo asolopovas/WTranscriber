@@ -12,43 +12,72 @@ pub const VERSION: &str = "9.21.1.3";
 #[cfg(windows)]
 use crate::process::quiet_command;
 
+pub const fn target_library() -> &'static str {
+    if cfg!(windows) {
+        "cudnn64_9.dll"
+    } else {
+        "libcudnn.so.9"
+    }
+}
+
+// Backward-compat alias used by Windows-only call sites.
 pub const fn target_dll() -> &'static str {
-    "cudnn64_9.dll"
+    target_library()
 }
 
 pub fn install_root() -> Option<PathBuf> {
-    if !cfg!(target_os = "windows") {
-        return None;
+    if cfg!(target_os = "windows") {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("USERPROFILE")
+                    .map(PathBuf::from)
+                    .map(|p| p.join("AppData").join("Local"))
+            })?;
+        return Some(base.join("Programs").join("cuDNN").join("v9"));
     }
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("USERPROFILE")
-                .map(PathBuf::from)
-                .map(|p| p.join("AppData").join("Local"))
-        })?;
-    Some(base.join("Programs").join("cuDNN").join("v9"))
+    if cfg!(target_os = "linux") {
+        return paths::third_party_dir()
+            .ok()
+            .map(|p| p.join("cudnn").join("v9"));
+    }
+    None
 }
 
+pub fn library_dir() -> Option<PathBuf> {
+    let root = install_root()?;
+    Some(if cfg!(windows) {
+        root.join("bin")
+    } else {
+        root.join("lib")
+    })
+}
+
+// Backward-compat: Windows callers use this for PATH manipulation. On Linux
+// it returns the `lib/` directory containing `libcudnn.so.9`.
 pub fn bin_dir() -> Option<PathBuf> {
-    install_root().map(|p| p.join("bin"))
+    library_dir()
 }
 
-pub fn dll_path() -> Option<PathBuf> {
-    bin_dir().map(|p| p.join(target_dll()))
+pub fn library_path() -> Option<PathBuf> {
+    library_dir().map(|p| p.join(target_library()))
 }
 
 pub fn is_installed() -> bool {
-    dll_path().is_some_and(|p| p.exists())
+    library_path().is_some_and(|p| p.exists())
 }
 
 pub const fn supported() -> bool {
-    cfg!(target_os = "windows") && cfg!(target_arch = "x86_64")
+    (cfg!(target_os = "windows") || cfg!(target_os = "linux")) && cfg!(target_arch = "x86_64")
 }
 
 fn asset_name() -> Option<String> {
-    if supported() {
+    if cfg!(target_os = "windows") && cfg!(target_arch = "x86_64") {
         Some(format!("cudnn-windows-x86_64-{VERSION}_cuda12-archive.zip"))
+    } else if cfg!(target_os = "linux") && cfg!(target_arch = "x86_64") {
+        Some(format!(
+            "cudnn-linux-x86_64-{VERSION}_cuda12-archive.tar.xz"
+        ))
     } else {
         None
     }
@@ -56,18 +85,36 @@ fn asset_name() -> Option<String> {
 
 fn url() -> Option<String> {
     let asset = asset_name()?;
+    let subpath = if cfg!(target_os = "windows") {
+        "windows-x86_64"
+    } else {
+        "linux-x86_64"
+    };
     Some(format!(
-        "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/{asset}"
+        "https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/{subpath}/{asset}"
     ))
+}
+
+// Env var the dynamic linker / DLL loader consults for extra search paths.
+pub const fn library_search_env() -> &'static str {
+    if cfg!(windows) {
+        "PATH"
+    } else {
+        "LD_LIBRARY_PATH"
+    }
 }
 
 pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<PathBuf> {
     let target_root = install_root()
-        .ok_or_else(|| Error::Config("cuDNN auto-install only supports Windows x86_64".into()))?;
-    let target_bin = target_root.join("bin");
-    let target_dll_path = target_bin.join(target_dll());
-    if target_dll_path.exists() {
-        return Ok(target_dll_path);
+        .ok_or_else(|| Error::Config("cuDNN auto-install unsupported on this platform".into()))?;
+    let target_lib_dir = if cfg!(windows) {
+        target_root.join("bin")
+    } else {
+        target_root.join("lib")
+    };
+    let target_lib_path = target_lib_dir.join(target_library());
+    if target_lib_path.exists() {
+        return Ok(target_lib_path);
     }
 
     let url = url().ok_or_else(|| Error::Config("cuDNN url unavailable".into()))?;
@@ -91,8 +138,8 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
 
     let src_root = locate_archive_root(&staging).ok_or_else(|| {
         Error::Config(format!(
-            "cuDNN archive layout unexpected (no bin/{} in {})",
-            target_dll(),
+            "cuDNN archive layout unexpected (no {} in {})",
+            target_library(),
             staging.display()
         ))
     })?;
@@ -112,54 +159,63 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
 
     let _ = std::fs::remove_dir_all(&staging);
 
-    if !target_dll_path.exists() {
+    if !target_lib_path.exists() {
         return Err(Error::Config(format!(
             "cuDNN install incomplete: {} missing",
-            target_dll_path.display()
+            target_lib_path.display()
         )));
     }
-    Ok(target_dll_path)
+    Ok(target_lib_path)
 }
 
 pub fn ensure_on_path() {
-    let Some(bin) = bin_dir() else { return };
-    if !bin.join(target_dll()).exists() {
+    let Some(dir) = library_dir() else { return };
+    if !dir.join(target_library()).exists() {
         return;
     }
     if cfg!(windows) {
-        match persist_user_path(&bin) {
+        match persist_user_path(&dir) {
             Ok(true) => {
-                crate::logfile::info(&format!("cuDNN added to user PATH: {}", bin.display()));
+                crate::logfile::info(&format!("cuDNN added to user PATH: {}", dir.display()));
             }
             Ok(false) => {}
             Err(e) => crate::logfile::warn(&format!("cuDNN PATH persist failed: {e}")),
         }
     }
+    // On Linux/macOS we don't persist LD_LIBRARY_PATH globally (that would
+    // affect every process the user runs). Instead, callers spawning sherpa
+    // use `command_env()` to inject it per-command.
 }
 
-pub fn augmented_path() -> Option<std::ffi::OsString> {
-    let bin = bin_dir()?;
-    if !bin.join(target_dll()).exists() {
+// Returns the env var the loader consults augmented with the cuDNN library
+// directory prepended. None when cuDNN is not installed.
+pub fn augmented_library_path() -> Option<(&'static str, std::ffi::OsString)> {
+    let dir = library_dir()?;
+    if !dir.join(target_library()).exists() {
         return None;
     }
-    let current = std::env::var_os("PATH").unwrap_or_default();
+    let env_name = library_search_env();
+    let current = std::env::var_os(env_name).unwrap_or_default();
     let sep = if cfg!(windows) { ";" } else { ":" };
     let current_str = current.to_string_lossy();
-    let bin_canon = bin.canonicalize().ok();
-    let already = current_str.split(sep).any(|p| {
-        std::path::Path::new(p)
-            .canonicalize()
-            .ok()
-            .zip(bin_canon.as_ref())
-            .is_some_and(|(c, b)| &c == b)
-    });
+    let dir_canon = dir.canonicalize().ok();
+    let already = !current_str.is_empty()
+        && current_str.split(sep).any(|p| {
+            std::path::Path::new(p)
+                .canonicalize()
+                .ok()
+                .zip(dir_canon.as_ref())
+                .is_some_and(|(c, b)| &c == b)
+        });
     if already {
-        return Some(current);
+        return Some((env_name, current));
     }
-    let mut new_path = std::ffi::OsString::from(bin.as_os_str());
-    new_path.push(sep);
-    new_path.push(&current);
-    Some(new_path)
+    let mut new_path = std::ffi::OsString::from(dir.as_os_str());
+    if !current.is_empty() {
+        new_path.push(sep);
+        new_path.push(&current);
+    }
+    Some((env_name, new_path))
 }
 
 #[cfg(windows)]
@@ -243,12 +299,17 @@ fn broadcast_settings_change() {
 }
 
 fn locate_archive_root(root: &std::path::Path) -> Option<PathBuf> {
+    let lib = target_library();
     crate::process::walk_for_file(root, 5, |p| {
         if !p.is_dir() {
             return false;
         }
-        let bin = p.join("bin");
-        bin.join(target_dll()).exists() || bin.join("x64").join(target_dll()).exists()
+        if cfg!(windows) {
+            let bin = p.join("bin");
+            bin.join(lib).exists() || bin.join("x64").join(lib).exists()
+        } else {
+            p.join("lib").join(lib).exists()
+        }
     })
 }
 
@@ -278,4 +339,60 @@ fn flatten_x64(dir: &std::path::Path) {
         }
     }
     let _ = std::fs::remove_dir_all(&nested);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn target_library_matches_platform() {
+        let lib = target_library();
+        if cfg!(windows) {
+            assert_eq!(lib, "cudnn64_9.dll");
+        } else {
+            assert_eq!(lib, "libcudnn.so.9");
+        }
+    }
+
+    #[test]
+    fn library_search_env_matches_platform() {
+        let env = library_search_env();
+        if cfg!(windows) {
+            assert_eq!(env, "PATH");
+        } else {
+            assert_eq!(env, "LD_LIBRARY_PATH");
+        }
+    }
+
+    #[test]
+    fn supported_on_linux_and_windows_x86_64() {
+        let expected = (cfg!(target_os = "windows") || cfg!(target_os = "linux"))
+            && cfg!(target_arch = "x86_64");
+        assert_eq!(supported(), expected);
+    }
+
+    #[test]
+    fn install_root_resolves_on_supported_platforms() {
+        if supported() {
+            assert!(
+                install_root().is_some(),
+                "install_root should resolve on {}",
+                std::env::consts::OS
+            );
+        }
+    }
+
+    #[test]
+    fn library_dir_uses_lib_on_unix_and_bin_on_windows() {
+        let Some(dir) = library_dir() else {
+            return;
+        };
+        let last = dir.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+        if cfg!(windows) {
+            assert_eq!(last, "bin");
+        } else {
+            assert_eq!(last, "lib");
+        }
+    }
 }

@@ -153,6 +153,14 @@ pub async fn ensure(
     let target_bin = bin_dir(variant)?;
     move_or_copy_dir(&bin_src, &target_bin)?;
 
+    if !cfg!(windows)
+        && let Some(lib_src) = bin_src.parent().map(|p| p.join("lib"))
+        && lib_src.is_dir()
+    {
+        let target_lib = install_dir(variant)?.join("lib");
+        move_or_copy_dir(&lib_src, &target_lib)?;
+    }
+
     let _ = std::fs::remove_dir_all(&staging);
     Ok(dir)
 }

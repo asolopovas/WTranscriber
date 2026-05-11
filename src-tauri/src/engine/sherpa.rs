@@ -69,6 +69,11 @@ pub fn run_cmd(
     if out.status.success() {
         return Ok((stdout, stderr, start.elapsed().as_secs_f64()));
     }
+    crate::logfile::warn(&format!(
+        "sherpa stderr ({} bytes): {}",
+        stderr.len(),
+        truncate_for_log(&stderr, 800),
+    ));
     if uses_cuda(&effective) && is_cuda_load_failure(&stderr) {
         if !CUDA_DISABLED.swap(true, Ordering::Relaxed) {
             crate::logfile::warn(&format!(
@@ -139,6 +144,25 @@ pub fn is_cuda_load_failure(stderr: &str) -> bool {
         || (s.contains("cuda") && s.contains("error loading"))
 }
 
+fn truncate_for_log(s: &str, max: usize) -> String {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return "<empty>".into();
+    }
+    let one_line: String = trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if one_line.chars().count() <= max {
+        one_line
+    } else {
+        let truncated: String = one_line.chars().take(max).collect();
+        format!("{truncated}… [+{} chars]", one_line.chars().count() - max)
+    }
+}
+
 fn cuda_failure_reason(stderr: &str) -> String {
     for line in stderr.lines() {
         let l = line.trim();
@@ -155,8 +179,8 @@ fn cuda_failure_reason(stderr: &str) -> String {
 
 fn build_command(bin: &Path) -> Command {
     let mut cmd = quiet_command(bin.as_os_str());
-    if let Some(path) = crate::runtimes::cudnn::augmented_path() {
-        cmd.env("PATH", path);
+    if let Some((env_name, value)) = crate::runtimes::cudnn::augmented_library_path() {
+        cmd.env(env_name, value);
     }
     cmd
 }
