@@ -117,6 +117,7 @@ pub fn run_streamed(
     let mut cmd = Command::new(prog);
     cmd.args(args)
         .current_dir(root())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in extra_env {

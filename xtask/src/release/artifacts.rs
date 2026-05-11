@@ -150,7 +150,7 @@ pub(super) fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
         .join("gen")
         .join("android")
         .join("keystore.properties");
-    let mut props: std::collections::HashMap<String, String> = if ks_props.exists() {
+    let props: std::collections::HashMap<String, String> = if ks_props.exists() {
         fs::read_to_string(&ks_props)?
             .lines()
             .filter_map(|l| l.split_once('='))
@@ -190,7 +190,6 @@ pub(super) fn find_apk(dev: bool) -> Result<Option<ApkResult>> {
             signed: false,
         }));
     };
-    let _ = &mut props;
     let sdk = std::env::var("ANDROID_HOME").unwrap_or_else(|_| {
         let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
         format!("{local}\\Android\\Sdk")
