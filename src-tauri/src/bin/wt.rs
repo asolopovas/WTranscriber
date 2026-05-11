@@ -1,13 +1,15 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     process::ExitCode,
+    sync::{Arc, Mutex},
 };
 
 use clap::{Parser, Subcommand};
 use wtranscriber_lib::{
-    api::{self, Config, Device, Engine, FileProgress, Job, Result, Transcript},
+    api::{self, Config, Device, Engine, FileProgress, Job, Phase, Result, Sink, Transcript},
     logfile, namer,
 };
 
@@ -221,6 +223,89 @@ fn truncate(s: &str, n: usize) -> String {
     }
 }
 
+struct CliSink {
+    label: String,
+    state: Mutex<CliSinkState>,
+}
+
+struct CliSinkState {
+    last_phase: Option<Phase>,
+    last_shown_pct: i32,
+    start: std::time::Instant,
+}
+
+impl CliSink {
+    fn new(input: PathBuf) -> Self {
+        let label = input
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| input.display().to_string());
+        Self {
+            label,
+            state: Mutex::new(CliSinkState {
+                last_phase: None,
+                last_shown_pct: -1,
+                start: std::time::Instant::now(),
+            }),
+        }
+    }
+
+    fn phase_label(phase: Phase) -> &'static str {
+        match phase {
+            Phase::CacheCheck => "cache",
+            Phase::LoadingAudio => "load",
+            Phase::Transcribing => "asr",
+            Phase::Diarizing => "diar",
+            Phase::Writing => "write",
+            Phase::Done => "done",
+        }
+    }
+
+    fn render(&self, phase: Phase, pct: f64) {
+        let Ok(mut s) = self.state.lock() else {
+            return;
+        };
+        let new_phase = s.last_phase != Some(phase);
+        let pct_int = pct.clamp(0.0, 100.0) as i32;
+        if !new_phase && pct_int == s.last_shown_pct && !matches!(phase, Phase::Done) {
+            return;
+        }
+        if new_phase && s.last_phase.is_some() {
+            eprintln!();
+        }
+        let elapsed = s.start.elapsed().as_secs_f64();
+        let mut err = std::io::stderr().lock();
+        let _ = write!(
+            err,
+            "\r[{phase}] {label:<32} {pct:>5.1}%  {elapsed:>5.1}s",
+            phase = Self::phase_label(phase),
+            label = truncate(&self.label, 32),
+            pct = pct.clamp(0.0, 100.0),
+            elapsed = elapsed,
+        );
+        let _ = err.flush();
+        if matches!(phase, Phase::Done) {
+            let _ = writeln!(err);
+        }
+        s.last_phase = Some(phase);
+        s.last_shown_pct = pct_int;
+    }
+}
+
+impl Sink for CliSink {
+    fn phase(&self, phase: Phase) {
+        let pct = if matches!(phase, Phase::Done) {
+            100.0
+        } else {
+            0.0
+        };
+        self.render(phase, pct);
+    }
+    fn report_pct(&self, phase: Phase, pct: f64) {
+        self.render(phase, pct);
+    }
+}
+
 async fn run_transcribe(cli: Cli) -> Result<()> {
     if cli.inputs.is_empty() {
         return Err(api::Error::Config("no input files".into()));
@@ -309,7 +394,8 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
     };
 
     eprintln!("transcribing: {}", canonical.display());
-    let transcript = api::transcribe(&job).await?;
+    let sink: Arc<dyn Sink> = Arc::new(CliSink::new(canonical.clone()));
+    let transcript = api::transcribe_with_sink(&job, sink).await?;
     let dst = output_path(&canonical, &config.model);
     write_transcript(&dst, &transcript)?;
     println!("{}", dst.display());
