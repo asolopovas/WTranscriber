@@ -9,7 +9,7 @@ mod engine;
 mod error;
 mod essentials;
 mod llm;
-mod logfile;
+pub mod logfile;
 mod models;
 pub mod namer;
 mod paths;

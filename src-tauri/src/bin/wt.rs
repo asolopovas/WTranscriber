@@ -8,52 +8,74 @@ use std::{
 use clap::{Parser, Subcommand};
 use wtranscriber_lib::{
     api::{self, Config, Device, Engine, FileProgress, Job, Result, Transcript},
-    namer,
+    logfile, namer,
 };
 
 #[derive(Parser, Debug)]
 #[command(
     name = "wt",
     version,
-    about = "Audio transcription CLI (sherpa-onnx + pyannote)",
+    about = "WTranscriber CLI \u{2014} offline audio transcription + diarization",
+    long_about = "WTranscriber CLI \u{2014} offline audio transcription + diarization.\n\n\
+Accepts one or more audio files and writes a JSON transcript next to each input.\n\
+Models are downloaded on demand into ~/.local/share/wtranscriber/models.\n\
+A rolling log is written to ~/.local/share/wtranscriber/wt.log (same as the GUI).",
+    after_help = "Examples:\n  \
+      wt audio.wav                       # transcribe with defaults\n  \
+      wt --device cpu --no-diarize a.wav # CPU, no diarization\n  \
+      wt -l en --speakers 2 *.wav        # English, 2-speaker diarization\n  \
+      wt --rename audio.wav              # LLM-suggested rename of the source file\n  \
+      wt models list                     # show catalog + install state\n  \
+      wt models install sherpa-whisper-turbo",
     arg_required_else_help = true
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
+    /// One or more audio files to transcribe (wav/mp3/flac/m4a/ogg \u{2014} decoded via ffmpeg)
     inputs: Vec<PathBuf>,
 
-    #[arg(short, long)]
+    /// BCP-47 language code (e.g. `en`, `ru`, `auto`). Defaults to the saved config
+    #[arg(short, long, value_name = "LANG")]
     lang: Option<String>,
 
-    #[arg(short, long)]
+    /// ASR model id from `wt models list` (e.g. `sherpa-whisper-turbo`)
+    #[arg(short, long, value_name = "MODEL")]
     model: Option<String>,
 
-    #[arg(short, long)]
+    /// CPU thread count for the transcription engine (default: auto)
+    #[arg(short, long, value_name = "N")]
     threads: Option<u32>,
 
-    #[arg(long)]
+    /// Expected number of speakers (enables diarization with a fixed count)
+    #[arg(long, value_name = "N")]
     speakers: Option<u32>,
 
+    /// Disable speaker diarization for this run
     #[arg(long)]
     no_diarize: bool,
 
-    #[arg(long, value_enum)]
+    /// Compute device: cpu or cuda (cuda requires a CUDA-enabled build)
+    #[arg(long, value_enum, value_name = "DEVICE")]
     device: Option<Device>,
 
-    #[arg(long, value_enum)]
+    /// Override the ASR engine kind (advanced; defaults to the model's native engine)
+    #[arg(long, value_enum, value_name = "ENGINE")]
     engine: Option<Engine>,
 
+    /// Ignore any cached transcript for this input and rerun from scratch
     #[arg(long)]
     no_cache: bool,
 
+    /// After transcribing, ask the local LLM for a sensible filename and rename the source
     #[arg(long)]
     rename: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Manage local model catalog (list, install, status)
     Models {
         #[command(subcommand)]
         action: ModelsAction,
@@ -62,9 +84,18 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum ModelsAction {
+    /// List all known models with size and install status
     List,
-    Install { id: String },
-    Status { id: String },
+    /// Download and install a model by id (see `wt models list`)
+    Install {
+        /// Model id, e.g. `sherpa-whisper-turbo`
+        id: String,
+    },
+    /// Print install status (installed | not_installed | partial) for a model id
+    Status {
+        /// Model id, e.g. `sherpa-whisper-turbo`
+        id: String,
+    },
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -76,11 +107,18 @@ async fn main() -> ExitCode {
         )
         .init();
 
+    let cli = Cli::parse();
+
+    logfile::info(&format!(
+        "wt CLI v{} starting (cuda_feature={})",
+        env!("CARGO_PKG_VERSION"),
+        cfg!(feature = "cuda"),
+    ));
+
     if cfg!(feature = "cuda") {
         wtranscriber_lib::cuda_setup::setup();
     }
 
-    let cli = Cli::parse();
     let result = if let Some(cmd) = cli.command {
         run_command(cmd).await
     } else {
@@ -182,6 +220,30 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
     if let Some(s) = cli.speakers {
         config.speakers = Some(s);
     }
+
+    if matches!(config.device, Device::Cuda) && !cfg!(feature = "cuda") {
+        let msg = "this build does not ship CUDA; \
+             pass --device cpu, or install the CUDA build of WTranscriber";
+        logfile::warn(&format!(
+            "--device cuda requested on CPU-only build; falling back to CPU ({msg})",
+        ));
+        eprintln!("warning: {msg}; falling back to --device cpu");
+        config.device = Device::Cpu;
+    }
+
+    logfile::info(&format!(
+        "cli run: device={} engine={} model={} lang={} diarize={} speakers={:?} inputs={}",
+        match config.device {
+            Device::Cpu => "cpu",
+            Device::Cuda => "cuda",
+        },
+        config.engine.as_str(),
+        config.model,
+        config.language,
+        config.diarize,
+        config.speakers,
+        cli.inputs.len(),
+    ));
 
     for input in cli.inputs {
         if let Err(e) = transcribe_one(&input, &config, cli.no_cache, cli.rename).await {

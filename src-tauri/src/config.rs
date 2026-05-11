@@ -251,8 +251,10 @@ fn num_threads() -> u32 {
 const fn default_device() -> Device {
     if cfg!(any(target_os = "android", target_os = "ios")) {
         Device::Cpu
-    } else {
+    } else if cfg!(feature = "cuda") {
         Device::Cuda
+    } else {
+        Device::Cpu
     }
 }
 
