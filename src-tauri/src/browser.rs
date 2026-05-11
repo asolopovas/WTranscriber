@@ -9,7 +9,11 @@ use crate::{
 };
 
 const AUDIO_EXTS: &[&str] = &[
-    "wav", "mp3", "ogg", "m4a", "flac", "opus", "webm", "aac", "wma",
+    "wav", "wave", "mp3", "mp2", "mpga", "ogg", "oga", "ogv", "opus", "flac", "aac", "m4a", "m4b",
+    "m4p", "m4r", "mp4", "m4v", "mov", "3gp", "3g2", "3gpp", "webm", "mkv", "mka", "avi", "wmv",
+    "asf", "wma", "flv", "f4v", "f4a", "mpg", "mpeg", "ts", "mts", "m2ts", "vob", "aiff", "aif",
+    "aifc", "au", "snd", "caf", "amr", "ac3", "eac3", "dts", "ape", "alac", "mpc", "wv", "tta",
+    "ra", "rm", "rmvb", "voc", "gsm", "w64",
 ];
 
 #[derive(Debug, Clone, Serialize)]

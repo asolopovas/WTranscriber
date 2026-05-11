@@ -115,10 +115,10 @@ diagnose-crash:
 
 # ─── build ────────────────────────────────────────────────────────────────────
 
-# Full bundle (NSIS on Windows, .deb on Linux).
+# Full bundle (NSIS on Windows, .deb on Linux); sherpa statically linked, GPU via sidecar CLI.
 [group('build')]
 build:
-    {{_run}} --tag build --idle 180 --max 1800 -- bun run tauri build
+    {{_run}} --tag build --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
 
 # Fast iteration build: Tauri-patched binary, no installer.
 [group('build')]
@@ -134,11 +134,6 @@ build-bin:
 [group('build')]
 build-cli:
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
-
-# CPU-only full build (no CUDA runtime).
-[group('build')]
-build-cpu:
-    {{_run}} --tag build-cpu --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
 
 # Linux .deb built inside Debian 12 container (glibc 2.36 floor).
 [group('build')]

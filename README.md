@@ -33,7 +33,7 @@ just sherpa-cuda     # prebuilt sherpa-onnx CUDA archive
 just cudnn           # cuDNN 9 for CUDA 12
 just nemo-deps       # Python venv + nemo_toolkit for Sortformer diarization
 just dev-cpu         # HMR with sherpa-static (no CUDA toolchain required)
-just build-cpu       # CPU-only full build (sherpa-static feature)
+just build           # Full bundle (NSIS / .deb); sherpa-static + sidecar GPU
 ```
 
 Requires NVIDIA CUDA 12.x (`cudart64_12.dll`) installed system-wide. The sidecar `sherpa-onnx-offline.exe` runs CUDA independently of the build feature; toggling Device → GPU in the UI uses the sidecar with automatic CPU fallback.

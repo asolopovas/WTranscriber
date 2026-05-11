@@ -2,7 +2,21 @@ import { describe, expect, it } from "vitest";
 import { basenameOf, decodeName, hasAudioExt, phaseLabel, prettyName } from "./audio";
 
 describe("hasAudioExt", () => {
-  it.each(["a.wav", "a.MP3", "deep/path/to.flac", "x.OPUS"])("accepts %s", (p) => {
+  it.each([
+    "a.wav",
+    "a.MP3",
+    "deep/path/to.flac",
+    "x.OPUS",
+    "WhatsApp Audio 2026-05-11 at 10.41.36.mp4",
+    "voice.3gp",
+    "voice.amr",
+    "clip.mov",
+    "meeting.MKV",
+    "x.aiff",
+    "y.caf",
+    "track.m4b",
+    "podcast.oga",
+  ])("accepts %s", (p) => {
     expect(hasAudioExt(p)).toBe(true);
   });
   it.each(["a.txt", "a", "a.zip", ""])("rejects %s", (p) => {
