@@ -118,7 +118,7 @@ diagnose-crash:
 # Full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host.
 [group('build')]
 build:
-    {{_run}} --tag build --idle 180 --max 3600 -- cargo xtask release --dev
+    {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
 # Native single-platform bundle (NSIS on Windows, .deb on Linux); used by the Windows VM helper.
 [group('build')]

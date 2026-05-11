@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::artifacts::win_path_to_wsl;
-use crate::util::{SharedOut, root, run_streamed, run_streamed_stdin};
+use crate::util::{SharedOut, root, run_streamed};
 
 pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
@@ -27,6 +27,8 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
             "run",
             "tauri",
             "build",
+            "-c",
+            "{\"build\":{\"beforeBuildCommand\":\"\"}}",
             "--",
             "--no-default-features",
             "--features",
@@ -47,7 +49,8 @@ pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i
         return Ok(rc);
     }
     ensure_dev_keystore_properties(dev)?;
-    let mut env_vars: Vec<(&str, &str)> = vec![("CARGO_INCREMENTAL", "1")];
+    let mut env_vars: Vec<(&str, &str)> =
+        vec![("CARGO_INCREMENTAL", "1"), ("WT_SKIP_FRONTEND", "1")];
     if dev {
         env_vars.push(("WT_DEV_APK", "1"));
     }
@@ -103,30 +106,6 @@ pub(super) fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[wsl] --skip-rebuild, looking for existing .deb");
         return Ok(0);
     }
-    let probe_ok = std::process::Command::new("wsl")
-        .args([
-            "--",
-            "bash",
-            "-lc",
-            "command -v bun && command -v cargo && echo READY",
-        ])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("READY"))
-        .unwrap_or(false);
-    if !probe_ok {
-        println!("[wsl] skipping (no distro with bun + cargo)");
-        return Ok(-1);
-    }
-    let wsl_root = win_path_to_wsl(&root());
-    let script = format!(
-        "set -e\n\
-         cd \"{wsl_root}\"\n\
-         export CARGO_TARGET_DIR=\"$HOME/.cache/wtranscriber-wsl-target\"\n\
-         export CARGO_INCREMENTAL=1\n\
-         unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR\n\
-         mkdir -p \"$CARGO_TARGET_DIR\"\n\
-         bun install --frozen-lockfile --no-progress 2>&1 | tail -5\n\
-         bun run tauri build --bundles deb -- --no-default-features --features sherpa-static\n"
-    );
-    run_streamed_stdin("wsl", "wsl", &["--", "bash", "-l"], &script, &[], lock)
+    let wsl_script = format!("{}/scripts/wsl-build-deb.sh", win_path_to_wsl(&root()));
+    run_streamed("wsl", "wsl", &["--", "bash", &wsl_script], &[], lock)
 }

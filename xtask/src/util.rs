@@ -137,42 +137,6 @@ pub fn run_streamed(
     Ok(status.code().unwrap_or(1))
 }
 
-pub fn run_streamed_stdin(
-    tag: &str,
-    prog: &str,
-    args: &[&str],
-    stdin_data: &str,
-    extra_env: &[(&str, &str)],
-    out_lock: &SharedOut,
-) -> Result<i32> {
-    let prefix = format!("[{tag}] ");
-    let mut cmd = Command::new(prog);
-    cmd.args(args)
-        .current_dir(root())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in extra_env {
-        cmd.env(k, v);
-    }
-    let mut child = cmd.spawn().with_context(|| format!("spawn {prog}"))?;
-    let mut stdin = child.stdin.take().context("no stdin")?;
-    stdin.write_all(stdin_data.as_bytes())?;
-    drop(stdin);
-    let stdout = child.stdout.take().context("no stdout")?;
-    let stderr = child.stderr.take().context("no stderr")?;
-    let prefix_o = prefix.clone();
-    let lock_o = out_lock.clone();
-    let h_out = thread::spawn(move || forward_lines(stdout, &prefix_o, &lock_o));
-    let prefix_e = prefix.clone();
-    let lock_e = out_lock.clone();
-    let h_err = thread::spawn(move || forward_lines(stderr, &prefix_e, &lock_e));
-    let status = child.wait()?;
-    let _ = h_out.join();
-    let _ = h_err.join();
-    Ok(status.code().unwrap_or(1))
-}
-
 fn forward_lines<R: std::io::Read>(reader: R, prefix: &str, lock: &SharedOut) {
     let r = BufReader::new(reader);
     for line in r.lines().map_while(|l| l.ok()) {

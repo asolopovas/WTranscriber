@@ -294,8 +294,18 @@ pub fn run(args: Args) -> Result<()> {
 }
 
 fn prewarm() -> Result<()> {
-    println!("→ pre-warm: cargo fetch");
+    println!("→ pre-warm: bun install");
     let lock = shared_out();
+    let rc = run_streamed("bun", "bun", &["install", "--no-progress"], &[], &lock)?;
+    if rc != 0 {
+        bail!("bun install failed (exit {rc})");
+    }
+    println!("→ pre-warm: bun run build (frontend → dist/)");
+    let rc = run_streamed("front", "bun", &["run", "build"], &[], &lock)?;
+    if rc != 0 {
+        bail!("frontend build failed (exit {rc})");
+    }
+    println!("→ pre-warm: cargo fetch");
     let rc = run_streamed(
         "fetch",
         "cargo",

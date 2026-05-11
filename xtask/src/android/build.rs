@@ -100,13 +100,24 @@ pub(super) fn cmd_doctor(target: &str) -> Result<()> {
 
 pub(super) fn cmd_build(target: &str) -> Result<()> {
     let env = prepare(target, true)?;
-    spawn_with_env(
-        "bun",
-        &[
+    let args: Vec<&str> = if std::env::var("WT_SKIP_FRONTEND").is_ok() {
+        vec![
+            "run",
+            "tauri",
+            "android",
+            "build",
+            "-c",
+            "{\"build\":{\"beforeBuildCommand\":\"\"}}",
+            "--target",
+            target,
+            "--apk",
+        ]
+    } else {
+        vec![
             "run", "tauri", "android", "build", "--target", target, "--apk",
-        ],
-        &env,
-    )?;
+        ]
+    };
+    spawn_with_env("bun", &args, &env)?;
     let apk = apk_release_dir().join("app-universal-release-unsigned.apk");
     if apk.exists() {
         let mb = fs::metadata(&apk)?.len() as f64 / 1024.0 / 1024.0;

@@ -74,7 +74,7 @@ pub(super) fn find_wsl_deb(ver: &str, branch: &str, dev: bool) -> Option<(PathBu
             "--",
             "bash",
             "-lc",
-            "ls \"$HOME/.cache/wtranscriber-wsl-target/release/bundle/deb/\"*.deb 2>/dev/null | head -1",
+            "ls \"$HOME/src/WTranscriber/src-tauri/target/release/bundle/deb/\"*.deb 2>/dev/null | head -1",
         ])
         .output()
         .ok()?;
