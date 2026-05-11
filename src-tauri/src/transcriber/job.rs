@@ -89,6 +89,10 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     )?;
     let key = compute_key(&key_params);
 
+    // Fail fast: if the configured engine needs a subprocess binary that's
+    // missing, surface the error before we open ffmpeg / probe duration.
+    engine::preflight(config)?;
+
     if let Some(cached) = cache::load(&key)? {
         let stale = config.diarize && cached.speakers_detected == 0;
         if stale {
@@ -426,7 +430,7 @@ fn emit_pct(sink: &dyn Sink, done_sec: f64, total_sec: f64) {
     sink.report_pct(Phase::Transcribing, pct);
 }
 
-pub(crate) fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
+fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
     if offset_ms == 0 {
         return;
     }
@@ -481,7 +485,7 @@ fn run_diarize_streaming(
     }
 }
 
-pub(crate) fn apply_dedup(segments: &mut Vec<Segment>) {
+fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
         if seg.tokens.len() >= 2 {
             let collapsed = dedup::collapse_repeats(&seg.tokens);
@@ -496,7 +500,7 @@ pub(crate) fn apply_dedup(segments: &mut Vec<Segment>) {
     segments.retain(|s| !s.tokens.is_empty() || !s.text.trim().is_empty());
 }
 
-pub(crate) fn rebuild_from_tokens(seg: &mut Segment) {
+fn rebuild_from_tokens(seg: &mut Segment) {
     if seg.tokens.is_empty() {
         seg.text.clear();
         return;

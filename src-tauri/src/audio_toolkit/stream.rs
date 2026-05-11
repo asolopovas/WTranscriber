@@ -121,9 +121,15 @@ impl StreamSource {
 
 impl Drop for StreamSource {
     fn drop(&mut self) {
+        // Always kill the child on drop. Just waiting would hang because the
+        // BufReader still owns the read end of the stdout pipe at this point,
+        // so ffmpeg never receives SIGPIPE and `wait()` blocks indefinitely.
+        // Killing first guarantees ffmpeg exits even if the user callback that
+        // owns this StreamSource returned Err before EOF.
         if let Backend::Ffmpeg { child, .. } = &mut self.backend
             && let Some(mut c) = child.take()
         {
+            let _ = c.kill();
             let _ = c.wait();
         }
     }

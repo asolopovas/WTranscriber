@@ -16,6 +16,20 @@ use crate::{
     transcriber::Segment,
 };
 
+/// Check that everything we need to run the configured engine is in place,
+/// without doing any audio work. Call this before opening an ffmpeg stream so
+/// a missing subprocess binary surfaces immediately instead of after the
+/// first slab has been decoded.
+pub fn preflight(config: &Config) -> Result<()> {
+    if use_in_process(config) {
+        // In-process recognizer is lazily built on first `run`; nothing to probe.
+        return Ok(());
+    }
+    // All subprocess engines route through the same `sherpa-onnx-offline`
+    // binary, so one find_binary() call is sufficient for all of them.
+    sherpa::find_binary().map(|_| ())
+}
+
 pub fn run(
     samples: &[f32],
     audio_dur_sec: f64,

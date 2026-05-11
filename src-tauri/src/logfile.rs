@@ -113,6 +113,7 @@ pub fn process_end(label: &str, outcome: &str, details: &str) {
     write_line("PROC", &line);
 }
 
+#[must_use]
 pub fn read_tail(max_bytes: u64) -> String {
     let Ok(path) = log_path() else {
         return String::new();
