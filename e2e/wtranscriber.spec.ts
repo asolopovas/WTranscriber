@@ -220,10 +220,10 @@ async function installTauriMocks(page: Page) {
               duration_ms: rows.find((file) => file.path === input)?.duration_ms ?? 0,
             };
           }
-          if (cmd === "cancel_transcribe") {
-            cancelled.add(args.input as string);
-            pending.get(args.input as string)?.();
-            return true;
+          if (cmd === "cancel_all_transcribes") {
+            for (const input of pending.keys()) cancelled.add(input);
+            finishTranscriptions();
+            return cancelled.size;
           }
           const reply = replies[cmd];
           if (reply) return reply(args);
@@ -285,7 +285,7 @@ test("stops an in-flight transcription", async ({ page }) => {
   await row.locator('button[title="Transcribe"]').click();
   await expect(row.getByRole("button", { name: /Stop/ })).toBeVisible();
   await row.getByRole("button", { name: /Stop/ }).click();
-  await expect.poll(() => commands(page)).toContain("cancel_transcribe");
+  await expect.poll(() => commands(page)).toContain("cancel_all_transcribes");
 });
 
 test("previews cached transcript details", async ({ page }) => {

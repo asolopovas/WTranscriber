@@ -846,12 +846,6 @@ async fn redo_diarization_inner(
 }
 
 #[tauri::command]
-pub fn cancel_transcribe(input: PathBuf) -> bool {
-    let key = input.to_string_lossy().into_owned();
-    cancel_by_key(&key)
-}
-
-#[tauri::command]
 pub fn cancel_all_transcribes() -> usize {
     cancel_all()
 }
@@ -866,18 +860,6 @@ pub(super) fn unregister_cancel(key: &str) {
     if let Ok(mut cancels) = TRANSCRIBE_CANCELS.lock() {
         cancels.remove(key);
     }
-}
-
-pub(super) fn cancel_by_key(key: &str) -> bool {
-    let token = TRANSCRIBE_CANCELS
-        .lock()
-        .ok()
-        .and_then(|cancels| cancels.get(key).cloned());
-    token.is_some_and(|t| {
-        t.cancel();
-        logfile::info(&format!("cancel_transcribe {key}"));
-        true
-    })
 }
 
 pub(super) fn cancel_all() -> usize {
@@ -925,25 +907,6 @@ mod tests {
         let cfg = Config::default();
 
         assert!(validate_transcription_model(&cfg).is_ok());
-    }
-
-    #[test]
-    fn cancel_by_key_returns_false_when_not_registered() {
-        let _g = cancel_test_lock().lock().unwrap();
-        clear_cancels();
-        assert!(!cancel_by_key("/tmp/missing.wav"));
-    }
-
-    #[test]
-    fn cancel_by_key_cancels_and_returns_true_for_registered_token() {
-        let _g = cancel_test_lock().lock().unwrap();
-        clear_cancels();
-        let token = CancellationToken::new();
-        register_cancel("/tmp/job-a", token.clone());
-        assert!(!token.is_cancelled());
-        assert!(cancel_by_key("/tmp/job-a"));
-        assert!(token.is_cancelled());
-        unregister_cancel("/tmp/job-a");
     }
 
     #[test]
@@ -1029,7 +992,7 @@ mod tests {
                 });
 
                 tokio::time::sleep(Duration::from_millis(20)).await;
-                assert!(cancel_by_key("/tmp/job-b"));
+                assert_eq!(cancel_all(), 1);
                 drop(guard_a);
 
                 let observed_cancel = b.await.unwrap();

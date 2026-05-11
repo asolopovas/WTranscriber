@@ -144,7 +144,6 @@ pub fn run() {
             commands::audio_files::apply_trim,
             commands::transcribe::transcribe_file,
             commands::transcribe::redo_diarization,
-            commands::transcribe::cancel_transcribe,
             commands::transcribe::cancel_all_transcribes,
             commands::files::rename_file,
             commands::files::delete_file,
