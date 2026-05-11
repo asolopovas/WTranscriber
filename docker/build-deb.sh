@@ -42,7 +42,7 @@ docker run --rm -i \
         DST="/work/src-tauri/target/release/bundle/deb"
         mkdir -p "$DST"
         cp -f "$SRC"/*.deb "$DST"/
-        chown -R '"$UID_GID"' "$DST" || true
+        chown -R '"$UID_GID"' "$DST" /work/dist /work/node_modules 2>/dev/null || true
     '
 
 OUT="src-tauri/target/release/bundle/deb"

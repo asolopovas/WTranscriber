@@ -123,7 +123,7 @@ build:
 # Native single-platform bundle (NSIS on Windows, .deb on Linux); used by the Windows VM helper.
 [group('build')]
 build-host:
-    {{_run}} --tag build-host --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
+    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build -- --no-default-features --features sherpa-static
 
 # Fast iteration build: Tauri-patched binary, no installer.
 [group('build')]
