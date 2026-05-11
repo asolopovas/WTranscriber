@@ -27,7 +27,7 @@ const unlisten: (() => void)[] = [];
 
 const { error } = useDebouncedSave(config, (next) => api.saveConfig(next));
 
-const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const isAndroid = computed(() => sys.value?.os === "android");
 const persistentEnabled = ref(false);
 const persistentGranted = ref(false);
 const persistentBusy = ref<"idle" | "requesting" | "enabling" | "saved">("idle");
@@ -35,7 +35,7 @@ const persistentMessage = ref<string | null>(null);
 let persistentVisibilityHandler: (() => void) | null = null;
 
 async function refreshPersistentState() {
-  if (!isAndroid) return;
+  if (!isAndroid.value) return;
   try {
     persistentGranted.value = await api.hasPersistentStorage();
     if (config.value) persistentEnabled.value = config.value.use_persistent_models;
@@ -45,7 +45,7 @@ async function refreshPersistentState() {
 }
 
 async function togglePersistent(next: boolean) {
-  if (!isAndroid) return;
+  if (!isAndroid.value) return;
   if (next) {
     persistentBusy.value = "requesting";
     persistentMessage.value =
@@ -61,7 +61,7 @@ async function togglePersistent(next: boolean) {
 }
 
 async function applyPersistentGrantIfReady() {
-  if (!isAndroid) return;
+  if (!isAndroid.value) return;
   await refreshPersistentState();
   if (persistentBusy.value !== "requesting") return;
   if (!persistentGranted.value) return;
@@ -135,7 +135,7 @@ onMounted(async () => {
     await events.onModelError(refreshModels),
   );
   await refreshPersistentState();
-  if (isAndroid && typeof document !== "undefined") {
+  if (isAndroid.value && typeof document !== "undefined") {
     persistentVisibilityHandler = () => {
       if (document.visibilityState === "visible") void applyPersistentGrantIfReady();
     };

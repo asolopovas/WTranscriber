@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    path::Path,
-};
+use std::io::Write;
 
 use crate::{
     error::{Error, Result},
@@ -17,19 +13,6 @@ pub enum Format {
     Json,
     Srt,
     Vtt,
-}
-
-pub fn write(transcript: &Transcript, dest: &Path, format: Format) -> Result<()> {
-    if let Some(parent) = dest.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = File::create(dest)?;
-    let mut w = BufWriter::new(file);
-    write_to(transcript, &mut w, format)?;
-    w.flush()?;
-    Ok(())
 }
 
 pub fn write_to<W: Write>(transcript: &Transcript, w: &mut W, format: Format) -> Result<()> {
@@ -173,10 +156,9 @@ mod tests {
     }
 
     fn write_to_string(t: &Transcript, fmt: Format) -> String {
-        let dir = tempfile::tempdir().unwrap();
-        let dst = dir.path().join("out");
-        write(t, &dst, fmt).unwrap();
-        std::fs::read_to_string(&dst).unwrap()
+        let mut out = Vec::new();
+        write_to(t, &mut out, fmt).unwrap();
+        String::from_utf8(out).unwrap()
     }
 
     #[test]
@@ -239,13 +221,5 @@ mod tests {
         let out = write_to_string(&sample(), Format::Json);
         let parsed: Transcript = serde_json::from_str(&out).unwrap();
         assert_eq!(parsed.utterances.len(), 2);
-    }
-
-    #[test]
-    fn write_creates_missing_parent_dirs() {
-        let dir = tempfile::tempdir().unwrap();
-        let dst = dir.path().join("nested").join("deep").join("out.txt");
-        write(&sample(), &dst, Format::Txt).unwrap();
-        assert!(dst.exists());
     }
 }

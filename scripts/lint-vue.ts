@@ -12,7 +12,7 @@ const RULES: Rule[] = [
   {
     id: "style-attr-html-entity-quote",
     re: /\sstyle="[^"]*&quot;[^"]*"/g,
-    msg: "use single quotes inside style=\"...\" (CSS accepts ' for strings); &quot; confuses CSS validators",
+    msg: 'use single quotes inside style="..." (CSS accepts \' for strings); &quot; confuses CSS validators',
   },
   {
     id: "style-attr-html-entity-amp",
@@ -34,9 +34,7 @@ for await (const file of glob.scan({ cwd: ROOT, absolute: true })) {
     while ((m = rule.re.exec(text)) !== null) {
       const lineNum = text.slice(0, m.index).split("\n").length;
       const col = m.index - text.lastIndexOf("\n", m.index - 1);
-      console.error(
-        `${relative(ROOT, file)}:${lineNum}:${col} [${rule.id}] ${rule.msg}`,
-      );
+      console.error(`${relative(ROOT, file)}:${lineNum}:${col} [${rule.id}] ${rule.msg}`);
       console.error(`  ${(lines[lineNum - 1] ?? "").trim()}`);
       failed++;
     }

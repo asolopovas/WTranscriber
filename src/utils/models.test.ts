@@ -5,7 +5,9 @@ import {
   applyMissingModelDefaults,
   applySystemConfigDefaults,
   defaultModel,
+  diarizerSpeakerCap,
   modelIdForDiarizer,
+  speakerOptionsForDiarizer,
   syncAsrEngineAndModel,
 } from "./models";
 
@@ -83,6 +85,15 @@ describe("model helpers", () => {
   it("maps diarizer choices to model ids", () => {
     expect(modelIdForDiarizer("nemo")).toBe("nemo-sortformer-v2");
     expect(modelIdForDiarizer("titanet")).toBe("sherpa-pyannote-titanet");
+  });
+
+  it("builds speaker options for each diarizer cap", () => {
+    expect(diarizerSpeakerCap("nemo")).toBe(4);
+    expect(diarizerSpeakerCap("sortformer-onnx")).toBe(4);
+    expect(diarizerSpeakerCap("titanet")).toBe(10);
+    const titanetOptions = speakerOptionsForDiarizer("titanet");
+    expect(speakerOptionsForDiarizer("sortformer-onnx")).toHaveLength(5);
+    expect(titanetOptions[titanetOptions.length - 1]).toEqual({ value: 10, label: "10" });
   });
 
   it("applies ASR model only when engine is known", () => {

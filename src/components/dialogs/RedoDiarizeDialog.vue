@@ -4,6 +4,7 @@ import type { DiarizerChoice, SystemInfo } from "@/types";
 import Modal from "@components/ui/Modal.vue";
 import Button from "@components/ui/Button.vue";
 import { fieldClass } from "@styles/fields";
+import { diarizerSpeakerCap, speakerOptionsForDiarizer } from "@utils/models";
 
 const props = defineProps<{ sys: SystemInfo | null }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -12,18 +13,12 @@ const speakers = defineModel<number>("speakers", { required: true });
 
 const emit = defineEmits<{ (e: "commit"): void }>();
 
-const speakerCap = computed(() =>
-  diarizer.value === "nemo" || diarizer.value === "sortformer-onnx" ? 4 : 10,
-);
-const speakerOptions = computed<{ value: number; label: string }[]>(() => {
-  const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
-  for (let i = 1; i <= speakerCap.value; i++) opts.push({ value: i, label: String(i) });
-  return opts;
-});
+const speakerOptions = computed(() => speakerOptionsForDiarizer(diarizer.value));
 
 function onDiarizerChange(value: DiarizerChoice) {
   diarizer.value = value;
-  if (speakers.value > speakerCap.value) speakers.value = speakerCap.value;
+  const cap = diarizerSpeakerCap(value);
+  if (speakers.value > cap) speakers.value = cap;
 }
 </script>
 
@@ -41,8 +36,13 @@ function onDiarizerChange(value: DiarizerChoice) {
             :class="fieldClass"
             @change="onDiarizerChange(($event.target as HTMLSelectElement).value as DiarizerChoice)"
           >
-            <option v-if="!props.sys?.is_mobile" value="nemo">NVIDIA NeMo Sortformer</option>
-            <option value="titanet">NVIDIA TitaNet</option>
+            <option v-if="!props.sys?.is_mobile" value="sortformer-onnx">
+              NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)
+            </option>
+            <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
+            <option v-if="!props.sys?.is_mobile" value="nemo">
+              NVIDIA NeMo Sortformer (Python, legacy)
+            </option>
           </select>
         </label>
         <label class="space-y-unit">

@@ -10,7 +10,7 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { syncAsrEngineAndModel } from "@utils/models";
+import { speakerOptionsForDiarizer, syncAsrEngineAndModel } from "@utils/models";
 import { fmtClock, fmtMsLong, MB } from "@utils/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
@@ -84,13 +84,7 @@ async function installSelectedModel() {
   }
 }
 
-const speakerOptions = computed<{ value: number; label: string }[]>(() => {
-  const cap =
-    props.config.diarizer === "nemo" || props.config.diarizer === "sortformer-onnx" ? 4 : 10;
-  const opts: { value: number; label: string }[] = [{ value: 0, label: "Auto" }];
-  for (let i = 1; i <= cap; i++) opts.push({ value: i, label: String(i) });
-  return opts;
-});
+const speakerOptions = computed(() => speakerOptionsForDiarizer(props.config.diarizer));
 
 const languageOptions = computed(() => {
   const m = selectedAsrModel.value;

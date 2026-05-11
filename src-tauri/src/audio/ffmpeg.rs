@@ -142,13 +142,13 @@ pub fn apply_trim(input: &Path, start_ms: u64, end_ms: Option<u64>) -> Result<()
     if tmp.exists() {
         let _ = std::fs::remove_file(&tmp);
     }
-    let start_s = start_ms as f64 / 1000.0;
+    let start_seconds = start_ms as f64 / 1000.0;
     let mut cmd = quiet_command(ffmpeg.as_os_str());
     cmd.args(["-loglevel", "error", "-y", "-i"]).arg(input);
-    cmd.args(["-ss", &format!("{start_s:.3}")]);
+    cmd.args(["-ss", &format!("{start_seconds:.3}")]);
     if let Some(end) = end_ms {
-        let end_s = end as f64 / 1000.0;
-        cmd.args(["-to", &format!("{end_s:.3}")]);
+        let end_seconds = end as f64 / 1000.0;
+        cmd.args(["-to", &format!("{end_seconds:.3}")]);
     }
     cmd.args(["-c", "copy", "-avoid_negative_ts", "make_zero"])
         .arg(&tmp);

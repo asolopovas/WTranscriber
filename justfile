@@ -241,12 +241,14 @@ android-cli-run *args:
 [group('quality')]
 fmt:
     {{_run}} --tag fmt --idle 30 --max 120 -- cargo fmt --manifest-path src-tauri/Cargo.toml --all
-    {{_run}} --tag fmt-js --idle 30 --max 120 -- bun x prettier --write "src/**/*.{ts,vue}" "*.{json,html,md}"
+    {{_run}} --tag fmt-xtask --idle 30 --max 120 -- cargo fmt --manifest-path xtask/Cargo.toml --all
+    {{_run}} --tag fmt-js --idle 30 --max 120 -- bun x prettier --write "src/**/*.{ts,vue}" "scripts/**/*.ts" "*.{json,html,md}" "docs/**/*.md"
 
 [group('quality')]
 fmt-check:
     {{_run}} --tag fmt-check --idle 30 --max 120 -- cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-    {{_run}} --tag fmt-check-js --idle 30 --max 120 -- bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"
+    {{_run}} --tag fmt-check-xtask --idle 30 --max 120 -- cargo fmt --manifest-path xtask/Cargo.toml --all -- --check
+    {{_run}} --tag fmt-check-js --idle 30 --max 120 -- bun x prettier --check "src/**/*.{ts,vue}" "scripts/**/*.ts" "*.{json,html,md}" "docs/**/*.md"
 
 [group('quality')]
 lint:
@@ -270,6 +272,7 @@ e2e:
 [group('quality')]
 dep-check: _ensure-machete
     {{_run}} --tag machete --idle 30 --max 120 -- cargo machete src-tauri
+    {{_run}} --tag machete-xtask --idle 30 --max 120 -- cargo machete xtask
 
 [group('quality')]
 audit: _ensure-audit
@@ -280,7 +283,7 @@ audit: _ensure-audit
 [group('quality')]
 check: _ensure-machete _ensure-audit
     {{_par}} --idle 180 --max 1200 \
-        --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "*.{json,html,md}"' \
+        --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo fmt --manifest-path xtask/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "scripts/**/*.ts" "*.{json,html,md}" "docs/**/*.md"' \
         --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'clippy-xtask=cargo clippy --manifest-path xtask/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'typecheck=bun run typecheck' \
@@ -289,7 +292,7 @@ check: _ensure-machete _ensure-audit
         --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
         --job 'xtask-test=cargo test --manifest-path xtask/Cargo.toml --offline' \
         --job 'js-test=bun run test' \
-        --job 'machete=cargo machete src-tauri' \
+        --job 'machete=cargo machete src-tauri && cargo machete xtask' \
         --job 'audit=cargo audit --file src-tauri/Cargo.lock && bun audit'
     @echo "✓ check passed"
 

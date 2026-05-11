@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { FileProgress, ModelInfo } from "@/types";
-import { fmtModelSize, MB } from "@utils/format";
+import { fmtModelSize, MB, progressPct } from "@utils/format";
 import DownloadCircle from "@components/DownloadCircle.vue";
 
 interface Props {
@@ -28,11 +28,7 @@ const rows = computed<Row[]>(() => {
     const m = props.models.find((x) => x.id === id);
     const p = props.progress[id];
     const errored = !!props.errors[id];
-    let percent = 0;
-    if (p && p.total > 0) {
-      const fileFrac = p.downloaded / p.total;
-      percent = ((p.file_index + fileFrac) / p.file_count) * 100;
-    }
+    let percent = progressPct(p);
     let status: Row["status"];
     if (m?.status === "installed") {
       status = "installed";

@@ -34,11 +34,6 @@ pub fn log_renderer(
 }
 
 #[tauri::command]
-pub fn log_path() -> Result<String> {
-    Ok(logfile::log_path()?.to_string_lossy().into_owned())
-}
-
-#[tauri::command]
 pub fn log_tail(max_bytes: Option<u64>) -> String {
     logfile::read_tail(max_bytes.unwrap_or(256 * 1024))
 }

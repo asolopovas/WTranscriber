@@ -160,3 +160,50 @@ pub fn clear() -> Result<()> {
     let _ = fs::remove_file(&path);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_temp_paths(test: impl FnOnce(&std::path::Path)) {
+        let _guard = crate::paths::PATHS_TEST_LOCK.lock().unwrap();
+        crate::paths::clear_test_overrides();
+        let dir = tempfile::tempdir().unwrap();
+        crate::paths::init(
+            dir.path().join("config"),
+            dir.path().join("data"),
+            dir.path().join("cache"),
+        );
+        clear().unwrap();
+        test(dir.path());
+        clear().unwrap();
+        crate::paths::clear_test_overrides();
+    }
+
+    #[test]
+    fn read_tail_returns_recent_log_content() {
+        with_temp_paths(|_| {
+            write_line("INFO", "first line");
+            write_line("WARN", "second line");
+
+            let tail = read_tail(32);
+
+            assert!(tail.contains("second line"));
+        });
+    }
+
+    #[test]
+    fn clear_removes_active_log_and_archives() {
+        with_temp_paths(|_| {
+            write_line("INFO", "active");
+            let path = log_path().unwrap();
+            let archive = path.parent().unwrap().join("wt-20000101-000000.log");
+            std::fs::write(&archive, b"old").unwrap();
+
+            clear().unwrap();
+
+            assert!(!path.exists());
+            assert!(!archive.exists());
+        });
+    }
+}

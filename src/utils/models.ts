@@ -7,6 +7,22 @@ export const DIARIZER_BY_MODEL_ID: Record<string, DiarizerChoice> = {
   "sherpa-pyannote-titanet": "titanet",
 };
 
+export function diarizerSpeakerCap(choice: DiarizerChoice): number {
+  return choice === "nemo" || choice === "sortformer-onnx" ? 4 : 10;
+}
+
+export function speakerOptionsForDiarizer(
+  choice: DiarizerChoice,
+): { value: number; label: string }[] {
+  return [
+    { value: 0, label: "Auto" },
+    ...Array.from({ length: diarizerSpeakerCap(choice) }, (_, i) => {
+      const value = i + 1;
+      return { value, label: String(value) };
+    }),
+  ];
+}
+
 export function modelIdForDiarizer(choice: DiarizerChoice): string | null {
   for (const [id, value] of Object.entries(DIARIZER_BY_MODEL_ID)) {
     if (value === choice) return id;

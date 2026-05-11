@@ -12,11 +12,6 @@ pub fn format_hms(d: Duration) -> String {
     }
 }
 
-pub fn output_filename(input_base: &str, model: &str) -> String {
-    let stamp = chrono::Local::now().format("%Y-%m-%d_%H%M%S");
-    format!("{input_base}_{model}_{stamp}.json")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,17 +29,5 @@ mod tests {
     #[test]
     fn formats_zero_duration() {
         assert_eq!(format_hms(Duration::ZERO), "0:00");
-    }
-
-    #[test]
-    fn output_filename_contains_inputs_and_extension() {
-        let f = output_filename("clip", "whisper");
-        assert!(f.starts_with("clip_whisper_"));
-        assert!(
-            std::path::Path::new(&f)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
-        );
-        assert!(f.len() > "clip_whisper_.json".len());
     }
 }

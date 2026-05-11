@@ -76,9 +76,7 @@ await Promise.all(
 const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 if (firstFail) {
   const f = firstFail as Failure;
-  process.stderr.write(
-    `\x1b[31m[parallel] FAIL ${f.tag} exit=${f.code} (${elapsed}s)\x1b[0m\n`,
-  );
+  process.stderr.write(`\x1b[31m[parallel] FAIL ${f.tag} exit=${f.code} (${elapsed}s)\x1b[0m\n`);
   process.exit(f.code);
 }
 process.stdout.write(`\x1b[32m[parallel] OK ${jobs.length} jobs in ${elapsed}s\x1b[0m\n`);

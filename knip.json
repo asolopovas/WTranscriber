@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["index.html", "e2e/**/*.spec.ts"],
-  "project": ["src/**/*.{ts,vue}"],
+  "entry": ["index.html", "e2e/**/*.spec.ts", "scripts/*.ts"],
+  "project": ["src/**/*.{ts,vue}", "scripts/**/*.ts"],
   "ignoreDependencies": ["prettier", "tailwindcss", "@tailwindcss/forms"],
   "ignoreExportsUsedInFile": true
 }

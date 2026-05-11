@@ -32,7 +32,7 @@ just release-stable    check + bump + tag + build + publish
 
 `just release` builds host + Android + the Windows NSIS installer (via SSH alias `windows-vm` → `~/os/windows-vm` Tiny11 VM) in parallel, then publishes to the rolling `dev` prerelease. Self-healing on transient Windows failures (auto `docker restart` + 1 retry); persistent rustup corruption needs `make -C ~/os/windows-vm fix-rustup`. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
-`just check` runs **9 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
+`just check` runs **11 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 
 `just --list` for the rest.
 
@@ -48,7 +48,7 @@ just release-stable    check + bump + tag + build + publish
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt`, TS/Vue/docs via `prettier --write`), re-stages, then gates on `bun run typecheck`. Rust correctness (clippy, tests) is **not** in the hook — it lives in `just check` and CI. Run `just check` before opening a PR.
+`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt` for `src-tauri`/`xtask`, TS/Vue/scripts/docs via `prettier --write`), re-stages, then gates on `bun run typecheck` for TS/Vue/scripts changes. Rust correctness (clippy, tests) is **not** in the hook — it lives in `just check` and CI. Run `just check` before opening a PR.
 
 ## Scratch artefacts
 

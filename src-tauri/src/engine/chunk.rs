@@ -96,7 +96,7 @@ fn shift(segs: &mut [Segment], start_sec: f64, end_sec: f64) {
     }
 }
 
-pub fn segments_from_sherpa(r: &super::SherpaResult, chunk_dur_sec: f64) -> Vec<Segment> {
+pub fn segments_from_sherpa(r: &super::sherpa::SherpaResult, chunk_dur_sec: f64) -> Vec<Segment> {
     if let Some(seg) = coalesce_segment(&r.tokens, r.timestamps.iter().copied(), chunk_dur_sec) {
         return vec![seg];
     }

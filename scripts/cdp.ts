@@ -61,9 +61,7 @@ async function evalViaWs(wsUrl: string, expression: string): Promise<unknown> {
         const r = msg.result?.result;
         if (r?.subtype === "error" || msg.result?.exceptionDetails) {
           return reject(
-            new Error(
-              msg.result?.exceptionDetails?.text ?? r?.description ?? "evaluate failed",
-            ),
+            new Error(msg.result?.exceptionDetails?.text ?? r?.description ?? "evaluate failed"),
           );
         }
         resolve(r?.value);

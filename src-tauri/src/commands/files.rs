@@ -108,17 +108,6 @@ pub fn delete_file(path: PathBuf) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn export_transcript(
-    transcript: Transcript,
-    dest: PathBuf,
-    format: ExportFormat,
-) -> Result<PathBuf> {
-    transcriber::export::write(&transcript, &dest, format)?;
-    logfile::info(&format!("export {:?} -> {}", format, dest.display()));
-    Ok(dest)
-}
-
-#[tauri::command]
 pub fn format_transcript(transcript: Transcript, format: ExportFormat) -> Result<String> {
     let mut buf: Vec<u8> = Vec::new();
     transcriber::export::write_to(&transcript, &mut buf, format)?;
@@ -143,5 +132,61 @@ pub fn share_transcript(title: String, text: String) -> Result<bool> {
     #[cfg(not(target_os = "android"))]
     {
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_to_workdir_returns_existing_path_for_same_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("clip.wav");
+        std::fs::write(&source, b"audio").unwrap();
+
+        let copied = add_to_workdir_blocking(&source, dir.path()).unwrap();
+
+        assert_eq!(copied, source);
+    }
+
+    #[test]
+    fn add_to_workdir_uses_unique_name_for_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_dir = dir.path().join("source");
+        let workdir = dir.path().join("work");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&workdir).unwrap();
+        let source = source_dir.join("clip.wav");
+        std::fs::write(&source, b"new").unwrap();
+        std::fs::write(workdir.join("clip.wav"), b"old").unwrap();
+
+        let copied = add_to_workdir_blocking(&source, &workdir).unwrap();
+
+        assert_eq!(copied.file_name().unwrap(), "clip (1).wav");
+        assert_eq!(std::fs::read(copied).unwrap(), b"new");
+    }
+
+    #[test]
+    fn rename_file_preserves_extension_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old.wav");
+        std::fs::write(&source, b"audio").unwrap();
+
+        let renamed = rename_file(source, "new name".into()).unwrap();
+
+        assert_eq!(renamed.file_name().unwrap(), "new name.wav");
+        assert!(renamed.exists());
+    }
+
+    #[test]
+    fn rename_file_rejects_path_separators() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old.wav");
+        std::fs::write(&source, b"audio").unwrap();
+
+        let err = rename_file(source, "nested/name".into()).unwrap_err();
+
+        assert!(err.to_string().contains("path separators"));
     }
 }

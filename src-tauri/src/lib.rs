@@ -36,9 +36,7 @@ pub use android::{
 };
 pub use essentials::{auto_install_essentials, essential_model_ids};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-#[allow(clippy::too_many_lines)]
-pub fn run() {
+fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
@@ -50,87 +48,95 @@ pub fn run() {
         "wtranscriber v{} starting",
         env!("CARGO_PKG_VERSION")
     ));
+}
+
+#[cfg(target_os = "android")]
+fn setup_android_paths(app: &tauri::App) {
+    let data_dir = std::path::PathBuf::from("/data/user/0/com.asolopovas.wtranscriber/files");
+    let writable = std::fs::create_dir_all(&data_dir).is_ok()
+        && std::fs::create_dir_all(data_dir.join("models")).is_ok();
+    let data_dir = if writable {
+        data_dir
+    } else {
+        use tauri::Manager;
+        let fallback = app
+            .path()
+            .app_local_data_dir()
+            .or_else(|_| app.path().app_data_dir())
+            .unwrap_or_else(|_| std::path::PathBuf::from("/sdcard"));
+        let _ = std::fs::create_dir_all(&fallback);
+        let _ = std::fs::create_dir_all(fallback.join("models"));
+        fallback
+    };
+    let internal_config = data_dir.join("config.yml");
+    paths::set_config_file(internal_config.clone());
+    let cache_dir = data_dir.join("cache");
+    let _ = std::fs::create_dir_all(&cache_dir);
+    paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
+    let models_dir = data_dir.join("models");
+    let _ = std::fs::create_dir_all(&models_dir);
+    if android::android_has_all_files_access() {
+        android::restore_config_from_persistent(&internal_config);
+        if std::path::Path::new(android::PERSISTENT_MODELS_DIR).exists() {
+            android::restore_models_from_persistent(&models_dir);
+        }
+        let mut cfg = config::Config::load().unwrap_or_default();
+        if !cfg.use_persistent_models {
+            cfg.use_persistent_models = true;
+            if let Err(e) = cfg.save() {
+                logfile::error(&format!("android: enabling use_persistent_models: {e}"));
+            }
+        }
+    }
+    paths::set_models_dir(models_dir);
+
+    let ext_workdir = std::path::PathBuf::from(
+        "/sdcard/Android/data/com.asolopovas.wtranscriber/files/transcripts",
+    );
+    let workdir = if std::fs::create_dir_all(&ext_workdir).is_ok() {
+        ext_workdir
+    } else {
+        let fallback = data_dir.join("transcripts");
+        let _ = std::fs::create_dir_all(&fallback);
+        fallback
+    };
+    paths::set_default_workdir(workdir.clone());
+    android::migrate_legacy_android_data(&data_dir, &workdir);
+    logfile::info(&format!(
+        "android: data={} workdir={}",
+        data_dir.display(),
+        workdir.display()
+    ));
+}
+
+#[cfg(target_os = "android")]
+fn setup_app(app: &mut tauri::App) {
+    setup_android_paths(app);
+}
+
+#[cfg(not(target_os = "android"))]
+const fn setup_app(_app: &mut tauri::App) {}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::too_many_lines)]
+pub fn run() {
+    init_logging();
 
     tauri::Builder::default()
-        .setup(|_app| {
-            #[cfg(target_os = "android")]
-            let app = _app;
-            #[cfg(target_os = "android")]
-            {
-                let data_dir =
-                    std::path::PathBuf::from("/data/user/0/com.asolopovas.wtranscriber/files");
-                let writable = std::fs::create_dir_all(&data_dir).is_ok()
-                    && std::fs::create_dir_all(data_dir.join("models")).is_ok();
-                let data_dir = if writable {
-                    data_dir
-                } else {
-                    use tauri::Manager;
-                    let fallback = app
-                        .path()
-                        .app_local_data_dir()
-                        .or_else(|_| app.path().app_data_dir())
-                        .unwrap_or_else(|_| std::path::PathBuf::from("/sdcard"));
-                    let _ = std::fs::create_dir_all(&fallback);
-                    let _ = std::fs::create_dir_all(fallback.join("models"));
-                    fallback
-                };
-                let internal_config = data_dir.join("config.yml");
-                paths::set_config_file(internal_config.clone());
-                let cache_dir = data_dir.join("cache");
-                let _ = std::fs::create_dir_all(&cache_dir);
-                paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
-                let models_dir = data_dir.join("models");
-                let _ = std::fs::create_dir_all(&models_dir);
-                if android::android_has_all_files_access() {
-                    android::restore_config_from_persistent(&internal_config);
-                    if std::path::Path::new(android::PERSISTENT_MODELS_DIR).exists() {
-                        android::restore_models_from_persistent(&models_dir);
-                    }
-                    let mut cfg = config::Config::load().unwrap_or_default();
-                    if !cfg.use_persistent_models {
-                        cfg.use_persistent_models = true;
-                        if let Err(e) = cfg.save() {
-                            logfile::error(&format!(
-                                "android: enabling use_persistent_models: {e}"
-                            ));
-                        }
-                    }
-                }
-                paths::set_models_dir(models_dir);
-
-                let ext_workdir = std::path::PathBuf::from(
-                    "/sdcard/Android/data/com.asolopovas.wtranscriber/files/transcripts",
-                );
-                let workdir = if std::fs::create_dir_all(&ext_workdir).is_ok() {
-                    ext_workdir
-                } else {
-                    let fallback = data_dir.join("transcripts");
-                    let _ = std::fs::create_dir_all(&fallback);
-                    fallback
-                };
-                paths::set_default_workdir(workdir.clone());
-                android::migrate_legacy_android_data(&data_dir, &workdir);
-                logfile::info(&format!(
-                    "android: data={} workdir={}",
-                    data_dir.display(),
-                    workdir.display()
-                ));
-            }
+        .setup(|app| {
+            setup_app(app);
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
-            commands::system::app_version,
             commands::system::system_info,
             commands::config::load_config,
             commands::config::save_config,
             commands::models::list_models,
             commands::models::essential_models,
             commands::models::start_essentials,
-            commands::models::model_status,
             commands::models::install_model,
-            commands::models::delete_model,
             commands::audio_files::probe_audio,
             commands::audio_files::audio_waveform,
             commands::audio_files::load_audio_meta,
@@ -142,7 +148,6 @@ pub fn run() {
             commands::transcribe::cancel_all_transcribes,
             commands::files::rename_file,
             commands::files::delete_file,
-            commands::files::export_transcript,
             commands::files::format_transcript,
             commands::files::share_transcript,
             commands::audio_files::probe_duration,
@@ -153,7 +158,6 @@ pub fn run() {
             commands::audio_files::read_audio_bytes,
             commands::diagnostics::history_load,
             commands::llm::suggest_filename,
-            commands::diagnostics::log_path,
             commands::diagnostics::log_tail,
             commands::diagnostics::log_clear,
             commands::diagnostics::log_renderer,

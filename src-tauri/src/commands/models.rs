@@ -3,9 +3,9 @@
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    error::{Error, Result},
+    error::Result,
     logfile, models,
-    models::{FileProgress, ModelInfo, ModelStatus},
+    models::{FileProgress, ModelInfo},
 };
 
 #[tauri::command]
@@ -21,11 +21,6 @@ pub fn essential_models() -> Vec<String> {
 #[tauri::command]
 pub fn start_essentials(app: AppHandle) {
     crate::auto_install_essentials(app);
-}
-
-#[tauri::command]
-pub fn model_status(id: String) -> Result<ModelStatus> {
-    models::manager().status(&id)
 }
 
 #[tauri::command]
@@ -51,23 +46,4 @@ pub async fn install_model(app: AppHandle, id: String) -> Result<()> {
         &id,
     );
     result
-}
-
-#[tauri::command]
-pub fn delete_model(id: String) -> Result<()> {
-    let Some(entry) = models::by_id(&id) else {
-        return Err(Error::Config(format!("unknown model id {id}")));
-    };
-    for p in models::paths_for(entry)? {
-        if p.exists() {
-            std::fs::remove_file(&p).ok();
-        }
-    }
-    let dir = models::model_dir(&id)?;
-    if dir.exists() && std::fs::read_dir(&dir).is_ok_and(|r| r.count() == 0) {
-        std::fs::remove_dir(&dir).ok();
-    }
-    crate::android_remove_from_persistent(&id);
-    logfile::info(&format!("delete_model {id} ok"));
-    Ok(())
 }

@@ -408,48 +408,52 @@ fn diarize_key(backend: &str) -> String {
 
 #[must_use]
 pub fn load_diarize_rtf(backend: &str) -> f64 {
-    let _guard = RTF_LOCK.lock().ok();
-    let Ok(path) = rtf_path() else {
-        return default_diarize_rtf(backend);
-    };
-    let Ok(data) = std::fs::read_to_string(&path) else {
-        return default_diarize_rtf(backend);
-    };
-    let Ok(map) = serde_json::from_str::<HashMap<String, f64>>(&data) else {
-        return default_diarize_rtf(backend);
-    };
-    map.get(&diarize_key(backend))
-        .copied()
-        .filter(|v| *v > 0.0)
-        .unwrap_or_else(|| default_diarize_rtf(backend))
+    load_rtf_value(&diarize_key(backend), default_diarize_rtf(backend))
 }
 
 pub fn save_diarize_rtf(backend: &str, observed: f64) {
+    save_rtf_value(&diarize_key(backend), observed);
+}
+
+fn rtf_path() -> Result<std::path::PathBuf> {
+    Ok(paths::config_dir()?.join("rtf.json"))
+}
+
+fn load_rtf_map(path: &std::path::Path) -> HashMap<String, f64> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_default()
+}
+
+fn load_rtf_value(key: &str, default: f64) -> f64 {
+    let _guard = RTF_LOCK.lock().ok();
+    let Ok(path) = rtf_path() else { return default };
+    load_rtf_map(&path)
+        .get(key)
+        .copied()
+        .filter(|value| *value > 0.0)
+        .unwrap_or(default)
+}
+
+fn save_rtf_value(key: &str, observed: f64) {
     if observed <= 0.0 {
         return;
     }
     let _guard = RTF_LOCK.lock().ok();
     let Ok(path) = rtf_path() else { return };
-    let mut map: HashMap<String, f64> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|d| serde_json::from_str(&d).ok())
-        .unwrap_or_default();
-    let key = diarize_key(backend);
-    let blended = match map.get(&key).copied() {
+    let mut map = load_rtf_map(&path);
+    let blended = match map.get(key).copied() {
         Some(prev) if prev > 0.0 => 0.5 * prev + 0.5 * observed,
         _ => observed,
     };
-    map.insert(key, blended);
+    map.insert(key.to_owned(), blended);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     if let Ok(data) = serde_json::to_string_pretty(&map) {
         let _ = std::fs::write(&path, data);
     }
-}
-
-fn rtf_path() -> Result<std::path::PathBuf> {
-    Ok(paths::config_dir()?.join("rtf.json"))
 }
 
 fn rtf_key(model: &str, device: &str) -> String {
@@ -458,44 +462,11 @@ fn rtf_key(model: &str, device: &str) -> String {
 
 #[must_use]
 pub fn load_rtf(model: &str, device: &str) -> f64 {
-    let _guard = RTF_LOCK.lock().ok();
-    let Ok(path) = rtf_path() else {
-        return default_rtf(model, device);
-    };
-    let Ok(data) = std::fs::read_to_string(&path) else {
-        return default_rtf(model, device);
-    };
-    let Ok(map) = serde_json::from_str::<HashMap<String, f64>>(&data) else {
-        return default_rtf(model, device);
-    };
-    map.get(&rtf_key(model, device))
-        .copied()
-        .filter(|v| *v > 0.0)
-        .unwrap_or_else(|| default_rtf(model, device))
+    load_rtf_value(&rtf_key(model, device), default_rtf(model, device))
 }
 
 pub fn save_rtf(model: &str, device: &str, observed: f64) {
-    if observed <= 0.0 {
-        return;
-    }
-    let _guard = RTF_LOCK.lock().ok();
-    let Ok(path) = rtf_path() else { return };
-    let mut map: HashMap<String, f64> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|d| serde_json::from_str(&d).ok())
-        .unwrap_or_default();
-    let key = rtf_key(model, device);
-    let blended = match map.get(&key).copied() {
-        Some(prev) if prev > 0.0 => 0.5 * prev + 0.5 * observed,
-        _ => observed,
-    };
-    map.insert(key, blended);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(data) = serde_json::to_string_pretty(&map) {
-        let _ = std::fs::write(&path, data);
-    }
+    save_rtf_value(&rtf_key(model, device), observed);
 }
 
 pub trait Sink: Send + Sync {

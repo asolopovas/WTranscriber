@@ -8,15 +8,11 @@ use std::path::Path;
 
 pub use cache::audio_cache_key;
 pub use ffmpeg::find_ffmpeg;
-#[allow(unused_imports)]
-pub use ffmpeg::find_ffprobe;
 
 pub fn probe_duration_ms(path: &std::path::Path) -> Option<u64> {
     ffmpeg::probe_duration_ms(path).or_else(|| decode::probe_duration_ms(path))
 }
 pub use meta::AudioMeta;
-#[allow(unused_imports)]
-pub use meta::meta_path;
 #[allow(unused_imports, dead_code)]
 pub use wav::write_pcm16_wav;
 pub use wav::{WHISPER_SAMPLE_RATE, read_pcm16_wav};
@@ -41,28 +37,7 @@ pub fn load_samples(path: &Path) -> Result<Vec<f32>> {
 }
 
 fn convert_and_load(path: &Path) -> Result<Vec<f32>> {
-    let cache_dir = crate::paths::cache_dir()?;
-    let cached = audio_cache_key(path).ok().map(|name| cache_dir.join(name));
-
-    if let Some(target) = &cached
-        && target.exists()
-    {
-        return read_pcm16_wav(target);
-    }
-
-    let target = cached
-        .unwrap_or_else(|| std::env::temp_dir().join(format!("wt-{}.wav", std::process::id())));
-
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    if let Err(err) = run_decoder(path, &target) {
-        let _ = std::fs::remove_file(&target);
-        return Err(err);
-    }
-
-    read_pcm16_wav(&target)
+    read_pcm16_wav(&ensure_decoded_wav(path, true)?)
 }
 
 fn run_decoder(input: &Path, output: &Path) -> Result<()> {
@@ -72,16 +47,16 @@ fn run_decoder(input: &Path, output: &Path) -> Result<()> {
     decode::decode_to_wav(input, output)
 }
 
-pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
-    if path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
-    {
-        return Ok(path.to_path_buf());
-    }
+fn ensure_decoded_wav(path: &Path, allow_temp_fallback: bool) -> Result<std::path::PathBuf> {
     let cache_dir = crate::paths::cache_dir()?;
-    let name = audio_cache_key(path)?;
-    let target = cache_dir.join(name);
+    let cached = match audio_cache_key(path) {
+        Ok(name) => Some(cache_dir.join(name)),
+        Err(_) if allow_temp_fallback => None,
+        Err(err) => return Err(err),
+    };
+    let target = cached
+        .unwrap_or_else(|| std::env::temp_dir().join(format!("wt-{}.wav", std::process::id())));
+
     if target.exists() {
         return Ok(target);
     }
@@ -93,6 +68,16 @@ pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
         return Err(err);
     }
     Ok(target)
+}
+
+pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
+    if path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
+    {
+        return Ok(path.to_path_buf());
+    }
+    ensure_decoded_wav(path, false)
 }
 
 pub fn clear_cache() -> Result<u64> {

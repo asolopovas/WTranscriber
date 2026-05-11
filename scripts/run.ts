@@ -80,15 +80,18 @@ const pipe = (stream: NodeJS.ReadableStream, sink: NodeJS.WritableStream): void 
 pipe(child.stdout!, process.stdout);
 pipe(child.stderr!, process.stderr);
 
-const heartbeat = setInterval(() => {
-  const idleMs = Date.now() - lastOutput;
-  if (idleMs >= opts.heartbeat * 1000) {
-    const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
-    process.stderr.write(
-      `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
-    );
-  }
-}, Math.max(1000, opts.heartbeat * 1000));
+const heartbeat = setInterval(
+  () => {
+    const idleMs = Date.now() - lastOutput;
+    if (idleMs >= opts.heartbeat * 1000) {
+      const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
+      process.stderr.write(
+        `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
+      );
+    }
+  },
+  Math.max(1000, opts.heartbeat * 1000),
+);
 
 const idleTimer = setInterval(() => {
   if (opts.idle <= 0) return;

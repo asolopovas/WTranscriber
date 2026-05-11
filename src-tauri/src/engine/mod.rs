@@ -8,14 +8,7 @@ mod sherpa;
 mod transducer;
 mod whisper;
 
-#[allow(unused_imports)]
-pub use chunk::{Chunk, run_chunked, run_single, split_chunks};
-#[allow(unused_imports)]
-pub use runtime::{Provider, provider, threads};
-#[allow(unused_imports)]
-pub use sherpa::{SherpaResult, find_binary, parse_json, run_cmd};
-#[allow(unused_imports)]
-pub use whisper::run as run_whisper;
+pub use runtime::threads;
 
 use crate::{
     config::{Config, Engine},

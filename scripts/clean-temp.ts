@@ -171,9 +171,7 @@ const main = async (): Promise<void> => {
     console.log("no project temp/session files found");
     return;
   }
-  console.log(
-    `${dryRun ? "would remove" : "removed"} ${removed} path(s), ${formatBytes(bytes)}`,
-  );
+  console.log(`${dryRun ? "would remove" : "removed"} ${removed} path(s), ${formatBytes(bytes)}`);
 };
 
 main().catch((error: unknown) => {

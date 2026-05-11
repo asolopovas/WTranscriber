@@ -7,7 +7,6 @@ import type {
   ExportFormat,
   FileProgress,
   ModelInfo,
-  ModelStatus,
   Suggestion,
   SystemInfo,
   TranscribeProgress,
@@ -16,16 +15,13 @@ import type {
 import { uint8ToBase64 } from "@utils/base64";
 
 export const api = {
-  appVersion: () => invoke<string>("app_version"),
   systemInfo: () => invoke<SystemInfo>("system_info"),
   loadConfig: () => invoke<Config>("load_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
   listModels: () => invoke<ModelInfo[]>("list_models"),
   essentialModels: () => invoke<string[]>("essential_models"),
   startEssentials: () => invoke<void>("start_essentials"),
-  modelStatus: (id: string) => invoke<ModelStatus>("model_status", { id }),
   installModel: (id: string) => invoke<void>("install_model", { id }),
-  deleteModel: (id: string) => invoke<void>("delete_model", { id }),
   probeAudio: (path: string) => invoke<number | null>("probe_audio", { path }),
   audioWaveform: (path: string, bins: number) => invoke<number[]>("audio_waveform", { path, bins }),
   loadAudioMeta: (path: string) => invoke<AudioMeta>("load_audio_meta", { path }),
@@ -35,12 +31,10 @@ export const api = {
     invoke<Transcript>("transcribe_file", { input, config }),
   redoDiarization: (input: string, oldCacheKey: string, config: Config) =>
     invoke<Transcript>("redo_diarization", { input, oldCacheKey, config }),
-  cancelTranscribe: (input: string) => invoke<boolean>("cancel_transcribe", { input }),
   cancelAllTranscribes: () => invoke<number>("cancel_all_transcribes"),
   historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
   suggestFilename: (transcript: Transcript) =>
     invoke<Suggestion>("suggest_filename", { transcript }),
-  logPath: () => invoke<string>("log_path"),
   logTail: (maxBytes?: number) => invoke<string>("log_tail", { maxBytes }),
   logClear: () => invoke<void>("log_clear"),
   resetTranscriptCache: () => invoke<number>("reset_transcript_cache"),
@@ -51,8 +45,6 @@ export const api = {
   renameFile: (source: string, newName: string) =>
     invoke<string>("rename_file", { source, newName }),
   deleteFile: (path: string) => invoke<void>("delete_file", { path }),
-  exportTranscript: (transcript: Transcript, dest: string, format: ExportFormat) =>
-    invoke<string>("export_transcript", { transcript, dest, format }),
   formatTranscript: (transcript: Transcript, format: ExportFormat) =>
     invoke<string>("format_transcript", { transcript, format }),
   shareTranscript: (title: string, text: string) =>

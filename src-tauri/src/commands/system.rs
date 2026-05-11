@@ -4,11 +4,6 @@ use serde::Serialize;
 
 use crate::paths;
 
-#[tauri::command]
-pub const fn app_version() -> &'static str {
-    env!("CARGO_PKG_VERSION")
-}
-
 #[derive(Serialize)]
 pub struct SystemInfo {
     pub os: &'static str,

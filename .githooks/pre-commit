@@ -10,24 +10,32 @@ cd "$(git rev-parse --show-toplevel)"
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -z "$staged" ] && exit 0
 
-rust_files=$(echo "$staged" | grep -E '^src-tauri/.*\.rs$' || true)
-ts_vue_files=$(echo "$staged" | grep -E '^src/.*\.(ts|vue)$' || true)
+tauri_rust_files=$(echo "$staged" | grep -E '^src-tauri/.*\.rs$' || true)
+xtask_rust_files=$(echo "$staged" | grep -E '^xtask/.*\.rs$' || true)
+ts_vue_files=$(echo "$staged" | grep -E '^(src|scripts)/.*\.(ts|vue)$' || true)
 prettier_other=$(echo "$staged" | grep -E '\.(json|jsonc|html|md|css|scss|yml|yaml)$' || true)
 
 ran_any=0
 
-if [ -n "$rust_files" ]; then
-  echo "→ rust: cargo fmt (auto-fix, touched files)"
-  echo "$rust_files" | xargs cargo fmt --manifest-path src-tauri/Cargo.toml --
-  echo "$rust_files" | xargs git add
+if [ -n "$tauri_rust_files" ]; then
+  echo "→ rust: cargo fmt src-tauri (auto-fix, touched files)"
+  echo "$tauri_rust_files" | xargs cargo fmt --manifest-path src-tauri/Cargo.toml --
+  echo "$tauri_rust_files" | xargs git add
+  ran_any=1
+fi
+
+if [ -n "$xtask_rust_files" ]; then
+  echo "→ rust: cargo fmt xtask (auto-fix, touched files)"
+  echo "$xtask_rust_files" | xargs cargo fmt --manifest-path xtask/Cargo.toml --
+  echo "$xtask_rust_files" | xargs git add
   ran_any=1
 fi
 
 if [ -n "$ts_vue_files" ]; then
-  echo "→ ts/vue: prettier --write (auto-fix, touched files)"
+  echo "→ ts/vue/scripts: prettier --write (auto-fix, touched files)"
   echo "$ts_vue_files" | xargs bun x prettier --write --log-level warn
   echo "$ts_vue_files" | xargs git add
-  echo "→ ts/vue: typecheck (gate)"
+  echo "→ ts/vue/scripts: typecheck (gate)"
   bun run typecheck
   ran_any=1
 fi

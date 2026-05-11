@@ -116,11 +116,15 @@ pub fn run(args: Args) -> Result<()> {
             .into_iter()
             .map(|(name, f)| {
                 let l = lock.clone();
-                thread::spawn(move || (name, f(l)))
+                thread::spawn(move || {
+                    let rc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(l)))
+                        .unwrap_or(101);
+                    (name, rc)
+                })
             })
             .collect();
         for h in handles {
-            let (name, rc) = h.join().expect("thread panicked");
+            let (name, rc) = h.join().unwrap_or(("unknown", 101));
             results.insert(name, rc);
         }
     }
@@ -219,7 +223,7 @@ pub fn run(args: Args) -> Result<()> {
                 continue;
             }
             let lock_clone = shared_out();
-            let _ = run_streamed(
+            let rc = run_streamed(
                 "sig",
                 "bun",
                 &[
@@ -233,11 +237,15 @@ pub fn run(args: Args) -> Result<()> {
                 ],
                 &[],
                 &lock_clone,
-            );
-            let sig = p.with_extension(format!("{ext}.sig"));
-            if sig.exists() {
-                new_sigs.push(sig);
+            )?;
+            if rc != 0 {
+                bail!("signer failed for {} (exit {rc})", p.display());
             }
+            let sig = p.with_extension(format!("{ext}.sig"));
+            if !sig.exists() {
+                bail!("signer produced no signature for {}", p.display());
+            }
+            new_sigs.push(sig);
         }
         artifacts.extend(new_sigs);
     }
@@ -280,12 +288,15 @@ pub fn run(args: Args) -> Result<()> {
 fn prewarm() -> Result<()> {
     println!("→ pre-warm: cargo fetch");
     let lock = shared_out();
-    let _ = run_streamed(
+    let rc = run_streamed(
         "fetch",
         "cargo",
         &["fetch", "--manifest-path", "src-tauri/Cargo.toml"],
         &[],
         &lock,
-    );
+    )?;
+    if rc != 0 {
+        bail!("cargo fetch failed (exit {rc})");
+    }
     Ok(())
 }
