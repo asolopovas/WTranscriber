@@ -233,10 +233,7 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
 
     logfile::info(&format!(
         "cli run: device={} engine={} model={} lang={} diarize={} speakers={:?} inputs={}",
-        match config.device {
-            Device::Cpu => "cpu",
-            Device::Cuda => "cuda",
-        },
+        config.device.as_str(),
         config.engine.as_str(),
         config.model,
         config.language,

@@ -76,6 +76,16 @@ pub enum Device {
     Cuda,
 }
 
+impl Device {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Cpu => "cpu",
+            Self::Cuda => "cuda",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiarizerChoice {
@@ -263,10 +273,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn desktop_defaults_to_cuda() {
-        if cfg!(not(any(target_os = "android", target_os = "ios"))) {
+    fn desktop_defaults_to_cuda_when_cuda_feature_on() {
+        if cfg!(not(any(target_os = "android", target_os = "ios"))) && cfg!(feature = "cuda") {
             assert!(matches!(Config::default().device, Device::Cuda));
         }
+    }
+
+    #[test]
+    fn desktop_defaults_to_cpu_when_cuda_feature_off() {
+        if cfg!(not(any(target_os = "android", target_os = "ios"))) && !cfg!(feature = "cuda") {
+            assert!(matches!(Config::default().device, Device::Cpu));
+        }
+    }
+
+    #[test]
+    fn device_as_str_matches_serde_label() {
+        assert_eq!(Device::Cpu.as_str(), "cpu");
+        assert_eq!(Device::Cuda.as_str(), "cuda");
     }
 
     #[test]

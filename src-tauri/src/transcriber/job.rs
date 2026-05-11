@@ -35,6 +35,7 @@ use crate::{
 };
 
 const DEFAULT_SLAB_SEC: f64 = 60.0;
+const EPSILON_SEC: f64 = 1e-3;
 
 fn slab_sec() -> f64 {
     std::env::var("WT_SLAB_SEC")
@@ -188,7 +189,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             cancel_flag.store(true, Ordering::SeqCst);
             return Err(crate::error::Error::Cancelled);
         }
-        if region.end_sec <= state.last_done_sec + 0.001 {
+        if region.end_sec <= state.last_done_sec + EPSILON_SEC {
             emit_pct(sink, region.end_sec, trimmed_dur_sec);
             return Ok(());
         }
@@ -205,7 +206,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         let mut save_err: Option<crate::error::Error> = None;
         let mut on_chunk = |mut segs: Vec<Segment>, chunk_end_sec: f64| {
             let abs_end = (region_start_sec + chunk_end_sec).min(region_end_sec);
-            if abs_end <= resume_floor + 0.001 {
+            if abs_end <= resume_floor + EPSILON_SEC {
                 return;
             }
             let before = segs.len();
@@ -299,7 +300,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     } else {
         0.0
     };
-    let device_label = format!("{:?}", config.device).to_lowercase();
+    let device_label = config.device.as_str().to_owned();
     if observed_rtf > 0.0 {
         progress::save_rtf(&config.model, &device_label, observed_rtf);
     }
@@ -425,7 +426,7 @@ fn emit_pct(sink: &dyn Sink, done_sec: f64, total_sec: f64) {
     sink.report_pct(Phase::Transcribing, pct);
 }
 
-fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
+pub(crate) fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
     if offset_ms == 0 {
         return;
     }
@@ -480,7 +481,7 @@ fn run_diarize_streaming(
     }
 }
 
-fn apply_dedup(segments: &mut Vec<Segment>) {
+pub(crate) fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
         if seg.tokens.len() >= 2 {
             let collapsed = dedup::collapse_repeats(&seg.tokens);
@@ -495,7 +496,7 @@ fn apply_dedup(segments: &mut Vec<Segment>) {
     segments.retain(|s| !s.tokens.is_empty() || !s.text.trim().is_empty());
 }
 
-fn rebuild_from_tokens(seg: &mut Segment) {
+pub(crate) fn rebuild_from_tokens(seg: &mut Segment) {
     if seg.tokens.is_empty() {
         seg.text.clear();
         return;
@@ -508,4 +509,165 @@ fn rebuild_from_tokens(seg: &mut Segment) {
         .join(" ");
     seg.start_ms = seg.tokens.first().unwrap().start_ms;
     seg.end_ms = seg.tokens.last().unwrap().end_ms;
+}
+
+#[cfg(test)]
+#[allow(unsafe_code)]
+mod tests {
+    use super::*;
+    use crate::transcriber::transcript::Token;
+    use std::sync::Mutex;
+
+    // Serialise env-var mutations across parallel test threads.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn set_env(key: &str, value: &str) {
+        // SAFETY: caller holds ENV_LOCK.
+        unsafe {
+            std::env::set_var(key, value);
+        }
+    }
+
+    fn unset_env(key: &str) {
+        // SAFETY: see `set_env`.
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+
+    fn tok(text: &str, start: u64, end: u64) -> Token {
+        Token {
+            text: text.into(),
+            start_ms: start,
+            end_ms: end,
+            confidence: 1.0,
+        }
+    }
+
+    fn seg(text: &str, start: u64, end: u64, tokens: Vec<Token>) -> Segment {
+        Segment {
+            text: text.into(),
+            start_ms: start,
+            end_ms: end,
+            tokens,
+        }
+    }
+
+    #[test]
+    fn slab_sec_env_handling() {
+        let _g = ENV_LOCK.lock().unwrap();
+
+        unset_env("WT_SLAB_SEC");
+        assert!((slab_sec() - DEFAULT_SLAB_SEC).abs() < f64::EPSILON);
+
+        for invalid in ["0", "-5", "not-a-number"] {
+            set_env("WT_SLAB_SEC", invalid);
+            assert!(
+                (slab_sec() - DEFAULT_SLAB_SEC).abs() < f64::EPSILON,
+                "input {invalid:?} should fall back to default"
+            );
+        }
+
+        set_env("WT_SLAB_SEC", "30");
+        assert!((slab_sec() - 30.0).abs() < f64::EPSILON);
+
+        unset_env("WT_SLAB_SEC");
+    }
+
+    #[test]
+    fn shift_segments_no_op_when_offset_zero() {
+        let mut segs = vec![seg("hi", 100, 200, vec![tok("hi", 100, 200)])];
+        let before = segs.clone();
+        shift_segments(&mut segs, 0);
+        assert_eq!(segs[0].start_ms, before[0].start_ms);
+        assert_eq!(segs[0].end_ms, before[0].end_ms);
+        assert_eq!(segs[0].tokens[0].start_ms, before[0].tokens[0].start_ms);
+    }
+
+    #[test]
+    fn shift_segments_adds_offset_to_segments_and_tokens() {
+        let mut segs = vec![seg("x", 10, 20, vec![tok("x", 10, 15), tok("y", 16, 20)])];
+        shift_segments(&mut segs, 1_000);
+        assert_eq!(segs[0].start_ms, 1_010);
+        assert_eq!(segs[0].end_ms, 1_020);
+        assert_eq!(segs[0].tokens[0].start_ms, 1_010);
+        assert_eq!(segs[0].tokens[1].end_ms, 1_020);
+    }
+
+    #[test]
+    fn shift_segments_saturates_at_u64_max() {
+        let mut segs = vec![seg("x", u64::MAX - 5, u64::MAX - 1, vec![])];
+        shift_segments(&mut segs, 1_000);
+        assert_eq!(segs[0].start_ms, u64::MAX);
+        assert_eq!(segs[0].end_ms, u64::MAX);
+    }
+
+    #[test]
+    fn rebuild_from_tokens_clears_when_empty() {
+        let mut s = seg("stale", 100, 200, vec![]);
+        rebuild_from_tokens(&mut s);
+        assert!(s.text.is_empty());
+    }
+
+    #[test]
+    fn rebuild_from_tokens_recomputes_bounds_and_text() {
+        let mut s = seg(
+            "old",
+            999,
+            999,
+            vec![tok("hello", 10, 20), tok("world", 21, 30)],
+        );
+        rebuild_from_tokens(&mut s);
+        assert_eq!(s.text, "hello world");
+        assert_eq!(s.start_ms, 10);
+        assert_eq!(s.end_ms, 30);
+    }
+
+    #[test]
+    fn apply_dedup_removes_empty_segments() {
+        let mut segs = vec![
+            seg("", 0, 0, vec![]),
+            seg("ok", 10, 20, vec![tok("ok", 10, 20)]),
+            seg("   ", 30, 40, vec![]),
+        ];
+        apply_dedup(&mut segs);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "ok");
+    }
+
+    #[test]
+    fn apply_dedup_collapses_token_repeats_and_rebuilds() {
+        // dedup needs >= 4 unigram repeats to collapse (see MIN_RUN_BY_N1).
+        let mut segs = vec![seg(
+            "the the the the",
+            100,
+            500,
+            vec![
+                tok("the", 100, 200),
+                tok("the", 200, 300),
+                tok("the", 300, 400),
+                tok("the", 400, 500),
+            ],
+        )];
+        apply_dedup(&mut segs);
+        assert_eq!(segs.len(), 1);
+        // After collapse + rebuild_from_tokens, text matches the surviving tokens.
+        assert_eq!(segs[0].tokens.len(), 1);
+        assert_eq!(segs[0].text, "the");
+        assert_eq!(segs[0].start_ms, 100);
+        assert_eq!(segs[0].end_ms, 200);
+    }
+
+    #[test]
+    fn apply_dedup_collapses_in_plain_text_when_no_tokens() {
+        // No tokens path — collapse_in_text trims and dedups.
+        let mut segs = vec![seg("hello hello hello hello world", 0, 100, vec![])];
+        apply_dedup(&mut segs);
+        assert_eq!(segs.len(), 1);
+        assert!(
+            !segs[0].text.contains("hello hello"),
+            "dedup should leave at most one 'hello' run, got {:?}",
+            segs[0].text
+        );
+    }
 }

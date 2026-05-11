@@ -277,3 +277,63 @@ fn nemo_ctc_config(
         ..OfflineRecognizerConfig::default()
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, Device, Engine};
+
+    fn cfg(model: &str, engine: Engine, device: Device, threads: u32, lang: &str) -> Config {
+        Config {
+            model: model.into(),
+            engine,
+            device,
+            threads,
+            language: lang.into(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn key_equal_when_relevant_fields_match() {
+        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn key_differs_when_model_differs() {
+        let a = key_for(&cfg("m1", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m2", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn key_differs_when_engine_differs() {
+        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn key_differs_when_device_differs() {
+        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cuda, 4, "en"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn key_differs_when_threads_differ() {
+        // Threads materially change recognizer construction; cache must miss.
+        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 8, "en"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn key_differs_when_language_differs() {
+        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "ru"));
+        assert_ne!(a, b);
+    }
+}

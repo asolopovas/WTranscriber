@@ -468,7 +468,7 @@ fn prepare_transcribe_run(
     crate::android_start_transcription_service(&format!("Transcribing {display_name}"));
     let audio_dur_sec =
         audio::probe_duration_ms(input).map_or(1.0, |ms| (ms as f64 / 1000.0).max(1.0));
-    let device_label = format!("{:?}", config.device).to_lowercase();
+    let device_label = config.device.as_str().to_owned();
     let expect_diarize = config.diarize;
     let diarize_backend_hint = if expect_diarize {
         config.diarizer.as_str().to_string()
@@ -691,7 +691,7 @@ pub async fn redo_diarization(
     } else {
         1.0
     };
-    let device_label = format!("{:?}", config.device).to_lowercase();
+    let device_label = config.device.as_str().to_owned();
     let initial_rtf = progress::load_rtf(&config.model, &device_label);
     let diarize_backend_hint = config.diarizer.as_str().to_string();
     let diarize_prior_rtf = progress::load_diarize_rtf(&diarize_backend_hint);
