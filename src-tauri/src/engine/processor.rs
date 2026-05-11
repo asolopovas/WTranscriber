@@ -1,14 +1,71 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
+    config::Config,
     error::{Error, Result},
     transcriber::Segment,
 };
 
 use super::{
-    chunk::{ChunkProcessor, segments_from_sherpa},
-    sherpa::{parse_json, run_cmd},
+    chunk::{ChunkProcessor, run_chunked, run_single, segments_from_sherpa},
+    runtime,
+    sherpa::{find_binary, parse_json, run_cmd},
 };
+
+/// Whether the engine wants the audio chunked (Whisper) or processed in a
+/// single shot (Zipformer / Parakeet / Canary / NeMo-CTC).
+#[derive(Debug, Clone, Copy)]
+pub enum ChunkStrategy {
+    Whisper,
+    Single,
+}
+
+/// One subprocess invocation of `sherpa-onnx-offline`. Each engine produces a
+/// `SubprocessSpec` describing only its model-specific flags; this helper
+/// appends the shared tail (`--num-threads`, `--provider`, `<wav>`), resolves
+/// the binary once, and routes the audio through the right chunking driver.
+pub struct SubprocessSpec<'a> {
+    pub model_args: Vec<String>,
+    pub config: &'a Config,
+    pub strategy: ChunkStrategy,
+    pub cancelled: &'a dyn Fn() -> bool,
+}
+
+impl<'a> SubprocessSpec<'a> {
+    pub fn execute(
+        self,
+        samples: &[f32],
+        audio_dur_sec: f64,
+        on_progress: &mut dyn FnMut(f64),
+    ) -> Result<(Vec<Segment>, f64)> {
+        let bin = find_binary()?;
+        let Self {
+            model_args,
+            config,
+            strategy,
+            cancelled,
+        } = self;
+        // Snapshot config-derived numbers up front so the closure stays
+        // `Fn` (called once per slab) and doesn't need to borrow `config`.
+        let threads = runtime::threads(config);
+        let provider = runtime::provider(config).as_arg();
+        let processor = Processor {
+            bin,
+            build_args: Box::new(move |wav| {
+                let mut a = model_args.clone();
+                a.push(format!("--num-threads={threads}"));
+                a.push(format!("--provider={provider}"));
+                a.push(wav.display().to_string());
+                a
+            }),
+            cancelled,
+        };
+        match strategy {
+            ChunkStrategy::Whisper => run_chunked(samples, audio_dur_sec, processor, on_progress),
+            ChunkStrategy::Single => run_single(samples, audio_dur_sec, processor, on_progress),
+        }
+    }
+}
 
 pub type ArgsBuilder<'a> = Box<dyn Fn(&Path) -> Vec<String> + 'a>;
 

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     config::Config,
-    engine::{chunk::run_chunked, processor::Processor, runtime, sherpa::find_binary},
+    engine::processor::{ChunkStrategy, SubprocessSpec},
     error::{Error, Result},
     transcriber::Segment,
 };
@@ -49,31 +49,24 @@ pub fn run(
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
-    let bin = find_binary()?;
     let paths = resolve_paths(&config.model)?;
     let language = language_arg(config);
-    let language_for_args = language.clone();
-
-    let processor = Processor {
-        bin,
-        build_args: Box::new(move |wav| {
-            let mut a = vec![
-                format!("--whisper-encoder={}", paths.encoder.display()),
-                format!("--whisper-decoder={}", paths.decoder.display()),
-                format!("--tokens={}", paths.tokens.display()),
-                format!("--num-threads={}", runtime::threads(config)),
-                format!("--provider={}", runtime::provider(config).as_arg()),
-                "--model-type=whisper".into(),
-            ];
-            if let Some(lang) = language_for_args.as_deref() {
-                a.push(format!("--whisper-language={lang}"));
-            }
-            a.push(wav.display().to_string());
-            a
-        }),
+    let mut model_args = vec![
+        format!("--whisper-encoder={}", paths.encoder.display()),
+        format!("--whisper-decoder={}", paths.decoder.display()),
+        format!("--tokens={}", paths.tokens.display()),
+        "--model-type=whisper".into(),
+    ];
+    if let Some(ref lang) = language {
+        model_args.push(format!("--whisper-language={lang}"));
+    }
+    let (segs, rtf) = SubprocessSpec {
+        model_args,
+        config,
+        strategy: ChunkStrategy::Whisper,
         cancelled,
-    };
-    let (segs, rtf) = run_chunked(samples, audio_dur_sec, processor, on_progress)?;
+    }
+    .execute(samples, audio_dur_sec, on_progress)?;
     let detected = language.unwrap_or_else(|| config.language.clone());
     Ok((segs, detected, rtf))
 }

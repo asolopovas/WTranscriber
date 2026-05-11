@@ -2,12 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     config::Config,
-    engine::{
-        chunk::run_single,
-        processor::{Processor, resolve_variant},
-        runtime,
-        sherpa::find_binary,
-    },
+    engine::processor::{ChunkStrategy, SubprocessSpec, resolve_variant},
     error::Result,
     transcriber::Segment,
 };
@@ -62,28 +57,23 @@ pub fn run(
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
-    let bin = find_binary()?;
     let paths = resolve(&config.model)?;
-    let processor = Processor {
-        bin,
-        build_args: Box::new(move |wav| {
-            let mut a = vec![
-                format!("--tokens={}", paths.tokens.display()),
-                format!("--encoder={}", paths.encoder.display()),
-                format!("--decoder={}", paths.decoder.display()),
-                format!("--joiner={}", paths.joiner.display()),
-                format!("--num-threads={}", runtime::threads(config)),
-                "--decoding-method=greedy_search".into(),
-                format!("--provider={}", runtime::provider(config).as_arg()),
-            ];
-            if let Some(mt) = kind.model_type() {
-                a.push(format!("--model-type={mt}"));
-            }
-            a.push(wav.display().to_string());
-            a
-        }),
+    let mut model_args = vec![
+        format!("--tokens={}", paths.tokens.display()),
+        format!("--encoder={}", paths.encoder.display()),
+        format!("--decoder={}", paths.decoder.display()),
+        format!("--joiner={}", paths.joiner.display()),
+        "--decoding-method=greedy_search".into(),
+    ];
+    if let Some(mt) = kind.model_type() {
+        model_args.push(format!("--model-type={mt}"));
+    }
+    let (segs, rtf) = SubprocessSpec {
+        model_args,
+        config,
+        strategy: ChunkStrategy::Single,
         cancelled,
-    };
-    let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
+    }
+    .execute(samples, audio_dur_sec, on_progress)?;
     Ok((segs, "en".into(), rtf))
 }

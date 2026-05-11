@@ -2,12 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     config::Config,
-    engine::{
-        chunk::run_single,
-        processor::{Processor, resolve_variant},
-        runtime,
-        sherpa::find_binary,
-    },
+    engine::processor::{ChunkStrategy, SubprocessSpec, resolve_variant},
     error::Result,
     transcriber::Segment,
 };
@@ -44,23 +39,19 @@ pub fn run(
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
-    let bin = find_binary()?;
     let paths = resolve(&config.model)?;
-    let processor = Processor {
-        bin,
-        build_args: Box::new(move |wav| {
-            vec![
-                format!("--nemo-ctc-model={}", paths.model.display()),
-                format!("--tokens={}", paths.tokens.display()),
-                format!("--num-threads={}", runtime::threads(config)),
-                format!("--provider={}", runtime::provider(config).as_arg()),
-                "--model-type=nemo_ctc".into(),
-                wav.display().to_string(),
-            ]
-        }),
+    let model_args = vec![
+        format!("--nemo-ctc-model={}", paths.model.display()),
+        format!("--tokens={}", paths.tokens.display()),
+        "--model-type=nemo_ctc".into(),
+    ];
+    let (segs, rtf) = SubprocessSpec {
+        model_args,
+        config,
+        strategy: ChunkStrategy::Single,
         cancelled,
-    };
-    let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
+    }
+    .execute(samples, audio_dur_sec, on_progress)?;
     let lang = config.language.trim().to_lowercase();
     let detected = if lang == "auto" || lang.is_empty() {
         String::new()

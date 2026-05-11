@@ -2,12 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     config::Config,
-    engine::{
-        chunk::run_single,
-        processor::{Processor, resolve_variant},
-        runtime,
-        sherpa::find_binary,
-    },
+    engine::processor::{ChunkStrategy, SubprocessSpec, resolve_variant},
     error::Result,
     transcriber::Segment,
 };
@@ -54,27 +49,22 @@ pub fn run(
     on_progress: &mut dyn FnMut(f64),
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
-    let bin = find_binary()?;
     let paths = resolve(&config.model)?;
     let lang = canary_lang(config);
-    let lang_for_args = lang.clone();
-    let processor = Processor {
-        bin,
-        build_args: Box::new(move |wav| {
-            vec![
-                format!("--canary-encoder={}", paths.encoder.display()),
-                format!("--canary-decoder={}", paths.decoder.display()),
-                format!("--tokens={}", paths.tokens.display()),
-                format!("--canary-src-lang={lang_for_args}"),
-                format!("--canary-tgt-lang={lang_for_args}"),
-                "--canary-use-pnc=true".into(),
-                format!("--num-threads={}", runtime::threads(config)),
-                format!("--provider={}", runtime::provider(config).as_arg()),
-                wav.display().to_string(),
-            ]
-        }),
+    let model_args = vec![
+        format!("--canary-encoder={}", paths.encoder.display()),
+        format!("--canary-decoder={}", paths.decoder.display()),
+        format!("--tokens={}", paths.tokens.display()),
+        format!("--canary-src-lang={lang}"),
+        format!("--canary-tgt-lang={lang}"),
+        "--canary-use-pnc=true".into(),
+    ];
+    let (segs, rtf) = SubprocessSpec {
+        model_args,
+        config,
+        strategy: ChunkStrategy::Single,
         cancelled,
-    };
-    let (segs, rtf) = run_single(samples, audio_dur_sec, processor, on_progress)?;
+    }
+    .execute(samples, audio_dur_sec, on_progress)?;
     Ok((segs, lang, rtf))
 }
