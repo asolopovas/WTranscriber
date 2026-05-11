@@ -13,7 +13,6 @@ pub fn probe_duration_ms(path: &std::path::Path) -> Option<u64> {
     ffmpeg::probe_duration_ms(path).or_else(|| decode::probe_duration_ms(path))
 }
 pub use meta::AudioMeta;
-#[allow(unused_imports, dead_code)]
 pub use wav::write_pcm16_wav;
 pub use wav::{WHISPER_SAMPLE_RATE, read_pcm16_wav};
 
