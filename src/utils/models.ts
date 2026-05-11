@@ -7,6 +7,30 @@ export const DIARIZER_BY_MODEL_ID: Record<string, DiarizerChoice> = {
   "sherpa-pyannote-titanet": "titanet",
 };
 
+export interface DiarizerOption {
+  value: DiarizerChoice;
+  label: string;
+  desktopOnly?: boolean;
+}
+
+export const DIARIZER_OPTIONS: readonly DiarizerOption[] = [
+  {
+    value: "sortformer-onnx",
+    label: "NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)",
+    desktopOnly: true,
+  },
+  { value: "titanet", label: "pyannote-3.0 + TitaNet-Large" },
+  {
+    value: "nemo",
+    label: "NVIDIA NeMo Sortformer (Python, legacy)",
+    desktopOnly: true,
+  },
+];
+
+export function availableDiarizerOptions(isMobile: boolean): readonly DiarizerOption[] {
+  return isMobile ? DIARIZER_OPTIONS.filter((option) => !option.desktopOnly) : DIARIZER_OPTIONS;
+}
+
 export function diarizerSpeakerCap(choice: DiarizerChoice): number {
   return choice === "nemo" || choice === "sortformer-onnx" ? 4 : 10;
 }

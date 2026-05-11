@@ -4,7 +4,11 @@ import type { DiarizerChoice, SystemInfo } from "@/types";
 import Modal from "@components/ui/Modal.vue";
 import Button from "@components/ui/Button.vue";
 import { fieldClass } from "@styles/fields";
-import { diarizerSpeakerCap, speakerOptionsForDiarizer } from "@utils/models";
+import {
+  availableDiarizerOptions,
+  diarizerSpeakerCap,
+  speakerOptionsForDiarizer,
+} from "@utils/models";
 
 const props = defineProps<{ sys: SystemInfo | null }>();
 const open = defineModel<boolean>("open", { required: true });
@@ -13,6 +17,7 @@ const speakers = defineModel<number>("speakers", { required: true });
 
 const emit = defineEmits<{ (e: "commit"): void }>();
 
+const diarizerOptions = computed(() => availableDiarizerOptions(!!props.sys?.is_mobile));
 const speakerOptions = computed(() => speakerOptionsForDiarizer(diarizer.value));
 
 function onDiarizerChange(value: DiarizerChoice) {
@@ -36,12 +41,8 @@ function onDiarizerChange(value: DiarizerChoice) {
             :class="fieldClass"
             @change="onDiarizerChange(($event.target as HTMLSelectElement).value as DiarizerChoice)"
           >
-            <option v-if="!props.sys?.is_mobile" value="sortformer-onnx">
-              NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)
-            </option>
-            <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
-            <option v-if="!props.sys?.is_mobile" value="nemo">
-              NVIDIA NeMo Sortformer (Python, legacy)
+            <option v-for="option in diarizerOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
             </option>
           </select>
         </label>

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { api } from "@/api";
 
 type Level = "error" | "warn" | "info";
 
@@ -14,7 +14,7 @@ interface Payload {
 let installed = false;
 
 function send(p: Payload): void {
-  invoke("log_renderer", { ...p }).catch(() => {});
+  api.logRenderer(p).catch(() => {});
 }
 
 function describe(value: unknown): { message: string; stack?: string } {

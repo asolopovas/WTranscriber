@@ -4,6 +4,7 @@ import {
   applyAsrModel,
   applyMissingModelDefaults,
   applySystemConfigDefaults,
+  availableDiarizerOptions,
   defaultModel,
   diarizerSpeakerCap,
   modelIdForDiarizer,
@@ -85,6 +86,15 @@ describe("model helpers", () => {
   it("maps diarizer choices to model ids", () => {
     expect(modelIdForDiarizer("nemo")).toBe("nemo-sortformer-v2");
     expect(modelIdForDiarizer("titanet")).toBe("sherpa-pyannote-titanet");
+  });
+
+  it("filters diarizer options by platform", () => {
+    expect(availableDiarizerOptions(false).map((option) => option.value)).toEqual([
+      "sortformer-onnx",
+      "titanet",
+      "nemo",
+    ]);
+    expect(availableDiarizerOptions(true).map((option) => option.value)).toEqual(["titanet"]);
   });
 
   it("builds speaker options for each diarizer cap", () => {

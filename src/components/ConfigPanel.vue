@@ -10,7 +10,11 @@ import type {
   Transcript,
 } from "@/types";
 import { decodeName, phaseLabel } from "@utils/audio";
-import { speakerOptionsForDiarizer, syncAsrEngineAndModel } from "@utils/models";
+import {
+  availableDiarizerOptions,
+  speakerOptionsForDiarizer,
+  syncAsrEngineAndModel,
+} from "@utils/models";
 import { fmtClock, fmtMsLong, MB } from "@utils/format";
 import { fieldClass } from "@styles/fields";
 import { useMediaQuery } from "@composables/useMediaQuery";
@@ -84,6 +88,7 @@ async function installSelectedModel() {
   }
 }
 
+const diarizerOptions = computed(() => availableDiarizerOptions(!!props.sys?.is_mobile));
 const speakerOptions = computed(() => speakerOptionsForDiarizer(props.config.diarizer));
 
 const languageOptions = computed(() => {
@@ -272,12 +277,8 @@ const headerAriaLabel = computed(() => {
               :disabled="!config.diarize"
               :class="[fieldClass, !config.diarize ? 'opacity-50' : '']"
             >
-              <option v-if="!sys?.is_mobile" value="sortformer-onnx">
-                NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)
-              </option>
-              <option value="titanet">pyannote-3.0 + TitaNet-Large</option>
-              <option v-if="!sys?.is_mobile" value="nemo">
-                NVIDIA NeMo Sortformer (Python, legacy)
+              <option v-for="option in diarizerOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
               </option>
             </select>
           </FormField>
