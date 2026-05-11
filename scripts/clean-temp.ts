@@ -132,9 +132,7 @@ const main = async (): Promise<void> => {
     console.error(
       `refusing to clean while the project dev session is active: ${active.join(", ")}`,
     );
-    console.error(
-      "run `just android-stop` first, or use `just clean-force` if the pid file is stale",
-    );
+    console.error("run `just android-stop` first, or pass --force if the pid file is stale");
     process.exit(2);
   }
 

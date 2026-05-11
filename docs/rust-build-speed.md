@@ -39,3 +39,13 @@ Cold build: ~210 s. Floor is the single-threaded link of statically-bundled `she
 
 - `cargo tree --duplicate` after `cargo update` — flag duplicate versions.
 - `tokio = { features = ["full"] }` is the heaviest feature flag.
+
+## Cache hygiene
+
+`src-tauri/target` reaches 15–20 GB in normal use (debug ~6 GB, release ~11 GB).
+
+- `just clean` — full nuke: `tmp/`, `src-tauri/target`, `xtask/target`, `dist`, `node_modules`. Next build is fully cold (~210 s for release).
+- For surgical reclaim without wiping deps: `cargo clean --release --manifest-path src-tauri/Cargo.toml` reclaims ~11 GB; one cold release build to refill.
+- `~/.cargo` registry/git caches can be trimmed with `cargo cache -a` (needs `cargo-cache`).
+
+`target/sherpa-onnx-prebuilt/` (~900 MB) is a download cache for the prebuilt sherpa-onnx binaries, **not** managed by cargo. Deleting it forces a re-download on the next build.

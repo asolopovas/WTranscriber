@@ -305,19 +305,11 @@ _ensure-audit:
 # ─── clean ────────────────────────────────────────────────────────────────────
 
 [group('clean')]
-clean-temp *args:
-    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.ts {{args}}
-
-[group('clean')]
-clean: clean-temp
+clean:
+    {{_run}} --tag clean-temp --idle 30 --max 120 -- bun scripts/clean-temp.ts --force
     {{_run}} --tag clean-rust --idle 60 --max 300 -- cargo clean --manifest-path src-tauri/Cargo.toml
     {{_run}} --tag clean-xtask --idle 30 --max 120 -- cargo clean --manifest-path xtask/Cargo.toml
     {{_run}} --tag clean-node --idle 30 --max 120 -- node -e "const{rmSync}=require('fs');for(const p of ['dist','node_modules']){try{rmSync(p,{recursive:true,force:true,maxRetries:3,retryDelay:100});console.log('removed '+p)}catch(e){console.error(p+': '+e.message);process.exit(1)}}"
-
-[group('clean')]
-clean-force:
-    {{_run}} --tag clean-force --idle 30 --max 120 -- bun scripts/clean-temp.ts --force
-    @just clean
 
 # ─── icons ────────────────────────────────────────────────────────────────────
 

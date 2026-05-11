@@ -23,8 +23,9 @@ agents.
 ## Rules
 
 - **Never `rm -rf tmp/` while a dev session is live** — kills the
-  liveness contract. Use `just android-stop` first, then `just clean-temp`.
-- **`clean-temp` is safe between turns**; the next bootstrap recreates
+  liveness contract. Use `just android-stop` first, then run the
+  `clean-temp.ts` script.
+- **`clean-temp.ts` is safe between turns**; the next bootstrap recreates
   everything it needs.
 - **`tmp/_pids.json` exists ⇒ `:1420` belongs to Vite.** Do not run
   `just android-install`, `just android-build`, `cargo tauri build`, or
@@ -36,10 +37,11 @@ agents.
 ## Cleanup
 
 ```bash
-just clean-temp             # remove tmp/ + agent session scratch (safe between turns)
-just clean-temp --dry-run   # preview without deleting
-just clean-temp --force     # ignore safety checks (rare)
+bun scripts/clean-temp.ts             # remove tmp/ + agent session scratch (safe between turns)
+bun scripts/clean-temp.ts --dry-run   # preview without deleting
+bun scripts/clean-temp.ts --force     # ignore safety checks (rare)
+just clean                            # full nuke: tmp/ + cargo target + node_modules + dist
 ```
 
 `tmp/` is gitignored. Diagnose notes worth keeping should be moved
-elsewhere (e.g. attach to a PR description) before running `clean-temp`.
+elsewhere (e.g. attach to a PR description) before running the script.
