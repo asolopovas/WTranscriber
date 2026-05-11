@@ -115,10 +115,15 @@ diagnose-crash:
 
 # ─── build ────────────────────────────────────────────────────────────────────
 
-# Full bundle (NSIS on Windows, .deb on Linux); sherpa statically linked, GPU via sidecar CLI.
+# Full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host.
 [group('build')]
 build:
-    {{_run}} --tag build --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
+    {{_run}} --tag build --idle 180 --max 3600 -- cargo xtask release --dev
+
+# Native single-platform bundle (NSIS on Windows, .deb on Linux); used by the Windows VM helper.
+[group('build')]
+build-host:
+    {{_run}} --tag build-host --idle 180 --max 1800 -- bun run tauri build -- --no-default-features --features sherpa-static
 
 # Fast iteration build: Tauri-patched binary, no installer.
 [group('build')]
@@ -343,7 +348,6 @@ nemo-deps:
 
 [group('release')]
 release:
-    {{_run}} --tag release-dev --idle 180 --max 3600 -- cargo xtask release --dev
     {{_run}} --tag publish-dev --idle 180 --max 1800 -- cargo xtask publish dev
 
 [group('release')]

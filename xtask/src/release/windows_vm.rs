@@ -54,13 +54,6 @@ pub(super) fn build_windows_vm(
         }
     }
     let sha = git_short_sha()?;
-    let push = run_streamed("win", "git", &["push", "origin", "HEAD"], &[], lock)?;
-    if push != 0 {
-        eprintln!(
-            "[win] git push origin HEAD failed (exit {push}) — VM cannot fetch latest commit"
-        );
-        return Ok(push);
-    }
     let helper_local = root().join("scripts").join("wt-windows-build.bat");
     if !helper_local.exists() {
         bail!(
@@ -68,7 +61,30 @@ pub(super) fn build_windows_vm(
             helper_local.display()
         );
     }
-    let rc = build_windows_vm_once(cfg, &sha, &helper_local, lock)?;
+    let archive_local = root().join("tmp").join("wt-windows-source.tar.gz");
+    fs::create_dir_all(archive_local.parent().expect("target has parent"))?;
+    eprintln!(
+        "[win] packaging source @ {sha} → {}",
+        archive_local.display()
+    );
+    let archive_rc = run_streamed(
+        "win",
+        "git",
+        &[
+            "archive",
+            "--format=tar.gz",
+            "-o",
+            archive_local.to_string_lossy().as_ref(),
+            "HEAD",
+        ],
+        &[],
+        lock,
+    )?;
+    if archive_rc != 0 {
+        eprintln!("[win] git archive failed (exit {archive_rc})");
+        return Ok(archive_rc);
+    }
+    let rc = build_windows_vm_once(cfg, &sha, &helper_local, &archive_local, lock)?;
     if rc == 0 {
         return Ok(0);
     }
@@ -78,13 +94,14 @@ pub(super) fn build_windows_vm(
         return Ok(rc);
     }
     eprintln!("[win] retrying build after restart");
-    build_windows_vm_once(cfg, &sha, &helper_local, lock)
+    build_windows_vm_once(cfg, &sha, &helper_local, &archive_local, lock)
 }
 
 fn build_windows_vm_once(
     cfg: &WindowsVmConfig,
     sha: &str,
     helper_local: &Path,
+    archive_local: &Path,
     lock: &SharedOut,
 ) -> Result<i32> {
     let mkdir_script = format!(
@@ -108,11 +125,32 @@ fn build_windows_vm_once(
         eprintln!("[win] scp helper to VM failed (exit {scp})");
         return Ok(scp);
     }
+    let archive_remote_path = format!("{}\\wt-source.tar.gz", cfg.remote_work_dir);
+    let archive_remote_scp = format!(
+        "{}:{}",
+        cfg.ssh_host,
+        windows_path_for_scp(&archive_remote_path)
+    );
+    let scp_src = run_streamed(
+        "win",
+        "scp",
+        &[
+            archive_local.to_string_lossy().as_ref(),
+            &archive_remote_scp,
+        ],
+        &[],
+        lock,
+    )?;
+    if scp_src != 0 {
+        eprintln!("[win] scp source archive to VM failed (exit {scp_src})");
+        return Ok(scp_src);
+    }
     let build_cmd = format!(
-        "cmd /c \"\"{}\" {} \"{}\"\"",
+        "cmd /c \"\"{}\" {} \"{}\" \"{}\"\"",
         cfg.helper_remote_cmd_path(),
         sha,
-        cfg.remote_repo_dir
+        cfg.remote_repo_dir,
+        archive_remote_path
     );
     run_streamed("win", "ssh", &[&cfg.ssh_host, &build_cmd], &[], lock)
 }

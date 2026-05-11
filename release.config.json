@@ -3,7 +3,7 @@
     "sshHost": "windows-vm",
     "vmDir": "~/vms/win11",
     "startCommand": ["make", "-C", "{vmDir}", "up"],
-    "restartCommand": ["make", "-C", "{vmDir}", "restart"],
+    "restartCommand": ["sh", "-c", "make -C {vmDir} down && make -C {vmDir} up"],
     "sshReadyCommand": "$PSVersionTable.PSVersion.ToString(); hostname",
     "remoteWorkDir": "C:\\wt-build",
     "remoteRepoDir": "C:\\WTranscriber",

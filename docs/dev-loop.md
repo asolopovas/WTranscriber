@@ -22,7 +22,8 @@ Linux and Windows are the supported hosts. macOS works via Tauri (`bundle.target
 just dev          # HMR
 just dev-cpu      # HMR with sherpa-static (no CUDA)
 just build-app    # fast no-bundle build
-just build        # full bundle (NSIS on Windows, .deb on Linux, .app on macOS)
+just build        # full release matrix (Linux + Windows + Android); host auto-detected
+just build-host   # native single-platform bundle (NSIS on Windows, .deb on Linux)
 just check        # parallel pre-release gate
 just e2e          # Playwright UI tests (Vite + mocked Tauri IPC)
 ```

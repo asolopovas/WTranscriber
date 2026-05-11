@@ -23,7 +23,9 @@ use crate::util::{
 type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);
 
 #[derive(ClapArgs)]
-#[command(about = "Build release artifacts (host + Android + WSL deb on Windows)")]
+#[command(
+    about = "Build the full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host: Linux builds Windows via the configured VM, Windows builds Linux via WSL"
+)]
 pub struct Args {
     #[arg(long)]
     pub dev: bool,
@@ -82,20 +84,22 @@ pub fn run(args: Args) -> Result<()> {
             Box::new(move |_| build_android(skip, dev, &l).unwrap_or(127)),
         ));
     }
-    if !args.no_wsl && is_windows() {
-        let l = lock.clone();
-        let skip = args.skip_rebuild;
-        tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
-    }
-    if !is_windows() && !args.no_windows_vm {
-        let l = lock.clone();
-        let skip = args.skip_rebuild;
-        let dev = args.dev;
-        let cfg = release_config.windows_vm.clone();
-        tasks.push((
-            "win",
-            Box::new(move |_| build_windows_vm(skip, dev, &cfg, &l).unwrap_or(127)),
-        ));
+    let skip = args.skip_rebuild;
+    let dev = args.dev;
+    match (is_windows(), args.no_wsl, args.no_windows_vm) {
+        (true, false, _) => {
+            let l = lock.clone();
+            tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
+        }
+        (false, _, false) => {
+            let l = lock.clone();
+            let cfg = release_config.windows_vm.clone();
+            tasks.push((
+                "win",
+                Box::new(move |_| build_windows_vm(skip, dev, &cfg, &l).unwrap_or(127)),
+            ));
+        }
+        _ => {}
     }
 
     println!(
@@ -145,29 +149,22 @@ pub fn run(args: Args) -> Result<()> {
         }
     }
 
-    if !args.no_wsl
-        && is_windows()
-        && let Some(&rc) = results.get("wsl")
-    {
-        if rc == -1 {
-            eprintln!("⚠  WSL build skipped (no distro with bun + cargo)");
-        } else if rc != 0 {
-            eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb");
-        } else if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
-            artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
+    if let Some(&rc) = results.get("wsl") {
+        match rc {
+            -1 => eprintln!("⚠  WSL build skipped (no distro with bun + cargo)"),
+            0 => {
+                if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
+                    artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
+                }
+            }
+            _ => eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb"),
         }
     }
 
-    if !is_windows()
-        && !args.no_windows_vm
-        && let Some(&rc) = results.get("win")
-    {
-        if rc == -1 {
-            eprintln!("⚠  windows-vm SSH unreachable — skipping Windows build");
-        } else if rc != 0 {
-            eprintln!("⚠  windows-vm build failed (exit {rc}); continuing without .exe");
-        } else {
-            match fetch_windows_vm_exe(
+    if let Some(&rc) = results.get("win") {
+        match rc {
+            -1 => eprintln!("⚠  windows-vm SSH unreachable — skipping Windows build"),
+            0 => match fetch_windows_vm_exe(
                 &release_config.windows_vm,
                 &ver,
                 &branch,
@@ -177,7 +174,8 @@ pub fn run(args: Args) -> Result<()> {
                 Ok(Some(p)) => artifacts.push(p),
                 Ok(None) => eprintln!("⚠  windows-vm produced no -setup.exe"),
                 Err(e) => eprintln!("⚠  windows-vm scp failed: {e:#}"),
-            }
+            },
+            _ => eprintln!("⚠  windows-vm build failed (exit {rc}); continuing without .exe"),
         }
     }
 

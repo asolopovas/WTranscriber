@@ -44,6 +44,6 @@ if errorlevel 1 (
 )
 
 call bun install --frozen-lockfile --no-progress || exit /b %ERRORLEVEL%
-call just build || exit /b %ERRORLEVEL%
+call just build-host || exit /b %ERRORLEVEL%
 
 dir src-tauri\target\release\bundle\nsis\*-setup.exe
