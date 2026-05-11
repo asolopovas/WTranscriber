@@ -41,7 +41,7 @@ static FALLBACK: LazyLock<Option<Resolved>> = LazyLock::new(|| {
     })
 });
 
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+#[cfg(any(target_os = "android", test))]
 pub fn init(config: PathBuf, data: PathBuf, cache: PathBuf) {
     if let Ok(mut g) = OVERRIDE.write() {
         *g = Some(Resolved {
