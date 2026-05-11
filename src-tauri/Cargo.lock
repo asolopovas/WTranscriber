@@ -6457,6 +6457,7 @@ dependencies = [
  "futures-util",
  "hex",
  "jni 0.22.4",
+ "libc",
  "parakeet-rs",
  "regex",
  "reqwest 0.12.28",

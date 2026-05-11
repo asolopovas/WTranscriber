@@ -13,8 +13,16 @@ const CUDA_DLL_NAMES: &[&str] = &[
 ];
 
 pub fn setup() {
-    if !cfg!(feature = "cuda") || !cfg!(target_os = "windows") {
-        logfile::info("inproc-cuda: skipped (feature/cuda or windows-only)");
+    if !cfg!(feature = "cuda") {
+        logfile::info("inproc-cuda: skipped (cuda feature off)");
+        return;
+    }
+    if cfg!(target_os = "linux") {
+        setup_linux();
+        return;
+    }
+    if !cfg!(target_os = "windows") {
+        logfile::info("inproc-cuda: skipped (unsupported os)");
         return;
     }
 
@@ -91,6 +99,162 @@ pub fn setup() {
     }
 
     prepend_cudnn_to_process_path();
+}
+
+// Linux: the sherpa-onnx Rust crate's build script copies the GPU `.so`s
+// next to the binary and sets RPATH, so libsherpa-onnx-c-api.so loads at
+// process start. But cuDNN lives in a separate third-party directory, is
+// dlopen'd by the ONNX Runtime CUDA EP on first inference, and the prebuilt
+// `libonnxruntime_providers_cuda.so` has a RUNPATH pointing at a CI-only
+// path (`/home/runner/work/...`) that does not exist on user machines.
+//
+// Setting LD_LIBRARY_PATH via `setenv()` here is *not* sufficient: glibc
+// caches its dynamic-linker search paths at process start, so a late update
+// to the env var does not influence later dlopen() dependency resolution.
+//
+// The reliable trick is to explicitly dlopen libcudnn.so.9 with an absolute
+// path and RTLD_GLOBAL. Once loaded under its soname, glibc satisfies any
+// later NEEDED `libcudnn.so.9` reference (e.g. from the CUDA EP) without
+// touching the filesystem search path. We do the same for cudnn's own
+// sub-libraries that some sherpa builds chain into.
+fn setup_linux() {
+    // LD_LIBRARY_PATH update kept for child processes (subprocess sherpa
+    // fallback path, the diarizer, etc.) and as belt-and-braces for any
+    // later-spawned tooling.
+    if let Some(bin) = cudnn::library_dir() {
+        let dll = bin.join(cudnn::target_dll());
+        if dll.exists() {
+            prepend_to_env("LD_LIBRARY_PATH", &bin);
+            logfile::info(&format!(
+                "inproc-cuda: cuDNN dir on LD_LIBRARY_PATH: {}",
+                bin.display()
+            ));
+            preload_cudnn_libs(&bin);
+        } else {
+            logfile::warn(&format!(
+                "inproc-cuda: cuDNN missing at {}; CUDA EP will fail to load. \
+                 Launch the app once to auto-install or run the equivalent install step.",
+                dll.display()
+            ));
+        }
+    } else {
+        logfile::warn("inproc-cuda: cuDNN library_dir unresolved");
+    }
+
+    if let Ok(sherpa_lib) = sherpa::install_dir(sherpa::Variant::Cuda).map(|d| d.join("lib")) {
+        if sherpa_lib.is_dir() {
+            prepend_to_env("LD_LIBRARY_PATH", &sherpa_lib);
+            logfile::info(&format!(
+                "inproc-cuda: sherpa CUDA lib dir on LD_LIBRARY_PATH: {}",
+                sherpa_lib.display()
+            ));
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn preload_cudnn_libs(dir: &Path) {
+    // Order matters: open the umbrella loader first, then specific engines.
+    // We tolerate missing files (some cuDNN builds bundle them differently);
+    // the umbrella `libcudnn.so.9` is the only mandatory one.
+    let candidates = [
+        "libcudnn.so.9",
+        "libcudnn_graph.so.9",
+        "libcudnn_ops.so.9",
+        "libcudnn_engines_precompiled.so.9",
+        "libcudnn_engines_runtime_compiled.so.9",
+        "libcudnn_heuristic.so.9",
+        "libcudnn_adv.so.9",
+        "libcudnn_cnn.so.9",
+    ];
+    let mut loaded = 0u32;
+    let mut failed: Vec<String> = Vec::new();
+    for name in candidates {
+        let p = dir.join(name);
+        if !p.exists() {
+            continue;
+        }
+        match dlopen_global(&p) {
+            Ok(()) => loaded += 1,
+            Err(e) => failed.push(format!("{name}: {e}")),
+        }
+    }
+    if loaded == 0 {
+        logfile::warn(
+            "inproc-cuda: failed to preload any cuDNN library; ONNX Runtime CUDA EP \
+             will likely fall back to CPU.",
+        );
+    } else {
+        logfile::info(&format!(
+            "inproc-cuda: preloaded {loaded} cuDNN libraries via RTLD_GLOBAL"
+        ));
+    }
+    if !failed.is_empty() {
+        logfile::warn(&format!(
+            "inproc-cuda: cuDNN preload partial failures: {}",
+            failed.join("; ")
+        ));
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn dlopen_global(path: &Path) -> std::result::Result<(), String> {
+    use std::ffi::CString;
+    let c = CString::new(path.as_os_str().as_encoded_bytes())
+        .map_err(|e| format!("path contains NUL: {e}"))?;
+    // RTLD_NOW (2) | RTLD_GLOBAL (256) on glibc x86_64. Use libc constants
+    // for portability.
+    let flags = libc::RTLD_NOW | libc::RTLD_GLOBAL;
+    // SAFETY: c.as_ptr() is a valid NUL-terminated C string; dlopen flags are
+    // standard glibc constants. Returned handle is intentionally leaked: we
+    // want the library to remain mapped for the lifetime of the process so
+    // its symbols satisfy later soname lookups.
+    #[allow(unsafe_code)]
+    let handle = unsafe { libc::dlopen(c.as_ptr(), flags) };
+    if handle.is_null() {
+        #[allow(unsafe_code)]
+        let err = unsafe {
+            let e = libc::dlerror();
+            if e.is_null() {
+                String::from("unknown dlopen error")
+            } else {
+                std::ffi::CStr::from_ptr(e).to_string_lossy().into_owned()
+            }
+        };
+        return Err(err);
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn preload_cudnn_libs(_dir: &Path) {}
+
+fn prepend_to_env(name: &str, dir: &Path) {
+    let current = std::env::var_os(name).unwrap_or_default();
+    let sep = if cfg!(windows) { ";" } else { ":" };
+    let already = current.to_string_lossy().split(sep).any(|p| {
+        let p = Path::new(p);
+        p == dir
+            || p.canonicalize()
+                .ok()
+                .zip(dir.canonicalize().ok())
+                .is_some_and(|(a, b)| a == b)
+    });
+    if already {
+        return;
+    }
+    let mut new_path = std::ffi::OsString::from(dir.as_os_str());
+    if !current.is_empty() {
+        new_path.push(sep);
+        new_path.push(&current);
+    }
+    #[allow(unsafe_code)]
+    // SAFETY: setup() runs once at startup before any other thread is spawned
+    // that might read this env var; required because std::env::set_var is
+    // unsafe in edition 2024.
+    unsafe {
+        std::env::set_var(name, &new_path);
+    }
 }
 
 fn prepend_cudnn_to_process_path() {

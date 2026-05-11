@@ -2,7 +2,41 @@ use std::path::PathBuf;
 
 fn main() {
     tauri_build::build();
+    point_sherpa_lib_dir_to_cuda();
     install_cuda_dlls();
+}
+
+// When the `cuda` feature is on, redirect the sherpa-onnx crate's build
+// script to link against the GPU-enabled shared libraries already downloaded
+// by the app (sherpa-onnx-cuda runtime), instead of the crate's default
+// auto-downloaded CPU-only `-shared-lib` archive. Without this, on Linux the
+// in-process FFI silently runs CPU.
+fn point_sherpa_lib_dir_to_cuda() {
+    if std::env::var("CARGO_FEATURE_CUDA").is_err() {
+        return;
+    }
+    // Respect explicit override.
+    println!("cargo:rerun-if-env-changed=SHERPA_ONNX_LIB_DIR");
+    if std::env::var_os("SHERPA_ONNX_LIB_DIR").is_some() {
+        return;
+    }
+    let Some(lib_dir) = cuda_runtime_lib_dir() else {
+        println!(
+            "cargo:warning=in-process CUDA: sherpa-onnx GPU runtime not found; \
+             launch wtranscriber once to auto-install it, then rebuild (or set \
+             SHERPA_ONNX_LIB_DIR). The in-process recognizer will run on CPU \
+             until then."
+        );
+        return;
+    };
+    println!("cargo:rerun-if-changed={}", lib_dir.display());
+    println!("cargo:rustc-env=SHERPA_ONNX_LIB_DIR={}", lib_dir.display());
+    // Belt-and-braces: also embed an absolute rpath so the binary loads the
+    // GPU .so's at runtime even if the crate's auto-copy step is skipped.
+    if cfg!(target_os = "linux") {
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    }
 }
 
 fn install_cuda_dlls() {
@@ -86,15 +120,47 @@ fn cuda_runtime_bin_dir() -> Option<PathBuf> {
         let p = PathBuf::from(p);
         return p.is_dir().then_some(p);
     }
+    cuda_runtime_root()
+        .map(|root| root.join("bin"))
+        .filter(|p| p.is_dir())
+}
+
+fn cuda_runtime_lib_dir() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("WT_SHERPA_CUDA_LIB_DIR") {
+        let p = PathBuf::from(p);
+        return p.is_dir().then_some(p);
+    }
+    cuda_runtime_root()
+        .map(|root| root.join("lib"))
+        .filter(|p| p.is_dir())
+}
+
+fn cuda_runtime_root() -> Option<PathBuf> {
     let version = include_str!("sherpa-version.txt").trim_end();
-    let appdata = std::env::var_os("APPDATA")?;
-    let dir = PathBuf::from(appdata)
-        .join("asolopovas")
-        .join("wtranscriber")
-        .join("data")
-        .join("third_party")
-        .join("sherpa-onnx")
-        .join(format!("{version}-cuda"))
-        .join("bin");
-    dir.is_dir().then_some(dir)
+    let base = if cfg!(target_os = "windows") {
+        let appdata = std::env::var_os("APPDATA")?;
+        PathBuf::from(appdata)
+            .join("asolopovas")
+            .join("wtranscriber")
+            .join("data")
+    } else if cfg!(target_os = "linux") {
+        let home = std::env::var_os("HOME")?;
+        PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("wtranscriber")
+    } else if cfg!(target_os = "macos") {
+        let home = std::env::var_os("HOME")?;
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.asolopovas.wtranscriber")
+    } else {
+        return None;
+    };
+    Some(
+        base.join("third_party")
+            .join("sherpa-onnx")
+            .join(format!("{version}-cuda")),
+    )
 }

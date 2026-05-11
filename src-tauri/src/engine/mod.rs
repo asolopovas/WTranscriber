@@ -70,10 +70,20 @@ fn use_in_process(config: &Config) -> bool {
             Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
         );
     }
-    // CUDA path: prefer the downloaded sherpa-onnx-offline subprocess (its
-    // RPATH locates the GPU shared libs; the in-process FFI is statically
-    // linked CPU-only on most builds, so we'd silently run on CPU).
-    if matches!(config.device, crate::config::Device::Cuda) {
+    // CUDA path: in-process only when this build linked against the GPU
+    // sherpa-onnx shared libs (cargo feature `cuda`). Otherwise the in-process
+    // FFI would silently run on CPU, so prefer the subprocess which has its
+    // own RPATH to the GPU runtime. The runtime CUDA->CPU fallback inside
+    // `recognizer::build()` still protects us if the GPU EP fails to load.
+    if matches!(config.device, crate::config::Device::Cuda) && !cfg!(feature = "cuda") {
+        return false;
+    }
+    // Explicit opt-out for debugging or when the user wants subprocess on CUDA.
+    if matches!(config.device, crate::config::Device::Cuda)
+        && std::env::var("WT_NO_INPROCESS_CUDA")
+            .ok()
+            .is_some_and(|v| v == "1")
+    {
         return false;
     }
     matches!(
