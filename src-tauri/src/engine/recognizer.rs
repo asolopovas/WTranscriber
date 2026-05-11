@@ -42,11 +42,6 @@ pub fn lock() -> MutexGuard<'static, Option<Loaded>> {
     cache().lock().expect("recognizer cache poisoned")
 }
 
-#[allow(dead_code)]
-pub fn invalidate() {
-    *lock() = None;
-}
-
 pub fn ensure(config: &Config) -> Result<()> {
     let want = key_for(config);
     let mut guard = lock();

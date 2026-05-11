@@ -19,5 +19,4 @@ pub trait VoiceActivityDetector: Send {
     fn is_voice(&mut self, frame: &[f32]) -> Result<bool> {
         Ok(matches!(self.push_frame(frame)?, VadFrame::Speech(_)))
     }
-    fn reset(&mut self) {}
 }

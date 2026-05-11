@@ -198,33 +198,6 @@ fn sample_index(ms: u64, total: usize) -> usize {
     idx.min(total)
 }
 
-pub struct SamplesIter<'a> {
-    src: &'a mut StreamSource,
-    buf: Vec<f32>,
-    capacity: usize,
-}
-
-impl SamplesIter<'_> {
-    pub fn next_chunk(&mut self) -> Result<Option<&[f32]>> {
-        self.buf.resize(self.capacity, 0.0);
-        let n = self.src.read_into(&mut self.buf)?;
-        if n == 0 {
-            return Ok(None);
-        }
-        self.buf.truncate(n);
-        Ok(Some(&self.buf))
-    }
-}
-
-#[must_use]
-pub fn samples_iter(src: &mut StreamSource, frames_per_read: usize) -> SamplesIter<'_> {
-    SamplesIter {
-        src,
-        buf: Vec::with_capacity(frames_per_read),
-        capacity: frames_per_read,
-    }
-}
-
 pub fn stream_slabs<F>(
     input: &Path,
     trim_start_ms: u64,
@@ -260,23 +233,6 @@ where
         }
     }
     Ok(cursor_samples as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec)
-}
-
-#[allow(dead_code)]
-pub fn collect_to_wav(input: &Path, output: &Path, cancel: Arc<AtomicBool>) -> Result<u64> {
-    use crate::audio::write_pcm16_wav;
-    let mut src = ffmpeg_stream(input, 0, None, cancel)?;
-    let mut all = Vec::<f32>::new();
-    let mut buf = vec![0.0_f32; 16_000];
-    loop {
-        let n = src.read_into(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        all.extend_from_slice(&buf[..n]);
-    }
-    write_pcm16_wav(output, &all, WHISPER_SAMPLE_RATE)?;
-    Ok(all.len() as u64)
 }
 
 fn format_ms(ms: u64) -> String {

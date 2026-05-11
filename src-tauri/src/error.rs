@@ -14,7 +14,6 @@ pub enum Error {
     Config(String),
 
     #[error("transcribe: {0}")]
-    #[allow(dead_code)]
     Transcribe(String),
 
     #[error("cancelled")]

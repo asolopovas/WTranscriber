@@ -61,14 +61,6 @@ impl Manager {
         catalog::catalog().iter().map(|e| self.info(e)).collect()
     }
 
-    #[allow(dead_code)]
-    pub fn list_family(&self, family: Family) -> Result<Vec<ModelInfo>> {
-        catalog::by_family(family)
-            .into_iter()
-            .map(|e| self.info(e))
-            .collect()
-    }
-
     pub fn status(&self, id: &str) -> Result<ModelStatus> {
         if self
             .in_flight
@@ -169,11 +161,6 @@ pub struct FileProgress {
     pub rel_path: String,
     pub downloaded: u64,
     pub total: u64,
-}
-
-#[allow(dead_code)]
-pub fn list() -> Result<Vec<ModelInfo>> {
-    manager().list()
 }
 
 #[cfg(test)]

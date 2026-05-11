@@ -15,7 +15,6 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[allow(dead_code)]
 pub struct SherpaResult {
     #[serde(default)]
     pub text: String,
@@ -23,12 +22,6 @@ pub struct SherpaResult {
     pub tokens: Vec<String>,
     #[serde(default)]
     pub timestamps: Vec<f64>,
-    #[serde(default)]
-    pub lang: String,
-    #[serde(default)]
-    pub emotion: String,
-    #[serde(default)]
-    pub event: String,
 }
 
 pub const fn binary_name() -> &'static str {

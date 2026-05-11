@@ -78,7 +78,6 @@ pub fn by_id(id: &str) -> Option<&'static Entry> {
     CATALOG.iter().find(|e| e.id == id && visible(e))
 }
 
-#[allow(dead_code)]
 pub fn by_family(family: Family) -> Vec<&'static Entry> {
     CATALOG
         .iter()

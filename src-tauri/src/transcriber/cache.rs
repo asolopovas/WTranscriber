@@ -7,11 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    error::{Error, Result},
-    paths,
-    transcriber::Transcript,
-};
+use crate::{error::Result, paths, transcriber::Transcript};
 
 static INDEX_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -119,19 +115,6 @@ fn save_index(entries: &[Entry]) -> Result<()> {
     let raw = serde_json::to_string_pretty(entries)?;
     std::fs::write(path, raw)?;
     Ok(())
-}
-
-#[allow(dead_code)]
-pub fn lookup(key: &str) -> Result<Option<(PathBuf, Entry)>> {
-    let path = transcript_path(key)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let entry = load_index()
-        .into_iter()
-        .find(|e| e.key == key)
-        .ok_or_else(|| Error::Config("manifest missing entry".into()))?;
-    Ok(Some((path, entry)))
 }
 
 pub fn load(key: &str) -> Result<Option<Transcript>> {

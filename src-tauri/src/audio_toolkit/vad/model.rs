@@ -28,8 +28,3 @@ pub async fn ensure() -> Result<PathBuf> {
     download_file(&dst, SILERO_URL, Some(SILERO_SHA), &mut cb).await?;
     Ok(dst)
 }
-
-#[allow(dead_code)]
-pub const fn expected_sha() -> &'static str {
-    SILERO_SHA
-}
