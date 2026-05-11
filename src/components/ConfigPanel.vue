@@ -140,7 +140,7 @@ const headerAriaLabel = computed(() => {
 
 <template>
   <aside
-    class="w-full md:w-[340px] bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto relative"
+    class="w-full md:w-85 bg-surface-container border-t md:border-t-0 md:border-l border-outline-variant/40 flex flex-col md:h-full shrink-0 overflow-hidden md:overflow-y-auto md:scroll-thin md:max-h-none touch-none md:touch-auto relative"
     :class="resizingConfig ? '' : 'transition-[max-height,height] duration-200 ease-out'"
     :style="{
       maxHeight: isMobile ? `min(${configHeightPx}px, calc(100% - 96px))` : undefined,
@@ -320,7 +320,7 @@ const headerAriaLabel = computed(() => {
         <div class="flex justify-between items-center">
           <span class="text-on-surface-variant">File</span>
           <span
-            class="text-on-surface truncate ml-md max-w-[180px]"
+            class="text-on-surface truncate ml-md max-w-45"
             :title="selectedEntry ? decodeName(selectedEntry.name) : ''"
           >
             {{ selectedEntry ? decodeName(selectedEntry.name) : "—" }}

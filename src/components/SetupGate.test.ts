@@ -48,13 +48,14 @@ describe("SetupGate", () => {
 
     const text = wrapper.text();
 
-    expect(text).toContain("Speech model");
+    expect(text).toContain("Downloading essentials");
+    expect(text).toContain("Preparing speech, speakers and naming models.");
     expect(text).toContain("25 / 100 MB");
-    expect(text).toContain("Diarizer");
-    expect(text).toContain("ready");
-    expect(text).toContain("Namer");
-    expect(text).toContain("queued");
-    expect(text).toContain("missing");
-    expect(text).toContain("failed");
+    expect(text).toContain("Speakers");
+    expect(text).toContain("Ready");
+    expect(text).toContain("Naming");
+    expect(text).toContain("Queued");
+    expect(text).toContain("Model");
+    expect(text).toContain("Failed");
   });
 });

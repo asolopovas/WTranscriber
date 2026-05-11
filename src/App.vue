@@ -835,7 +835,7 @@ const selectedProgress = computed(() =>
           </div>
 
           <ErrorBanner v-if="error" icon="error" layout="inline" class="m-margin">
-            <span class="break-words text-labelMedium">{{ error }}</span>
+            <span class="wrap-break-word text-labelMedium">{{ error }}</span>
             <template #actions>
               <Button shape="link" @click="tab = 'logs'">View log</Button>
               <Button

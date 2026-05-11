@@ -91,7 +91,7 @@ function levelClass(line: string): string {
       >
         <div
           ref="scroller"
-          class="flex-1 overflow-y-auto scroll-thin px-xl py-lg font-mono text-labelSmall leading-snug whitespace-pre-wrap break-words"
+          class="flex-1 overflow-y-auto scroll-thin px-xl py-lg font-mono text-labelSmall leading-snug whitespace-pre-wrap wrap-break-word"
         >
           <p v-if="!displayed" class="text-outline italic">(log is empty)</p>
           <template v-else>

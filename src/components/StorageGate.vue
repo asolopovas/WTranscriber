@@ -75,7 +75,7 @@ onUnmounted(() => {
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-surface/95 backdrop-blur-sm overflow-y-auto px-xl py-xl"
   >
-    <div class="w-full max-w-[28rem] flex flex-col gap-xl">
+    <div class="w-full max-w-112 flex flex-col gap-xl">
       <div class="flex flex-col items-center gap-md">
         <div class="text-6xl" aria-hidden="true">💾</div>
         <h1 class="text-headlineSmall text-on-surface text-center">Save models permanently?</h1>
