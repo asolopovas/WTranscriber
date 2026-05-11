@@ -18,9 +18,8 @@ release matrix; expect rough edges. Android dev from a macOS host works.
 ```bash
 just setup        # install JS deps + git hooks
 just dev          # desktop HMR
-just build        # full release matrix (Linux + Windows + Android)
-just build-host   # native single-platform bundle (NSIS / .deb)
-just build-cli    # build the headless `wt` CLI
+just build        # full release matrix (Linux + Windows + Android), CLI included
+just build-host   # current host only: GUI installer + wt CLI
 just cli ARGS     # run the CLI in dev (e.g. `just cli models list`)
 just check        # parallel pre-release gate
 ```

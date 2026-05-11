@@ -26,12 +26,10 @@ Optimises deps once; hot-path crates (`sherpa-onnx`, `tokio`, `reqwest`, `rubato
 
 Warm rebuild after one Rust source change (Windows, 16 cores):
 
-| Recipe           | Time | Output                                                |
-| ---------------- | ---- | ----------------------------------------------------- |
-| `just build-bin` | 6 s  | raw `wtranscriber` binary, no Tauri patching          |
-| `just build-app` | 9 s  | Tauri-patched, no installer (use this for inner loop) |
-| `just build`     | 28 s | NSIS installer (Windows) / .deb (Linux)               |
-| `just build-all` | 45 s | NSIS + MSI (Windows only)                             |
+| Recipe            | Time  | Output                                                         |
+| ----------------- | ----- | -------------------------------------------------------------- |
+| `just build-host` | ~50 s | `wt` CLI + GUI installer (NSIS .exe on Windows, .deb on Linux) |
+| `just build`      | ~5 m  | Full matrix: host (GUI + CLI) + Android APK + Linux .deb       |
 
 Cold build: ~210 s. Floor is the single-threaded link of statically-bundled `sherpa-onnx`.
 

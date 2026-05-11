@@ -115,40 +115,21 @@ diagnose-crash:
 
 # ─── build ────────────────────────────────────────────────────────────────────
 
-# Full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host.
+# Full release matrix: host GUI installer + wt CLI + Android APK; auto-detects host.
 [group('build')]
 build:
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
-# Native single-platform bundle (NSIS on Windows, .deb on Linux); used by the Windows VM helper.
+# Current host only: GUI installer (NSIS .exe / .deb / .app) + wt CLI binary.
 [group('build')]
 build-host:
-    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build -- --no-default-features --features sherpa-static
-
-# Fast iteration build: Tauri-patched binary, no installer.
-[group('build')]
-build-app:
-    {{_run}} --tag build-app --idle 180 --max 900 -- bun run tauri build --no-bundle
-
-# Raw Rust binary (no Tauri patching).
-[group('build')]
-build-bin:
-    {{_run}} --tag build-bin --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wtranscriber
-
-# wt CLI binary.
-[group('build')]
-build-cli:
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
 
 # Linux .deb built inside Debian 12 container (glibc 2.36 floor).
 [group('build')]
 build-deb-docker:
     {{_run}} --tag build-deb-docker --idle 180 --max 3600 -- bash docker/build-deb.sh
-
-# Windows: NSIS + MSI bundles.
-[windows, group('build')]
-build-all:
-    {{_run}} --tag build-all --idle 180 --max 1800 -- bun run tauri build --bundles nsis --bundles msi
 
 # ─── android: dev session ─────────────────────────────────────────────────────
 

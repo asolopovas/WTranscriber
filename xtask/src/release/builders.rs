@@ -20,6 +20,23 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[host] building .deb inside debian:12 container (WT_HOST_DEB_DOCKER set)");
         return run_streamed("host", "bash", &["docker/build-deb.sh"], &[], lock);
     }
+    let rc = run_streamed(
+        "host",
+        "cargo",
+        &[
+            "build",
+            "--manifest-path",
+            "src-tauri/Cargo.toml",
+            "--release",
+            "--bin",
+            "wt",
+        ],
+        &[("CARGO_INCREMENTAL", "1")],
+        lock,
+    )?;
+    if rc != 0 {
+        return Ok(rc);
+    }
     run_streamed(
         "host",
         "bun",
@@ -29,10 +46,6 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
             "build",
             "-c",
             "{\"build\":{\"beforeBuildCommand\":\"\"}}",
-            "--",
-            "--no-default-features",
-            "--features",
-            "sherpa-static",
         ],
         &[("CARGO_INCREMENTAL", "1")],
         lock,

@@ -78,10 +78,10 @@
         "problemMatcher": []
       },
       {
-        "label": "build-cli",
-        "detail": "Build headless wt CLI",
+        "label": "build-host",
+        "detail": "Build host GUI installer + wt CLI",
         "type": "shell",
-        "command": "just build-cli",
+        "command": "just build-host",
         "group": "build",
         "problemMatcher": []
       },
