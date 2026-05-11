@@ -101,26 +101,7 @@ pub fn setup() {
     prepend_cudnn_to_process_path();
 }
 
-// Linux: the sherpa-onnx Rust crate's build script copies the GPU `.so`s
-// next to the binary and sets RPATH, so libsherpa-onnx-c-api.so loads at
-// process start. But cuDNN lives in a separate third-party directory, is
-// dlopen'd by the ONNX Runtime CUDA EP on first inference, and the prebuilt
-// `libonnxruntime_providers_cuda.so` has a RUNPATH pointing at a CI-only
-// path (`/home/runner/work/...`) that does not exist on user machines.
-//
-// Setting LD_LIBRARY_PATH via `setenv()` here is *not* sufficient: glibc
-// caches its dynamic-linker search paths at process start, so a late update
-// to the env var does not influence later dlopen() dependency resolution.
-//
-// The reliable trick is to explicitly dlopen libcudnn.so.9 with an absolute
-// path and RTLD_GLOBAL. Once loaded under its soname, glibc satisfies any
-// later NEEDED `libcudnn.so.9` reference (e.g. from the CUDA EP) without
-// touching the filesystem search path. We do the same for cudnn's own
-// sub-libraries that some sherpa builds chain into.
 fn setup_linux() {
-    // LD_LIBRARY_PATH update kept for child processes (subprocess sherpa
-    // fallback path, the diarizer, etc.) and as belt-and-braces for any
-    // later-spawned tooling.
     if let Some(bin) = cudnn::library_dir() {
         let dll = bin.join(cudnn::target_dll());
         if dll.exists() {
@@ -154,9 +135,6 @@ fn setup_linux() {
 
 #[cfg(target_os = "linux")]
 fn preload_cudnn_libs(dir: &Path) {
-    // Order matters: open the umbrella loader first, then specific engines.
-    // We tolerate missing files (some cuDNN builds bundle them differently);
-    // the umbrella `libcudnn.so.9` is the only mandatory one.
     let candidates = [
         "libcudnn.so.9",
         "libcudnn_graph.so.9",
@@ -202,13 +180,9 @@ fn dlopen_global(path: &Path) -> std::result::Result<(), String> {
     use std::ffi::CString;
     let c = CString::new(path.as_os_str().as_encoded_bytes())
         .map_err(|e| format!("path contains NUL: {e}"))?;
-    // RTLD_NOW (2) | RTLD_GLOBAL (256) on glibc x86_64. Use libc constants
-    // for portability.
+
     let flags = libc::RTLD_NOW | libc::RTLD_GLOBAL;
-    // SAFETY: c.as_ptr() is a valid NUL-terminated C string; dlopen flags are
-    // standard glibc constants. Returned handle is intentionally leaked: we
-    // want the library to remain mapped for the lifetime of the process so
-    // its symbols satisfy later soname lookups.
+
     #[allow(unsafe_code)]
     let handle = unsafe { libc::dlopen(c.as_ptr(), flags) };
     if handle.is_null() {
@@ -249,9 +223,6 @@ fn prepend_to_env(name: &str, dir: &Path) {
         new_path.push(&current);
     }
     #[allow(unsafe_code)]
-    // SAFETY: setup() runs once at startup before any other thread is spawned
-    // that might read this env var; required because std::env::set_var is
-    // unsafe in edition 2024.
     unsafe {
         std::env::set_var(name, &new_path);
     }
@@ -292,8 +263,6 @@ fn prepend_cudnn_to_process_path() {
     new_path.push(sep);
     new_path.push(&current);
     #[allow(unsafe_code)]
-    // SAFETY: setup() runs once at startup before any other thread is spawned
-    // that might read PATH; required because std::env::set_var is unsafe in 2024.
     unsafe {
         std::env::set_var("PATH", &new_path);
     }

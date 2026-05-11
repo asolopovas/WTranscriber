@@ -186,8 +186,7 @@ function handleWaveformPointerDown(ev: PointerEvent) {
   ev.preventDefault();
   seekScrubActive = true;
   const wasPlaying = playing.value;
-  // Pause audio at scrub start. The playhead updates visually during the
-  // scrub; audio re-starts once on pointerup with the final position.
+
   if (wasPlaying && audioEl.value) audioEl.value.pause();
   playing.value = false;
   stopPlayheadLoop();
@@ -217,9 +216,7 @@ function handleWaveformPointerDown(ev: PointerEvent) {
     updateVisual(e);
     if (audioEl.value) audioEl.value.currentTime = playOffsetMs / 1000;
     if (wasPlaying) {
-      void resumeFromOffset().catch(() => {
-        /* fall through silently; user can hit play again */
-      });
+      void resumeFromOffset().catch(() => {});
     }
   };
   window.addEventListener("pointermove", move);
@@ -298,9 +295,7 @@ function stop() {
     try {
       el.pause();
       el.currentTime = start.value / 1000;
-    } catch {
-      /* */
-    }
+    } catch {}
   }
   playOffsetMs = start.value;
   playheadMs.value = start.value;
@@ -515,9 +510,7 @@ function cleanup() {
       el.pause();
       el.removeAttribute("src");
       el.load();
-    } catch {
-      /* */
-    }
+    } catch {}
   }
   audioSrc.value = "";
   if (currentObjectUrl) {

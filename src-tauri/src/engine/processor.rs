@@ -12,18 +12,12 @@ use super::{
     sherpa::{find_binary, parse_json, run_cmd},
 };
 
-/// Whether the engine wants the audio chunked (Whisper) or processed in a
-/// single shot (Zipformer / Parakeet / Canary / NeMo-CTC).
 #[derive(Debug, Clone, Copy)]
 pub enum ChunkStrategy {
     Whisper,
     Single,
 }
 
-/// One subprocess invocation of `sherpa-onnx-offline`. Each engine produces a
-/// `SubprocessSpec` describing only its model-specific flags; this helper
-/// appends the shared tail (`--num-threads`, `--provider`, `<wav>`), resolves
-/// the binary once, and routes the audio through the right chunking driver.
 pub struct SubprocessSpec<'a> {
     pub model_args: Vec<String>,
     pub config: &'a Config,
@@ -31,7 +25,7 @@ pub struct SubprocessSpec<'a> {
     pub cancelled: &'a dyn Fn() -> bool,
 }
 
-impl<'a> SubprocessSpec<'a> {
+impl SubprocessSpec<'_> {
     pub fn execute(
         self,
         samples: &[f32],
@@ -45,8 +39,7 @@ impl<'a> SubprocessSpec<'a> {
             strategy,
             cancelled,
         } = self;
-        // Snapshot config-derived numbers up front so the closure stays
-        // `Fn` (called once per slab) and doesn't need to borrow `config`.
+
         let threads = runtime::threads(config);
         let provider = runtime::provider(config).as_arg();
         let processor = Processor {

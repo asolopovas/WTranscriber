@@ -14,9 +14,7 @@ interface Payload {
 let installed = false;
 
 function send(p: Payload): void {
-  invoke("log_renderer", { ...p }).catch(() => {
-    /* logging must never throw */
-  });
+  invoke("log_renderer", { ...p }).catch(() => {});
 }
 
 function describe(value: unknown): { message: string; stack?: string } {
@@ -64,9 +62,7 @@ export function installErrorBridge(): void {
           message: parts.join(" "),
           stack: stacks.length ? stacks.join("\n---\n") : undefined,
         });
-      } catch {
-        /* */
-      }
+      } catch {}
     };
   }
 

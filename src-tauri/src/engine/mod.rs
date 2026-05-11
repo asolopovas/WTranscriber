@@ -16,17 +16,11 @@ use crate::{
     transcriber::Segment,
 };
 
-/// Check that everything we need to run the configured engine is in place,
-/// without doing any audio work. Call this before opening an ffmpeg stream so
-/// a missing subprocess binary surfaces immediately instead of after the
-/// first slab has been decoded.
 pub fn preflight(config: &Config) -> Result<()> {
     if use_in_process(config) {
-        // In-process recognizer is lazily built on first `run`; nothing to probe.
         return Ok(());
     }
-    // All subprocess engines route through the same `sherpa-onnx-offline`
-    // binary, so one find_binary() call is sufficient for all of them.
+
     sherpa::find_binary().map(|_| ())
 }
 
@@ -84,15 +78,11 @@ fn use_in_process(config: &Config) -> bool {
             Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
         );
     }
-    // CUDA path: in-process only when this build linked against the GPU
-    // sherpa-onnx shared libs (cargo feature `cuda`). Otherwise the in-process
-    // FFI would silently run on CPU, so prefer the subprocess which has its
-    // own RPATH to the GPU runtime. The runtime CUDA->CPU fallback inside
-    // `recognizer::build()` still protects us if the GPU EP fails to load.
+
     if matches!(config.device, crate::config::Device::Cuda) && !cfg!(feature = "cuda") {
         return false;
     }
-    // Explicit opt-out for debugging or when the user wants subprocess on CUDA.
+
     if matches!(config.device, crate::config::Device::Cuda)
         && std::env::var("WT_NO_INPROCESS_CUDA")
             .ok()
@@ -200,8 +190,6 @@ mod tests {
     use crate::config::{Config, Device, Engine};
     use std::sync::Mutex;
 
-    // Tests in this module mutate process-wide env vars; serialise them so
-    // parallel test threads cannot observe each other's writes.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn cfg(engine: Engine, device: Device) -> Config {
@@ -213,8 +201,6 @@ mod tests {
     }
 
     fn set_env(key: &str, value: &str) {
-        // SAFETY: callers hold ENV_LOCK; no other thread reads/writes these
-        // vars concurrently inside this test module.
         unsafe {
             std::env::set_var(key, value);
         }
@@ -226,7 +212,6 @@ mod tests {
             "WT_FORCE_INPROCESS",
             "WT_NO_INPROCESS_CUDA",
         ] {
-            // SAFETY: see `set_env`.
             unsafe {
                 std::env::remove_var(k);
             }
@@ -238,11 +223,9 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         clear_env();
 
-        // Canary has no in-process path (recognizer rejects it).
         assert!(!use_in_process(&cfg(Engine::Canary, Device::Cpu)));
         assert!(!use_in_process(&cfg(Engine::Canary, Device::Cuda)));
 
-        // CPU-side inprocess engines route to inprocess by default.
         for e in [
             Engine::WhisperOnnx,
             Engine::Zipformer,
@@ -255,7 +238,6 @@ mod tests {
             );
         }
 
-        // CUDA on a non-CUDA build must take the subprocess path.
         if !cfg!(feature = "cuda") {
             assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
             assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cuda)));
@@ -266,26 +248,23 @@ mod tests {
     fn use_in_process_env_overrides() {
         let _g = ENV_LOCK.lock().unwrap();
 
-        // WT_USE_SUBPROCESS forces subprocess everywhere.
         clear_env();
         set_env("WT_USE_SUBPROCESS", "1");
         assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cpu)));
         assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cpu)));
 
-        // WT_FORCE_INPROCESS overrides the cuda-feature gate.
         clear_env();
         set_env("WT_FORCE_INPROCESS", "1");
         assert!(use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
         assert!(use_in_process(&cfg(Engine::NemoCtc, Device::Cuda)));
-        // Canary still subprocess-only even under force.
+
         assert!(!use_in_process(&cfg(Engine::Canary, Device::Cuda)));
 
-        // WT_NO_INPROCESS_CUDA only affects CUDA builds.
         if cfg!(feature = "cuda") {
             clear_env();
             set_env("WT_NO_INPROCESS_CUDA", "1");
             assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
-            // CPU path unaffected.
+
             assert!(use_in_process(&cfg(Engine::WhisperOnnx, Device::Cpu)));
         }
 

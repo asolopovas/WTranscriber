@@ -89,8 +89,6 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     )?;
     let key = compute_key(&key_params);
 
-    // Fail fast: if the configured engine needs a subprocess binary that's
-    // missing, surface the error before we open ffmpeg / probe duration.
     engine::preflight(config)?;
 
     if let Some(cached) = cache::load(&key)? {
@@ -522,18 +520,15 @@ mod tests {
     use crate::transcriber::transcript::Token;
     use std::sync::Mutex;
 
-    // Serialise env-var mutations across parallel test threads.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn set_env(key: &str, value: &str) {
-        // SAFETY: caller holds ENV_LOCK.
         unsafe {
             std::env::set_var(key, value);
         }
     }
 
     fn unset_env(key: &str) {
-        // SAFETY: see `set_env`.
         unsafe {
             std::env::remove_var(key);
         }
@@ -641,7 +636,6 @@ mod tests {
 
     #[test]
     fn apply_dedup_collapses_token_repeats_and_rebuilds() {
-        // dedup needs >= 4 unigram repeats to collapse (see MIN_RUN_BY_N1).
         let mut segs = vec![seg(
             "the the the the",
             100,
@@ -655,7 +649,7 @@ mod tests {
         )];
         apply_dedup(&mut segs);
         assert_eq!(segs.len(), 1);
-        // After collapse + rebuild_from_tokens, text matches the surviving tokens.
+
         assert_eq!(segs[0].tokens.len(), 1);
         assert_eq!(segs[0].text, "the");
         assert_eq!(segs[0].start_ms, 100);
@@ -664,7 +658,6 @@ mod tests {
 
     #[test]
     fn apply_dedup_collapses_in_plain_text_when_no_tokens() {
-        // No tokens path — collapse_in_text trims and dedups.
         let mut segs = vec![seg("hello hello hello hello world", 0, 100, vec![])];
         apply_dedup(&mut segs);
         assert_eq!(segs.len(), 1);

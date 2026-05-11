@@ -33,49 +33,77 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 
-    /// One or more audio files to transcribe (wav/mp3/flac/m4a/ogg \u{2014} decoded via ffmpeg)
+    #[arg(
+        help = "One or more audio files to transcribe (wav/mp3/flac/m4a/ogg \u{2014} decoded via ffmpeg)"
+    )]
     inputs: Vec<PathBuf>,
 
-    /// BCP-47 language code (e.g. `en`, `ru`, `auto`). Defaults to the saved config
-    #[arg(short, long, value_name = "LANG")]
+    #[arg(
+        short,
+        long,
+        value_name = "LANG",
+        help = "BCP-47 language code (e.g. `en`, `ru`, `auto`). Defaults to the saved config"
+    )]
     lang: Option<String>,
 
-    /// ASR model id from `wt models list` (e.g. `sherpa-whisper-turbo`)
-    #[arg(short, long, value_name = "MODEL")]
+    #[arg(
+        short,
+        long,
+        value_name = "MODEL",
+        help = "ASR model id from `wt models list` (e.g. `sherpa-whisper-turbo`)"
+    )]
     model: Option<String>,
 
-    /// CPU thread count for the transcription engine (default: auto)
-    #[arg(short, long, value_name = "N")]
+    #[arg(
+        short,
+        long,
+        value_name = "N",
+        help = "CPU thread count for the transcription engine (default: auto)"
+    )]
     threads: Option<u32>,
 
-    /// Expected number of speakers (enables diarization with a fixed count)
-    #[arg(long, value_name = "N")]
+    #[arg(
+        long,
+        value_name = "N",
+        help = "Expected number of speakers (enables diarization with a fixed count)"
+    )]
     speakers: Option<u32>,
 
-    /// Disable speaker diarization for this run
-    #[arg(long)]
+    #[arg(long, help = "Disable speaker diarization for this run")]
     no_diarize: bool,
 
-    /// Compute device: cpu or cuda (cuda requires a CUDA-enabled build)
-    #[arg(long, value_enum, value_name = "DEVICE")]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "DEVICE",
+        help = "Compute device: cpu or cuda (cuda requires a CUDA-enabled build)"
+    )]
     device: Option<Device>,
 
-    /// Override the ASR engine kind (advanced; defaults to the model's native engine)
-    #[arg(long, value_enum, value_name = "ENGINE")]
+    #[arg(
+        long,
+        value_enum,
+        value_name = "ENGINE",
+        help = "Override the ASR engine kind (advanced; defaults to the model's native engine)"
+    )]
     engine: Option<Engine>,
 
-    /// Ignore any cached transcript for this input and rerun from scratch
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Ignore any cached transcript for this input and rerun from scratch"
+    )]
     no_cache: bool,
 
-    /// After transcribing, ask the local LLM for a sensible filename and rename the source
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "After transcribing, ask the local LLM for a sensible filename and rename the source"
+    )]
     rename: bool,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Manage local model catalog (list, install, status)
+    #[command(about = "Manage local model catalog (list, install, status)")]
     Models {
         #[command(subcommand)]
         action: ModelsAction,
@@ -84,16 +112,16 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum ModelsAction {
-    /// List all known models with size and install status
+    #[command(about = "List all known models with size and install status")]
     List,
-    /// Download and install a model by id (see `wt models list`)
+    #[command(about = "Download and install a model by id (see `wt models list`)")]
     Install {
-        /// Model id, e.g. `sherpa-whisper-turbo`
+        #[arg(help = "Model id, e.g. `sherpa-whisper-turbo`")]
         id: String,
     },
-    /// Print install status (installed | not_installed | partial) for a model id
+    #[command(about = "Print install status (installed | not_installed | partial) for a model id")]
     Status {
-        /// Model id, e.g. `sherpa-whisper-turbo`
+        #[arg(help = "Model id, e.g. `sherpa-whisper-turbo`")]
         id: String,
     },
 }

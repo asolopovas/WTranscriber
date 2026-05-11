@@ -20,7 +20,6 @@ pub const fn target_library() -> &'static str {
     }
 }
 
-// Backward-compat alias used by Windows-only call sites.
 pub const fn target_dll() -> &'static str {
     target_library()
 }
@@ -53,8 +52,6 @@ pub fn library_dir() -> Option<PathBuf> {
     })
 }
 
-// Backward-compat: Windows callers use this for PATH manipulation. On Linux
-// it returns the `lib/` directory containing `libcudnn.so.9`.
 pub fn bin_dir() -> Option<PathBuf> {
     library_dir()
 }
@@ -95,7 +92,6 @@ fn url() -> Option<String> {
     ))
 }
 
-// Env var the dynamic linker / DLL loader consults for extra search paths.
 pub const fn library_search_env() -> &'static str {
     if cfg!(windows) {
         "PATH"
@@ -182,13 +178,8 @@ pub fn ensure_on_path() {
             Err(e) => crate::logfile::warn(&format!("cuDNN PATH persist failed: {e}")),
         }
     }
-    // On Linux/macOS we don't persist LD_LIBRARY_PATH globally (that would
-    // affect every process the user runs). Instead, callers spawning sherpa
-    // use `command_env()` to inject it per-command.
 }
 
-// Returns the env var the loader consults augmented with the cuDNN library
-// directory prepended. None when cuDNN is not installed.
 pub fn augmented_library_path() -> Option<(&'static str, std::ffi::OsString)> {
     let dir = library_dir()?;
     if !dir.join(target_library()).exists() {

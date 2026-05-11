@@ -100,11 +100,8 @@ pub enum DiarizerChoice {
 impl Default for DiarizerChoice {
     fn default() -> Self {
         if cfg!(any(target_os = "android", target_os = "ios")) {
-            // Mobile: pure-ONNX Titanet (~22 MB, CPU-friendly).
             Self::Titanet
         } else {
-            // Desktop: Sortformer v2.1 ONNX (~492 MB, NeMo-grade quality, no
-            // Python runtime, GPU-accelerated when available).
             Self::SortformerOnnx
         }
     }

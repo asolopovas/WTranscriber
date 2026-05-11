@@ -940,8 +940,6 @@ mod tests {
 
     #[tokio::test]
     async fn select_race_returns_cancelled_immediately() {
-        // Mirrors the bring_up race in transcribe_file: a long-running future
-        // raced against a CancellationToken; cancelling must return within ~ms.
         let token = CancellationToken::new();
         let watch = token.clone();
         let long_running = async {
@@ -1060,10 +1058,6 @@ mod tests {
 
     #[tokio::test]
     async fn sink_emit_drops_progress_after_cancel() {
-        // The sink must not emit progress events once its token is cancelled
-        // (Phase::Done is the one allowed exception so completion is still
-        // observable). We don't have a real AppHandle here, so this is a unit
-        // test on the cancel gate alone.
         let token = CancellationToken::new();
         let dropped = phase_should_drop(Phase::Transcribing, &token);
         assert!(!dropped, "before cancel, transcribing events must pass");
@@ -1081,7 +1075,6 @@ mod tests {
     }
 
     fn phase_should_drop(phase: Phase, token: &CancellationToken) -> bool {
-        // Mirror of TranscribeSink::emit's gate.
         phase != Phase::Done && token.is_cancelled()
     }
 }

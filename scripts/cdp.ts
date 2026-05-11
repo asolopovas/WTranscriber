@@ -1,8 +1,4 @@
 #!/usr/bin/env bun
-// Evaluate a JS expression in the running WebView via CDP.
-// Works against Android WebView (which only exposes /devtools/page/<id>, not /devtools/browser)
-// and desktop Chromium (which exposes /devtools/browser). Tries Playwright's connectOverCDP
-// first; falls back to a raw per-page websocket via Runtime.evaluate.
 
 const expr = process.argv[2] ?? "1+1";
 const HOST = process.env.CDP_HOST ?? "127.0.0.1";

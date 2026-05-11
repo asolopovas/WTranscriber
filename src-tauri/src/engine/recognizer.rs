@@ -324,7 +324,6 @@ mod tests {
 
     #[test]
     fn key_differs_when_threads_differ() {
-        // Threads materially change recognizer construction; cache must miss.
         let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
         let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 8, "en"));
         assert_ne!(a, b);

@@ -70,9 +70,7 @@ export function basenameOf(p: string): string {
   let s = p;
   try {
     s = decodeURIComponent(s);
-  } catch {
-    /* leave as-is */
-  }
+  } catch {}
   const schemeStripped = s.replace(/^[a-z][a-z0-9+.-]*:(\/\/)?/i, "");
   const colonStripped = schemeStripped.replace(/^[A-Za-z0-9_-]+:/, "");
   const cleaned = colonStripped.replace(/\\/g, "/");

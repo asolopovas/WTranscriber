@@ -357,7 +357,7 @@ fn backup_config_to_persistent() {
     }
 }
 
-#[allow(clippy::missing_const_for_fn)] // Android branch is non-const (PathBuf, fs ops)
+#[allow(clippy::missing_const_for_fn)]
 pub fn android_mirror_after_install() {
     #[cfg(target_os = "android")]
     {
@@ -409,7 +409,7 @@ fn backup_single_model(model_id: &str) {
     }
 }
 
-#[allow(clippy::missing_const_for_fn)] // Android branch is non-const (PathBuf, fs ops)
+#[allow(clippy::missing_const_for_fn)]
 pub fn android_backup_model(model_id: &str) {
     #[cfg(target_os = "android")]
     {
@@ -422,7 +422,7 @@ pub fn android_backup_model(model_id: &str) {
     }
 }
 
-#[allow(clippy::missing_const_for_fn)] // Android branch is non-const (PathBuf, fs ops)
+#[allow(clippy::missing_const_for_fn)]
 pub fn android_remove_from_persistent(model_id: &str) {
     #[cfg(target_os = "android")]
     {
