@@ -1,10 +1,10 @@
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-use crate::util::{exe, root, sh};
+use crate::util::root;
 
-use super::paths::{abi_for, android_home, gen_android, prebuilt_dir};
+use super::paths::{abi_for, gen_android, prebuilt_dir};
 
 pub(super) fn patch_gradle_properties() -> Result<()> {
     let path = gen_android().join("gradle.properties");
@@ -65,59 +65,6 @@ pub(super) fn patch_gradle_build_config() -> Result<()> {
         );
     }
     fs::write(&gradle, raw)?;
-    Ok(())
-}
-
-pub(super) fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result<()> {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let ks = Path::new(&home).join(".android").join("debug.keystore");
-    if !ks.exists() {
-        bail!("debug.keystore not found at {}", ks.display());
-    }
-    let bt_dir = android_home().join("build-tools");
-    let bt_ver = fs::read_dir(&bt_dir)?
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .max()
-        .context("no Android build-tools installed")?;
-    let bt = bt_dir.join(bt_ver);
-    let zipalign = bt.join(exe("zipalign"));
-    let apksigner = bt.join(if cfg!(windows) {
-        "apksigner.bat"
-    } else {
-        "apksigner"
-    });
-    let aligned = unsigned.with_file_name("app-universal-release-aligned.apk");
-    sh(
-        &zipalign.to_string_lossy(),
-        &[
-            "-f",
-            "-p",
-            "4",
-            &unsigned.to_string_lossy(),
-            &aligned.to_string_lossy(),
-        ],
-    )?;
-    sh(
-        &apksigner.to_string_lossy(),
-        &[
-            "sign",
-            "--ks",
-            &ks.to_string_lossy(),
-            "--ks-pass",
-            "pass:android",
-            "--ks-key-alias",
-            "androiddebugkey",
-            "--key-pass",
-            "pass:android",
-            "--out",
-            &signed.to_string_lossy(),
-            &aligned.to_string_lossy(),
-        ],
-    )?;
-    let _ = fs::remove_file(&aligned);
     Ok(())
 }
 

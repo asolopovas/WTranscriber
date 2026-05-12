@@ -32,15 +32,6 @@ pub(super) fn adb_reverse(device: Option<&str>, port: &str) -> Result<()> {
     adb_run(device, &["reverse", &spec, &spec], Duration::from_secs(5))
 }
 
-pub(super) fn adb_devices() -> Vec<String> {
-    capture_timeout("adb", &["devices"], Duration::from_secs(2))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| line.split_once('\t'))
-        .map(|(serial, state)| format!("{}:{}", serial.trim(), state.trim()))
-        .collect()
-}
-
 pub(super) fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
     let socket = adb_capture(
         device,

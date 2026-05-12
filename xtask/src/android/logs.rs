@@ -9,7 +9,6 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::ANDROID_PACKAGE;
 use super::proc::capture_timeout;
 
 pub(super) fn last_line_matching(path: &Path, f: impl Fn(&str) -> bool) -> Option<String> {
@@ -253,22 +252,6 @@ pub(super) fn install_signature_mismatch(paths: &[&Path]) -> bool {
     })
 }
 
-pub(super) fn file_age_seconds(path: &Path) -> Option<u64> {
-    Some(
-        fs::metadata(path)
-            .ok()?
-            .modified()
-            .ok()?
-            .elapsed()
-            .ok()?
-            .as_secs(),
-    )
-}
-
-pub(super) fn json_seconds(value: &Value) -> String {
-    value.as_u64().map_or("-".into(), |v| v.to_string())
-}
-
 pub(super) fn api_probe(timeout: Duration) -> Option<String> {
     let expr = concat!(
         "import('/src/api.ts').then(m => Promise.all([",
@@ -276,15 +259,6 @@ pub(super) fn api_probe(timeout: Duration) -> Option<String> {
         "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
     );
     capture_timeout("bun", &["scripts/cdp.ts", expr], timeout)
-}
-
-pub(super) fn is_app_crash_signal(line: &str) -> bool {
-    line.contains(ANDROID_PACKAGE)
-        && (line.contains("am_crash")
-            || line.contains("am_proc_died")
-            || (line.contains("am_kill")
-                && !line.contains("installPackageLI")
-                && !line.contains("due to install")))
 }
 
 pub(super) fn read_pids(path: &Path) -> BTreeMap<String, u32> {

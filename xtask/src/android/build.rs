@@ -1,15 +1,12 @@
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::process::Command;
-use std::time::Instant;
 
-use crate::util::{exe, root, sh, sh_in};
+use crate::util::{exe, root, sh_in};
 
-use super::ANDROID_PACKAGE;
 use super::patch::{
     copy_jni_prebuilts, patch_generated_activities, patch_gradle_build_config,
     patch_gradle_properties, patch_manifest, patch_plugin_consumer_rules, sign_patch_inline,
-    sign_with_debug_keystore,
 };
 use super::paths::{
     abi_for, android_home, apk_release_dir, clang_ext, ndk_bin, ndk_home, prebuilt_dir,
@@ -112,28 +109,6 @@ pub(super) fn preflight_node_modules() -> Result<()> {
     Ok(())
 }
 
-pub(super) fn cmd_doctor(target: &str) -> Result<()> {
-    let abi = abi_for(target)?;
-    let sdk = android_home();
-    let ndk = ndk_home(&sdk);
-    let bin = ndk_bin(&ndk);
-    let sherpa = prebuilt_dir(target)?.join("libsherpa-onnx-c-api.so");
-    for (k, v) in [
-        ("OS", std::env::consts::OS.to_string()),
-        ("ANDROID_HOME", sdk.display().to_string()),
-        ("NDK_HOME", ndk.display().to_string()),
-        ("NDK exists", ndk.exists().to_string()),
-        ("NDK toolchain", bin.display().to_string()),
-        ("target", target.to_string()),
-        ("abi", abi.abi.to_string()),
-        ("sherpa prebuilt", sherpa.display().to_string()),
-        ("sherpa exists", sherpa.exists().to_string()),
-    ] {
-        println!("{k:<18} {v}");
-    }
-    Ok(())
-}
-
 pub(super) fn cmd_build(target: &str) -> Result<()> {
     let env = prepare(target, true)?;
     let args: Vec<&str> = if std::env::var("WT_SKIP_FRONTEND").is_ok() {
@@ -174,108 +149,6 @@ pub(super) fn cmd_build(target: &str) -> Result<()> {
         println!("\nAPK: {}\nsize: {:.1} MB", apk.display(), mb);
     }
     Ok(())
-}
-
-pub(super) fn cmd_install(target: &str, fresh: bool) -> Result<()> {
-    let t0 = Instant::now();
-    let mut env = prepare(target, true)?;
-    env.push(("WT_DEV_APK".into(), "1".into()));
-    spawn_with_env(
-        "bun",
-        &[
-            "run", "tauri", "android", "build", "--target", target, "--apk",
-        ],
-        &env,
-    )?;
-    let apk_dir = apk_release_dir();
-    let unsigned = apk_dir.join("app-universal-release-unsigned.apk");
-    let signed = apk_dir.join("app-universal-release.apk");
-    if unsigned.exists() {
-        sign_with_debug_keystore(&unsigned, &signed)?;
-    } else if !signed.exists() {
-        bail!(
-            "no APK found at {} or {}",
-            unsigned.display(),
-            signed.display()
-        );
-    }
-    if fresh {
-        println!("\n→ adb uninstall {ANDROID_PACKAGE} (--fresh)");
-        let _ = Command::new("adb")
-            .args(["uninstall", ANDROID_PACKAGE])
-            .status();
-    }
-    println!("\n→ adb install -r {}", signed.display());
-    sh("adb", &["install", "-r", &signed.to_string_lossy()])?;
-    let mb = fs::metadata(&signed)?.len() as f64 / 1024.0 / 1024.0;
-    println!(
-        "\n✓ installed {:.1} MB in {:.1}s{}",
-        mb,
-        t0.elapsed().as_secs_f64(),
-        if fresh {
-            " (fresh, models will re-download)"
-        } else {
-            " (data preserved)"
-        }
-    );
-    Ok(())
-}
-
-pub(super) fn cmd_cli(target: &str, debug: bool) -> Result<()> {
-    ensure_prebuilts(target)?;
-    let abi = abi_for(target)?;
-    let env = build_env(target)?;
-    let mut cargo_args: Vec<&str> = vec![
-        "build",
-        "--manifest-path",
-        "src-tauri/Cargo.toml",
-        "--bin",
-        "wt",
-        "--target",
-        abi.triple,
-    ];
-    if !debug {
-        cargo_args.push("--release");
-    }
-    spawn_with_env("cargo", &cargo_args, &env)?;
-    let bin = root()
-        .join("src-tauri")
-        .join("target")
-        .join(abi.triple)
-        .join(if debug { "debug" } else { "release" })
-        .join("wt");
-    if bin.exists() {
-        let mb = fs::metadata(&bin)?.len() as f64 / 1024.0 / 1024.0;
-        println!("\nbinary: {}\nsize: {:.1} MB", bin.display(), mb);
-    }
-    Ok(())
-}
-
-pub(super) fn cmd_cli_push() -> Result<()> {
-    cmd_cli("aarch64", true)?;
-    let bin = root()
-        .join("src-tauri")
-        .join("target")
-        .join("aarch64-linux-android")
-        .join("debug")
-        .join("wt");
-    if !bin.exists() {
-        bail!("wt binary missing at {}", bin.display());
-    }
-    sh(
-        "adb",
-        &["push", &bin.to_string_lossy(), "/data/local/tmp/wt"],
-    )?;
-    sh("adb", &["shell", "chmod", "755", "/data/local/tmp/wt"])?;
-    println!("pushed to /data/local/tmp/wt");
-    Ok(())
-}
-
-pub(super) fn cmd_cli_run(args: &[String]) -> Result<()> {
-    sh(
-        "adb",
-        &["shell", &format!("/data/local/tmp/wt {}", args.join(" "))],
-    )
 }
 
 pub(super) fn cmd_prebuilts(version: Option<String>) -> Result<()> {

@@ -8,7 +8,6 @@ pub(super) struct Abi {
     pub abi: &'static str,
     pub rust: &'static str,
     pub clang: &'static str,
-    pub triple: &'static str,
 }
 
 pub(super) fn abi_for(target: &str) -> Result<Abi> {
@@ -17,25 +16,21 @@ pub(super) fn abi_for(target: &str) -> Result<Abi> {
             abi: "arm64-v8a",
             rust: "aarch64_linux_android",
             clang: "aarch64-linux-android24-clang",
-            triple: "aarch64-linux-android",
         },
         "armv7" => Abi {
             abi: "armeabi-v7a",
             rust: "armv7_linux_androideabi",
             clang: "armv7a-linux-androideabi24-clang",
-            triple: "armv7-linux-androideabi",
         },
         "i686" => Abi {
             abi: "x86",
             rust: "i686_linux_android",
             clang: "i686-linux-android24-clang",
-            triple: "i686-linux-android",
         },
         "x86_64" => Abi {
             abi: "x86_64",
             rust: "x86_64_linux_android",
             clang: "x86_64-linux-android24-clang",
-            triple: "x86_64-linux-android",
         },
         other => bail!("unknown target: {other} (expected: aarch64|armv7|i686|x86_64)"),
     })
@@ -150,7 +145,6 @@ mod tests {
             assert_eq!(abi.abi, abi_name);
             assert_eq!(abi.rust, rust);
             assert_eq!(abi.clang, clang);
-            assert!(abi.triple.contains("linux-android"));
         }
     }
 

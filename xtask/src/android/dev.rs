@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::json;
 use std::fs;
 use std::time::Duration;
@@ -6,19 +6,18 @@ use std::time::Duration;
 use crate::util::root;
 
 use super::adb::{
-    adb_capture, adb_devices, adb_reverse, adb_run, attach_webview, detect_dev_host,
-    detect_device_target, wait_for_attach, with_device,
+    adb_capture, adb_reverse, adb_run, attach_webview, detect_dev_host, detect_device_target,
+    wait_for_attach, with_device,
 };
 use super::build::{preflight_node_modules, prepare};
 use super::lldb;
 use super::logs::{
-    LogStreamer, api_probe, file_age_seconds, install_signature_mismatch, is_app_crash_signal,
-    json_seconds, last_line_matching, pids_device, read_pids, tail_any,
+    LogStreamer, api_probe, install_signature_mismatch, pids_device, read_pids,
     wait_for_log_line_with_guard,
 };
 use super::proc::{
     kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,
-    tcp_open, wait_for_port,
+    tcp_open,
 };
 use super::{ANDROID_PACKAGE, BootstrapMode};
 
@@ -274,113 +273,6 @@ fn session_already_healthy(device_arg: Option<&str>) -> bool {
     api_probe(Duration::from_secs(5)).is_some()
 }
 
-pub(super) fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> {
-    let tmp = root().join("tmp");
-    let platform = fs::read_to_string(tmp.join("_platform")).unwrap_or_else(|_| "unknown".into());
-    let pids_path = tmp.join("_pids.json");
-    let pids = read_pids(&pids_path);
-    let device = device_arg
-        .map(str::to_string)
-        .or_else(|| pids_device(&pids_path));
-    let devices = adb_devices();
-    let reverse = adb_capture(
-        device.as_deref(),
-        &["reverse", "--list"],
-        Duration::from_secs(2),
-    )
-    .unwrap_or_default();
-    let mut cdp_forward = tcp_open(9222);
-    if !cdp_forward {
-        let _ = attach_webview(device.as_deref(), as_json);
-        cdp_forward = tcp_open(9222);
-    }
-    let mut api = cdp_forward
-        .then(|| api_probe(Duration::from_secs(8)))
-        .flatten();
-    if api.is_none() {
-        let _ = attach_webview(device.as_deref(), as_json);
-        cdp_forward = tcp_open(9222);
-        api = cdp_forward
-            .then(|| api_probe(Duration::from_secs(8)))
-            .flatten();
-    }
-    let reverse1420 = reverse.contains("tcp:1420");
-    let reverse1421 = reverse.contains("tcp:1421");
-    let vite_alive = tcp_open(1420);
-    let api_responsive = api.is_some();
-    let session_healthy = vite_alive && reverse1420 && reverse1421 && cdp_forward && api_responsive;
-    let dev_log = tmp.join("android-dev.log");
-    let dev_err = tmp.join("android-dev.err.log");
-    let logcat_log = tmp.join("logcat.log");
-    let status = json!({
-        "platform": platform.trim(),
-        "sessionHealthy": session_healthy,
-        "pidsFile": !pids.is_empty(),
-        "devWrapperPid": pids.get("dev_wrapper"),
-        "devWrapperAlive": pids.get("dev_wrapper").is_some_and(|pid| pid_alive(*pid)),
-        "device": device,
-        "devPortOwner": pids.get("dev_port_owner"),
-        "port1420Owner": port_owner(1420),
-        "viteAlive": vite_alive,
-        "android": {
-            "adbDevices": devices,
-            "reverse1420": reverse1420,
-            "reverse1421": reverse1421,
-            "cdpForward": cdp_forward,
-            "apiResponsive": api_responsive,
-            "apiProbe": api,
-            "devLogAgeSeconds": file_age_seconds(&dev_log),
-            "logcatAgeSeconds": file_age_seconds(&logcat_log),
-            "recentViteConnection": tail_any(&[&dev_log, &dev_err], |s| (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")),
-            "lastHmrUpdate": last_line_matching(&dev_log, |s| s.contains("[vite] hmr update"))
-                .or_else(|| last_line_matching(&dev_err, |s| s.contains("[vite] hmr update"))),
-            "lastCrashSignal": last_line_matching(&logcat_log, is_app_crash_signal)
-        }
-    });
-    if as_json {
-        println!("{}", serde_json::to_string_pretty(&status)?);
-        return Ok(());
-    }
-    let android = &status["android"];
-    println!(
-        "platform={} healthy={} pidsFile={} vite=:1420/{} owner={}",
-        status["platform"].as_str().unwrap_or("unknown"),
-        status["sessionHealthy"].as_bool().unwrap_or(false),
-        status["pidsFile"].as_bool().unwrap_or(false),
-        status["viteAlive"].as_bool().unwrap_or(false),
-        status["port1420Owner"]
-            .as_u64()
-            .map_or("-".to_string(), |p| p.to_string())
-    );
-    println!(
-        "adbDevices={} reverse1420={} reverse1421={} cdp={} api={}",
-        android["adbDevices"]
-            .as_array()
-            .map_or(String::new(), |items| items
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect::<Vec<_>>()
-                .join(",")),
-        android["reverse1420"].as_bool().unwrap_or(false),
-        android["reverse1421"].as_bool().unwrap_or(false),
-        android["cdpForward"].as_bool().unwrap_or(false),
-        android["apiResponsive"].as_bool().unwrap_or(false)
-    );
-    println!(
-        "devLogAge={}s logcatAge={}s viteConnectionInTail={}",
-        json_seconds(&android["devLogAgeSeconds"]),
-        json_seconds(&android["logcatAgeSeconds"]),
-        android["recentViteConnection"].as_bool().unwrap_or(false)
-    );
-    if let Some(line) = android["lastHmrUpdate"].as_str() {
-        println!("lastHmr={line}");
-    }
-    if let Some(line) = android["lastCrashSignal"].as_str() {
-        println!("lastCrash={line}");
-    }
-    Ok(())
-}
-
 pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
     let tmp = root().join("tmp");
     let pids_path = tmp.join("_pids.json");
@@ -412,15 +304,6 @@ pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
     let _ = fs::remove_file(tmp.join("_pids.json"));
     let _ = fs::remove_file(tmp.join("_platform"));
     println!("dev session stopped");
-    Ok(())
-}
-
-pub(super) fn cmd_smoke(device: Option<&str>) -> Result<()> {
-    let target = detect_device_target(device)?;
-    wait_for_port(1420, Duration::from_secs(5))?;
-    wait_for_attach(device, Duration::from_secs(10))?;
-    let probe = api_probe(Duration::from_secs(10)).context("Tauri IPC API probe failed")?;
-    println!("android smoke ok target={target} api={probe}");
     Ok(())
 }
 

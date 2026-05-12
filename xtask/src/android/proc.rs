@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -112,40 +112,6 @@ pub(super) fn tcp_open(port: u16) -> bool {
         Duration::from_millis(100),
     )
     .is_ok()
-}
-
-pub(super) fn wait_for_port(port: u16, timeout: Duration) -> Result<()> {
-    wait_for_port_with_guard(port, timeout, || true)
-}
-
-pub(super) fn wait_for_port_with_guard(
-    port: u16,
-    timeout: Duration,
-    guard: impl Fn() -> bool,
-) -> Result<()> {
-    let start = Instant::now();
-    let deadline = start + timeout;
-    let mut next_tick = start + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if tcp_open(port) {
-            eprintln!("  ✓ vite bound :{port} ({}s)", start.elapsed().as_secs());
-            return Ok(());
-        }
-        if !guard() {
-            bail!(
-                "vite bind :{port} aborted — child process exited; check tmp/android-dev.err.log"
-            );
-        }
-        if Instant::now() >= next_tick {
-            eprintln!(
-                "  [{:>3}s] waiting for vite :{port}…",
-                start.elapsed().as_secs()
-            );
-            next_tick = Instant::now() + Duration::from_secs(10);
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    bail!("vite did not bind :{port} within {}s", timeout.as_secs())
 }
 
 pub(super) fn pid_alive(pid: u32) -> bool {
