@@ -10,15 +10,21 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[host] --skip-rebuild, reusing existing bundle");
         return Ok(0);
     }
-    unsafe {
-        std::env::remove_var("SHERPA_ONNX_LIB_DIR");
-        std::env::remove_var("SHERPA_ONNX_LIB");
-        std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
-    }
     if cfg!(target_os = "linux") {
+        // The deb-in-docker build has its own pinned sherpa SDK paths; any
+        // host-side overrides would point at host-arch libs unusable inside
+        // the container.
+        unsafe {
+            std::env::remove_var("SHERPA_ONNX_LIB_DIR");
+            std::env::remove_var("SHERPA_ONNX_LIB");
+            std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
+        }
         println!("[host] building .deb inside debian:12 container (linux host)");
         return build_deb_in_docker(lock);
     }
+    // Windows host: honour SHERPA_ONNX_LIB_DIR from install-sherpa-cuda.ps1
+    // so build.rs links against the CUDA runtime instead of the CPU-only
+    // auto-download.
     let rc = run_streamed(
         "host",
         "cargo",
