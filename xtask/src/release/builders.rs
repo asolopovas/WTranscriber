@@ -6,20 +6,29 @@ use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
-fn cargo_incremental_value() -> &'static str {
-    let sccache_active = std::env::var("RUSTC_WRAPPER")
-        .ok()
-        .map(|v| v.contains("sccache"))
-        .unwrap_or(false)
-        || std::env::var("CMAKE_C_COMPILER_LAUNCHER")
+fn sccache_active() -> bool {
+    let probe = |k: &str| {
+        std::env::var(k)
             .ok()
             .map(|v| v.contains("sccache"))
             .unwrap_or(false)
-        || std::env::var("CMAKE_CXX_COMPILER_LAUNCHER")
-            .ok()
-            .map(|v| v.contains("sccache"))
-            .unwrap_or(false);
-    if sccache_active { "0" } else { "1" }
+    };
+    probe("RUSTC_WRAPPER")
+        || probe("CMAKE_C_COMPILER_LAUNCHER")
+        || probe("CMAKE_CXX_COMPILER_LAUNCHER")
+}
+
+fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
+    // sccache refuses to run if CARGO_INCREMENTAL is set to *any* value.
+    // Subprocesses inherit our env, so also clear any inherited value here.
+    if sccache_active() {
+        // SAFETY: builders.rs is single-threaded entry; spawned threads have
+        // not yet captured env. Removing before spawn is observed by children.
+        unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
+        Vec::new()
+    } else {
+        vec![("CARGO_INCREMENTAL", "1")]
+    }
 }
 
 // Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
@@ -37,7 +46,8 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     }
     let lock_cli = lock.clone();
     let lock_gui = lock.clone();
-    let incr = cargo_incremental_value();
+    let incr_cli = cargo_incremental_env();
+    let incr_gui = cargo_incremental_env();
     let h_cli = thread::spawn(move || {
         run_streamed(
             "host-cli",
@@ -50,7 +60,7 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
                 "--bin",
                 "wt",
             ],
-            &[("CARGO_INCREMENTAL", incr)],
+            &incr_cli,
             &lock_cli,
         )
     });
@@ -65,7 +75,7 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
                 "-c",
                 "{\"build\":{\"beforeBuildCommand\":\"\"}}",
             ],
-            &[("CARGO_INCREMENTAL", incr)],
+            &incr_gui,
             &lock_gui,
         )
     });
@@ -88,10 +98,8 @@ pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i
             return Ok(rc);
         }
         ensure_dev_keystore_properties(dev)?;
-        let mut env_vars: Vec<(&str, &str)> = vec![
-            ("CARGO_INCREMENTAL", cargo_incremental_value()),
-            ("WT_SKIP_FRONTEND", "1"),
-        ];
+        let mut env_vars: Vec<(&str, &str)> = cargo_incremental_env();
+        env_vars.push(("WT_SKIP_FRONTEND", "1"));
         if dev {
             env_vars.push(("WT_DEV_APK", "1"));
         }
