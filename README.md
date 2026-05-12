@@ -58,16 +58,17 @@ On first launch the app downloads runtimes and models into the OS user dirs (`%A
 
 Desktop, NVIDIA GPU host:
 
-| Component                                 |    Download | Notes                                |
-| ----------------------------------------- | ----------: | ------------------------------------ |
-| Whisper large-v3-turbo (ASR)              |      989 MB | `sherpa-whisper-turbo`, 99 languages |
-| Sortformer 4-speaker v2.1 ONNX (diarizer) |      470 MB | `sortformer-v2-onnx-4spk`            |
-| Qwen3 0.6B Q4_K_M (LLM, auto-rename)      |      378 MB | `qwen3-0.6b-q4km`                    |
-| sherpa-onnx CUDA runtime (Windows)        |      296 MB | extracts to ~700 MB                  |
-| cuDNN 9.21.1.3 (Windows)                  |      646 MB | extracts to ~1.0 GB                  |
-| llama.cpp b9045 (Windows)                 |       15 MB | naming engine                        |
-| **Total bandwidth**                       | **~2.8 GB** |                                      |
-| **Total disk after install**              | **~3.7 GB** | runtimes are extracted               |
+| Component                                 |    Download |   Extracted | Notes                                 |
+| ----------------------------------------- | ----------: | ----------: | ------------------------------------- |
+| Whisper large-v3-turbo (ASR)              |      989 MB |      989 MB | `sherpa-whisper-turbo`, 99 languages  |
+| Sortformer 4-speaker v2.1 ONNX (diarizer) |      470 MB |      470 MB | `sortformer-v2-onnx-4spk`             |
+| Qwen3 0.6B Q4_K_M (LLM, auto-rename)      |      378 MB |      378 MB | `qwen3-0.6b-q4km`                     |
+| sherpa-onnx CUDA runtime (Windows)        |      296 MB |      316 MB |                                       |
+| cuDNN 9.21.1.3 (Windows)                  |      646 MB |    1,009 MB |                                       |
+| llama.cpp b9045 (Windows)                 |       15 MB |       46 MB | naming engine                         |
+| **Total bandwidth**                       | **~2.8 GB** |             |                                       |
+| **Total disk (active)**                   |             | **~3.2 GB** |                                       |
+| **Total disk (with download cache)**      |             | **~4.1 GB** | archives kept in cache/ for reinstall |
 
 Android default essentials (Parakeet + TitaNet + Qwen3 0.6B) total **~1.1 GB**; the APK already bundles its native libs so there's no separate runtime download.
 
