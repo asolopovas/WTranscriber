@@ -45,6 +45,10 @@ setup:
 [windows]
 bootstrap:
     {{_run}} --tag bootstrap --idle 120 --max 1800 -- powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
+    # Pre-warm cargo deps so the first `just check` after bootstrap doesn't
+    # pay a ~5min cold whisper.cpp + ggml + sherpa-onnx C++ build under
+    # parallel cargo invocations. Subsequent checks finish in <10s.
+    {{_run}} --tag bootstrap-deps --idle 600 --max 1800 -- cargo build --manifest-path src-tauri/Cargo.toml
     @bun -e "import {mkdirSync,writeFileSync} from 'node:fs'; mkdirSync('tmp',{recursive:true}); writeFileSync('tmp/.bootstrap.stamp', new Date().toISOString())"
 
 [windows, private]

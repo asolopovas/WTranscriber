@@ -41,6 +41,8 @@ just release-stable    check + bump + build + publish (stable)
 
 `just check` runs **11 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 
+`just check` assumes the C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built — `just bootstrap` pre-warms them via `cargo build` after the system-deps script. Warm `just check` finishes in <10s; a cold first run is ~5min. If `target/` is wiped (`cargo clean`, fresh checkout, deleted `tmp/.bootstrap.stamp`), re-run `just bootstrap` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
+
 `just --list` for the rest.
 
 ## Conventions
