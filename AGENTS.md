@@ -6,12 +6,18 @@ Stack: Tauri 2 · Rust edition 2024 (MSRV 1.88, pinned via `rust-toolchain.toml`
 
 ```
 src/             Vue 3 frontend (api.ts, types.ts mirrors Rust)
-src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler!), bin/wt.rs, api.rs, config.rs, paths.rs, error.rs, models/, transcriber/, diarizer/, audio/, runtimes/, llm/, engine/
+src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler!), bin/wt.rs,
+                 api.rs, config.rs, paths.rs, error.rs, constants.rs,
+                 android.rs, browser.rs, essentials.rs, fs_utils.rs,
+                 lang_id.rs, logfile.rs, process.rs, progress.rs,
+                 runtime_install.rs,
+                 models/, transcriber/, diarizer/, audio/, audio_toolkit/,
+                 runtimes/, llm/, engine/, namer/
 src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
 xtask/src/       bump / publish / release / android orchestration
 scripts/         run.ts, parallel.ts, android-emu.ts, cdp.ts, lint-vue.ts, clean-temp.ts, doctor.ts, install-*.ps1, bootstrap-*
 docs/            android · dev-loop · release · rust-build-speed
-.pi/agents/      diagnose · runner
+.agents/skills/  tauri (loaded by the Skill tool)
 ```
 
 ## Task contract
@@ -62,9 +68,9 @@ just release-stable    check + bump + tag + build + publish
 
 ## Per-turn during a live dev session
 
-- Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → `wt-diagnose`.
+- Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → root-cause from `tmp/*.log` + `adb logcat` + `git log -p`.
 - Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just android-stop && just android`.
-- New `am_kill` / `am_proc_died` / `am_crash` for the app → `wt-diagnose`.
+- New `am_kill` / `am_proc_died` / `am_crash` for the app → inspect `tmp/logcat.log` around the timestamp and bisect against recent commits.
 
 ## Tauri workflow by change type
 
@@ -74,30 +80,21 @@ just release-stable    check + bump + tag + build + publish
 | Rust command / IPC shape      | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + typecheck                 | Android: restart bootstrap   |
 | Rust native / long-running    | `src-tauri/src/**`                                     | Focused Rust test/check; inspect `RustStdoutStderr` | Android: restart bootstrap   |
 | Tauri config / capability     | `tauri.conf.json`, `capabilities/*.json`               | Reproduce the exact invoke; check IPC errors        | Restart bootstrap            |
-| Android scaffold / manifest   | `src-tauri/gen/android/**`                             | Device smoke via `wt-runner`                        | Restart bootstrap            |
+| Android scaffold / manifest   | `src-tauri/gen/android/**`                             | `just android-smoke` on a connected device          | Restart bootstrap            |
 | Release / build orchestration | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check`                 | Stop live dev first          |
-
-## Agent roster
-
-| Agent         | Job                                                                 | Writes                                                           | Forbidden                                        |
-| ------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------ |
-| `wt-diagnose` | Root-cause one failing signal from `tmp/*.log` + `adb`/`git log -p` | `tmp/diagnose-<slug>.md`                                         | edits, builds, commits, installs, agent-to-agent |
-| `wt-runner`   | Install + 30 s smoke test on Win GUI / Win CLI / Android / WSL CLI  | `tmp/install-report.json`, `tmp/test-report.json` + side-effects | git, source edits, dev-session APK rebuild       |
-
-Both return only `VERDICT / EVIDENCE / FIX`. Raw logs stay in artefact files.
 
 ## Decision table
 
-| Need                          | Action                                                                |
-| ----------------------------- | --------------------------------------------------------------------- |
-| Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                         |
-| Diagnose a failing log signal | `wt-diagnose`                                                         |
-| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`    |
-| Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities |
-| Edit project files            | Main thread (pre-commit hook is the gate)                             |
-| Install + smoke-test          | `wt-runner` (modes: `install`, `test`, `install-and-test`)            |
-| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)    |
-| Stable release                | `just release-stable` via `wt-runner`                                 |
+| Need                          | Action                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                           |
+| Diagnose a failing log signal | Read `tmp/*.log` + `adb logcat` + `git log -p`; bisect recent commits   |
+| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`      |
+| Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities   |
+| Edit project files            | Main thread (pre-commit hook is the gate)                               |
+| Install + smoke-test          | `just android-install` + `just android-smoke` (or host installer build) |
+| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)      |
+| Stable release                | `just release-stable`                                                   |
 
 ## Skills
 

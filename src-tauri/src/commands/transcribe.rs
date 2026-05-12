@@ -61,55 +61,73 @@ struct OverallInputs {
     diarize_only: bool,
 }
 
-fn compute_overall_static(
-    inputs: OverallInputs,
-    smoother: &Mutex<Smoother>,
-    diarize: &Mutex<Option<DiarizeSmoother>>,
-) -> (f64, f64) {
-    let rank = match inputs.phase {
+const fn phase_rank(phase: Phase) -> u8 {
+    match phase {
         Phase::CacheCheck => 0,
         Phase::LoadingAudio => 1,
         Phase::Transcribing => 2,
         Phase::Diarizing => 3,
         Phase::Writing => 4,
         Phase::Done => 5,
+    }
+}
+
+fn transcribe_snapshot(
+    phase: Phase,
+    audio_dur_sec: f64,
+    smoother: &Mutex<Smoother>,
+) -> (f64, f64, f64) {
+    let transcribe_done = phase_rank(phase) > phase_rank(Phase::Transcribing);
+    let Ok(mut s) = smoother.lock() else {
+        let dur = audio_dur_sec.max(1.0);
+        return (dur, 0.0, dur);
     };
-    let transcribe_done = rank > 2;
+    let total = s.total_wall_sec().max(0.001);
+    if transcribe_done {
+        (total, 100.0, 0.0)
+    } else if matches!(phase, Phase::Transcribing) {
+        let (pct, _) = s.snapshot();
+        (total, pct, s.remaining_wall_sec())
+    } else {
+        (total, 0.0, total)
+    }
+}
 
-    let (t_total, t_pct, t_remaining) = smoother.lock().map_or_else(
-        |_| {
-            let dur = inputs.audio_dur_sec.max(1.0);
-            (dur, 0.0, dur)
-        },
-        |mut s| {
-            let total = s.total_wall_sec().max(0.001);
-            if transcribe_done {
-                (total, 100.0, 0.0)
-            } else if matches!(inputs.phase, Phase::Transcribing) {
-                let (pct, _) = s.snapshot();
-                (total, pct, s.remaining_wall_sec())
-            } else {
-                (total, 0.0, total)
-            }
-        },
-    );
+fn diarize_snapshot(
+    phase: Phase,
+    audio_dur_sec: f64,
+    diarize_prior_rtf: f64,
+    diarize: &Mutex<Option<DiarizeSmoother>>,
+) -> (f64, f64, f64) {
+    let prior_total = (audio_dur_sec / diarize_prior_rtf).max(0.001);
+    if phase_rank(phase) > phase_rank(Phase::Diarizing) {
+        return (prior_total, 100.0, 0.0);
+    }
+    let Ok(mut g) = diarize.lock() else {
+        return (prior_total, 0.0, prior_total);
+    };
+    let Some(d) = g.as_mut() else {
+        return (prior_total, 0.0, prior_total);
+    };
+    let total = d.total_wall_sec().max(0.001);
+    let (pct, _) = d.snapshot();
+    (total, pct, d.remaining_wall_sec())
+}
 
+fn compute_overall_static(
+    inputs: OverallInputs,
+    smoother: &Mutex<Smoother>,
+    diarize: &Mutex<Option<DiarizeSmoother>>,
+) -> (f64, f64) {
+    let (t_total, t_pct, t_remaining) =
+        transcribe_snapshot(inputs.phase, inputs.audio_dur_sec, smoother);
     let (d_total, d_pct, d_remaining) = if inputs.expect_diarize {
-        let diarize_done = rank > 3;
-        let prior_total = (inputs.audio_dur_sec / inputs.diarize_prior_rtf).max(0.001);
-        if diarize_done {
-            (prior_total, 100.0, 0.0)
-        } else {
-            diarize
-                .lock()
-                .map_or((prior_total, 0.0, prior_total), |mut g| {
-                    g.as_mut().map_or((prior_total, 0.0, prior_total), |d| {
-                        let total = d.total_wall_sec().max(0.001);
-                        let (pct, _) = d.snapshot();
-                        (total, pct, d.remaining_wall_sec())
-                    })
-                })
-        }
+        diarize_snapshot(
+            inputs.phase,
+            inputs.audio_dur_sec,
+            inputs.diarize_prior_rtf,
+            diarize,
+        )
     } else {
         (0.0, 0.0, 0.0)
     };

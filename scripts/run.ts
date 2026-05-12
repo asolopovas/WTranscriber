@@ -114,25 +114,24 @@ const pipe = (stream: NodeJS.ReadableStream, emit: (line: string) => void): void
 pipe(child.stdout!, emitStdout);
 pipe(child.stderr!, emitStderr);
 
-const heartbeat = setInterval(
-  () => {
-    const idleMs = Date.now() - lastOutput;
-    if (idleMs >= opts.heartbeat * 1000) {
-      const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
-      emitStderr(
-        `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
-      );
-    }
-  },
-  Math.max(1000, opts.heartbeat * 1000),
-);
+const heartbeatMs = Math.max(1000, opts.heartbeat * 1000);
+let lastHeartbeatAt = Date.now();
 
-const idleTimer = setInterval(() => {
-  if (opts.idle <= 0) return;
-  if (Date.now() - lastOutput > opts.idle * 1000) {
+const watchdog = setInterval(() => {
+  const now = Date.now();
+  const idleMs = now - lastOutput;
+  if (opts.idle > 0 && idleMs > opts.idle * 1000) {
     killReason = `IDLE_TIMEOUT (${opts.idle}s without output)`;
     emitStderr(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
     killProcessTree(child, "SIGKILL");
+    return;
+  }
+  if (idleMs >= opts.heartbeat * 1000 && now - lastHeartbeatAt >= heartbeatMs) {
+    lastHeartbeatAt = now;
+    const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
+    emitStderr(
+      `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
+    );
   }
 }, 1000);
 
@@ -146,8 +145,7 @@ const hardTimer =
     : null;
 
 const cleanup = (): void => {
-  clearInterval(heartbeat);
-  clearInterval(idleTimer);
+  clearInterval(watchdog);
   if (hardTimer) clearTimeout(hardTimer);
   try {
     closeSync(logFd);

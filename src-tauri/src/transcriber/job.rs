@@ -61,48 +61,14 @@ pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript>
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }
 
-#[allow(clippy::too_many_lines)]
-fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
-    sink.phase(Phase::CacheCheck);
-    let speakers = config.speakers.unwrap_or(0);
-    let trim = audio::meta::load(input).unwrap_or_default();
-    let key_params = build_key_params(
-        input,
-        &config.model,
-        &config.language,
-        speakers,
-        !config.diarize,
-        trim.trim_start_ms,
-        trim.trim_end_ms.unwrap_or(0),
-    )?;
-    let key = compute_key(&key_params);
+struct TrimWindow {
+    start_ms: u64,
+    end_ms_opt: Option<u64>,
+    trimmed_dur_sec: f64,
+    total_dur_ms: u64,
+}
 
-    engine::preflight(config)?;
-
-    if let Some(cached) = cache::load(&key)? {
-        let stale = config.diarize && cached.speakers_detected == 0;
-        if stale {
-            logfile::info(&format!(
-                "cache hit but stale (0 speakers with diarize on); rerunning key={key}"
-            ));
-            let _ = cache::invalidate(&key);
-        } else {
-            logfile::info(&format!(
-                "cache hit; reusing transcript ({} utterances, {}, {} speakers)",
-                cached.utterances.len(),
-                format_hms(std::time::Duration::from_millis(cached.duration_ms)),
-                cached.speakers_detected,
-            ));
-            sink.phase(Phase::Done);
-            return Ok(cached);
-        }
-    }
-
-    if sink.is_cancelled() {
-        return Err(crate::error::Error::Cancelled);
-    }
-
-    sink.phase(Phase::LoadingAudio);
+fn compute_trim_window(input: &Path, trim: &audio::meta::AudioMeta) -> TrimWindow {
     let probe_t0 = std::time::Instant::now();
     let total_dur_ms = audio::probe_duration_ms(input).unwrap_or(0);
     logfile::info(&format!(
@@ -134,14 +100,157 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
             format_hms(std::time::Duration::from_secs_f64(trimmed_dur_sec)),
         ));
     }
+    TrimWindow {
+        start_ms,
+        end_ms_opt,
+        trimmed_dur_sec,
+        total_dur_ms,
+    }
+}
 
-    let mut state = partial::load(&key).unwrap_or_else(|| partial::Partial {
-        key: key.clone(),
-        last_done_sec: 0.0,
-        segments: Vec::new(),
-    });
+struct StreamCtx<'a> {
+    sink: &'a dyn Sink,
+    config: &'a Config,
+    trimmed_dur_sec: f64,
+}
+
+struct StreamState {
+    state: partial::Partial,
+    slab_index: usize,
+    total_audio: f64,
+    total_elapsed: f64,
+    detected_language: String,
+}
+
+struct ChunkAcc<'a> {
+    state: &'a mut partial::Partial,
+    region_start_sec: f64,
+    region_end_sec: f64,
+    resume_floor: f64,
+    trimmed_dur_sec: f64,
+    sink: &'a dyn Sink,
+    segs_emitted: usize,
+    dropped: usize,
+    save_err: Option<crate::error::Error>,
+}
+
+impl ChunkAcc<'_> {
+    fn on_chunk(&mut self, mut segs: Vec<Segment>, chunk_end_sec: f64) {
+        let abs_end = (self.region_start_sec + chunk_end_sec).min(self.region_end_sec);
+        if abs_end <= self.resume_floor + EPSILON_SEC {
+            return;
+        }
+        let before = segs.len();
+        apply_dedup(&mut segs);
+        self.dropped += before.saturating_sub(segs.len());
+        shift_segments(&mut segs, (self.region_start_sec * 1000.0) as u64);
+        self.state.segments.extend(segs.iter().cloned());
+        self.segs_emitted += segs.len();
+        self.state.last_done_sec = abs_end;
+        if self.save_err.is_none()
+            && let Err(e) = partial::save(self.state)
+        {
+            self.save_err = Some(e);
+        }
+        emit_pct(self.sink, abs_end, self.trimmed_dur_sec);
+    }
+}
+
+fn process_region(
+    ctx: &StreamCtx<'_>,
+    st: &mut StreamState,
+    region: &crate::audio_toolkit::vad::Region,
+    cancel_flag: &Arc<AtomicBool>,
+) -> Result<()> {
+    if ctx.sink.is_cancelled() {
+        cancel_flag.store(true, Ordering::SeqCst);
+        return Err(crate::error::Error::Cancelled);
+    }
+    if region.end_sec <= st.state.last_done_sec + EPSILON_SEC {
+        emit_pct(ctx.sink, region.end_sec, ctx.trimmed_dur_sec);
+        return Ok(());
+    }
+    st.slab_index += 1;
+    let region_dur_sec = region.end_sec - region.start_sec;
+    let resume_floor = st.state.last_done_sec;
+    let t0 = std::time::Instant::now();
+    let mut acc = ChunkAcc {
+        state: &mut st.state,
+        region_start_sec: region.start_sec,
+        region_end_sec: region.end_sec,
+        resume_floor,
+        trimmed_dur_sec: ctx.trimmed_dur_sec,
+        sink: ctx.sink,
+        segs_emitted: 0,
+        dropped: 0,
+        save_err: None,
+    };
+    let mut sub_progress = |_pct: f64| {};
+    let cancelled = || ctx.sink.is_cancelled();
+    let (slab_detected, _rtf) = engine::run(
+        &region.samples,
+        region_dur_sec,
+        ctx.config,
+        &mut sub_progress,
+        &cancelled,
+        &mut |segs, end| acc.on_chunk(segs, end),
+    )?;
+    if let Some(e) = acc.save_err.take() {
+        return Err(e);
+    }
+    let segs_emitted = acc.segs_emitted;
+    let dropped = acc.dropped;
+
+    if st.detected_language.is_empty() && !slab_detected.is_empty() {
+        st.detected_language.clone_from(&slab_detected);
+        logfile::info(&format!("detected language: {slab_detected}"));
+    }
+    let elapsed = t0.elapsed().as_secs_f64();
+    st.total_audio += region_dur_sec;
+    st.total_elapsed += elapsed;
+    let slab_rtf = if elapsed > 0.0 {
+        region_dur_sec / elapsed
+    } else {
+        0.0
+    };
+    logfile::info(&format!(
+        "slab #{} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
+        st.slab_index,
+        format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
+        format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
+        region_dur_sec,
+        elapsed,
+        slab_rtf,
+        segs_emitted,
+        if dropped > 0 {
+            format!(", dropped {dropped} dedup")
+        } else {
+            String::new()
+        },
+    ));
+    Ok(())
+}
+
+fn run_streaming_phase(
+    input: &Path,
+    config: &Config,
+    sink: &dyn Sink,
+    key: &str,
+    window: &TrimWindow,
+) -> Result<(StreamState, f64)> {
+    let mut st = StreamState {
+        state: partial::load(key).unwrap_or_else(|| partial::Partial {
+            key: key.to_string(),
+            last_done_sec: 0.0,
+            segments: Vec::new(),
+        }),
+        slab_index: 0,
+        total_audio: 0.0,
+        total_elapsed: 0.0,
+        detected_language: String::new(),
+    };
     let slab = slab_sec();
-    if state.segments.is_empty() {
+    if st.state.segments.is_empty() {
         logfile::info(&format!(
             "streaming start: slab={slab:.0}s engine={} model={}",
             config.engine.as_str(),
@@ -150,116 +259,34 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     } else {
         logfile::info(&format!(
             "resuming from {} ({} cached segs)",
-            format_hms(std::time::Duration::from_secs_f64(state.last_done_sec)),
-            state.segments.len(),
+            format_hms(std::time::Duration::from_secs_f64(st.state.last_done_sec)),
+            st.state.segments.len(),
         ));
     }
 
     sink.phase(Phase::Transcribing);
     let cancel_flag = Arc::new(AtomicBool::new(false));
     let cancel_for_stream = cancel_flag.clone();
-    let mut total_audio = 0.0_f64;
-    let mut total_elapsed = 0.0_f64;
-    let mut detected_language = String::new();
-    let mut slab_index: usize = 0;
     let pipeline_t0 = std::time::Instant::now();
-
-    let mut process_region = |region: crate::audio_toolkit::vad::Region| -> Result<()> {
-        if sink.is_cancelled() {
-            cancel_flag.store(true, Ordering::SeqCst);
-            return Err(crate::error::Error::Cancelled);
-        }
-        if region.end_sec <= state.last_done_sec + EPSILON_SEC {
-            emit_pct(sink, region.end_sec, trimmed_dur_sec);
-            return Ok(());
-        }
-        slab_index += 1;
-        let mut sub_progress = |_pct: f64| {};
-        let cancelled = || sink.is_cancelled();
-        let region_dur_sec = region.end_sec - region.start_sec;
-        let region_start_sec = region.start_sec;
-        let region_end_sec = region.end_sec;
-        let resume_floor = state.last_done_sec;
-        let t0 = std::time::Instant::now();
-        let mut slab_segs_emitted: usize = 0;
-        let mut slab_dropped: usize = 0;
-        let mut save_err: Option<crate::error::Error> = None;
-        let mut on_chunk = |mut segs: Vec<Segment>, chunk_end_sec: f64| {
-            let abs_end = (region_start_sec + chunk_end_sec).min(region_end_sec);
-            if abs_end <= resume_floor + EPSILON_SEC {
-                return;
-            }
-            let before = segs.len();
-            apply_dedup(&mut segs);
-            slab_dropped += before.saturating_sub(segs.len());
-            shift_segments(&mut segs, (region_start_sec * 1000.0) as u64);
-            state.segments.extend(segs.iter().cloned());
-            slab_segs_emitted += segs.len();
-            state.last_done_sec = abs_end;
-            if save_err.is_none() {
-                if let Err(e) = partial::save(&state) {
-                    save_err = Some(e);
-                }
-            }
-            emit_pct(sink, abs_end, trimmed_dur_sec);
-        };
-        let engine_result = engine::run(
-            &region.samples,
-            region_dur_sec,
-            config,
-            &mut sub_progress,
-            &cancelled,
-            &mut on_chunk,
-        );
-        let (slab_detected, _rtf) = engine_result?;
-        if let Some(e) = save_err {
-            return Err(e);
-        }
-        if detected_language.is_empty() && !slab_detected.is_empty() {
-            detected_language.clone_from(&slab_detected);
-            logfile::info(&format!("detected language: {slab_detected}"));
-        }
-        let elapsed = t0.elapsed().as_secs_f64();
-        total_audio += region_dur_sec;
-        total_elapsed += elapsed;
-        let slab_rtf = if elapsed > 0.0 {
-            region_dur_sec / elapsed
-        } else {
-            0.0
-        };
-        logfile::info(&format!(
-            "slab #{slab_index} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
-            format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
-            format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
-            region_dur_sec,
-            elapsed,
-            slab_rtf,
-            slab_segs_emitted,
-            if slab_dropped > 0 {
-                format!(", dropped {slab_dropped} dedup")
-            } else {
-                String::new()
-            },
-        ));
-        Ok(())
+    let ctx = StreamCtx {
+        sink,
+        config,
+        trimmed_dur_sec: window.trimmed_dur_sec,
     };
-
-    let stream_result = stream_slabs(
+    let scanned_end = stream_slabs(
         input,
-        start_ms,
-        end_ms_opt,
+        window.start_ms,
+        window.end_ms_opt,
         slab,
         cancel_for_stream,
-        |region| process_region(region).map(|()| true),
-    );
-
-    let scanned_end = stream_result?;
+        |region| process_region(&ctx, &mut st, &region, &cancel_flag).map(|()| true),
+    )?;
     if sink.is_cancelled() {
         return Err(crate::error::Error::Cancelled);
     }
 
-    let observed_rtf = if total_elapsed > 0.0 {
-        total_audio / total_elapsed
+    let observed_rtf = if st.total_elapsed > 0.0 {
+        st.total_audio / st.total_elapsed
     } else {
         0.0
     };
@@ -269,62 +296,127 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     }
     logfile::info(&format!(
         "transcribed: {} slab(s) {:.1}s audio in {:.1}s rtf={:.2} (wall {:.1}s)",
-        slab_index,
-        total_audio,
-        total_elapsed,
+        st.slab_index,
+        st.total_audio,
+        st.total_elapsed,
         observed_rtf,
         pipeline_t0.elapsed().as_secs_f64(),
     ));
+    Ok((st, scanned_end))
+}
 
-    let mut segments = state.segments.clone();
+fn run_diarize_phase(
+    input: &Path,
+    sink: &dyn Sink,
+    config: &Config,
+    speakers: u32,
+    total_dur_ms: u64,
+    scanned_end: f64,
+) -> (Vec<DiarSegment>, Option<String>) {
+    sink.phase(Phase::Diarizing);
+    let diar_dur_sec = if total_dur_ms > 0 {
+        total_dur_ms as f64 / 1000.0
+    } else {
+        scanned_end
+    };
+    let diar_t0 = std::time::Instant::now();
+    logfile::info(&format!(
+        "diarize start: backend={} speakers={}",
+        config.diarizer.as_str(),
+        speakers,
+    ));
+    match run_diarize_streaming(input, diar_dur_sec, speakers, sink, config) {
+        Ok((segs, name)) => {
+            let unique = segs
+                .iter()
+                .map(|s| s.speaker)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            logfile::info(&format!(
+                "diarized: {name} · {unique} speakers · {} segments · {:.1}s",
+                segs.len(),
+                diar_t0.elapsed().as_secs_f64(),
+            ));
+            (segs, Some(name))
+        }
+        Err(e) => {
+            logfile::warn(&format!("diarization failed: {e}"));
+            (Vec::new(), None)
+        }
+    }
+}
+
+fn try_serve_from_cache(key: &str, config: &Config, sink: &dyn Sink) -> Result<Option<Transcript>> {
+    let Some(cached) = cache::load(key)? else {
+        return Ok(None);
+    };
+    if config.diarize && cached.speakers_detected == 0 {
+        logfile::info(&format!(
+            "cache hit but stale (0 speakers with diarize on); rerunning key={key}"
+        ));
+        let _ = cache::invalidate(key);
+        return Ok(None);
+    }
+    logfile::info(&format!(
+        "cache hit; reusing transcript ({} utterances, {}, {} speakers)",
+        cached.utterances.len(),
+        format_hms(std::time::Duration::from_millis(cached.duration_ms)),
+        cached.speakers_detected,
+    ));
+    sink.phase(Phase::Done);
+    Ok(Some(cached))
+}
+
+fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
+    sink.phase(Phase::CacheCheck);
+    let speakers = config.speakers.unwrap_or(0);
+    let trim = audio::meta::load(input).unwrap_or_default();
+    let key_params = build_key_params(
+        input,
+        &config.model,
+        &config.language,
+        speakers,
+        !config.diarize,
+        trim.trim_start_ms,
+        trim.trim_end_ms.unwrap_or(0),
+    )?;
+    let key = compute_key(&key_params);
+
+    engine::preflight(config)?;
+
+    if let Some(cached) = try_serve_from_cache(&key, config, sink)? {
+        return Ok(cached);
+    }
+    if sink.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
+
+    sink.phase(Phase::LoadingAudio);
+    let window = compute_trim_window(input, &trim);
+    let device_label = config.device.as_str().to_owned();
+    let (st, scanned_end) = run_streaming_phase(input, config, sink, &key, &window)?;
+
+    let mut segments = st.state.segments.clone();
     apply_dedup(&mut segments);
 
-    if detected_language.is_empty() {
-        detected_language.clone_from(&config.language);
-    }
-    let duration_ms = if total_dur_ms > 0 {
-        total_dur_ms
+    let duration_ms = if window.total_dur_ms > 0 {
+        window.total_dur_ms
     } else {
-        ((scanned_end + start_ms as f64 / 1000.0) * 1000.0) as u64
+        ((scanned_end + window.start_ms as f64 / 1000.0) * 1000.0) as u64
     };
-    let _ = start_ms;
 
     let (diar_segs, diar_name) = if config.diarize {
         if sink.is_cancelled() {
             return Err(crate::error::Error::Cancelled);
         }
-        sink.phase(Phase::Diarizing);
-        let diar_dur_sec = if total_dur_ms > 0 {
-            total_dur_ms as f64 / 1000.0
-        } else {
-            scanned_end
-        };
-        let diar_t0 = std::time::Instant::now();
-        logfile::info(&format!(
-            "diarize start: backend={} speakers={}",
-            config.diarizer.as_str(),
+        run_diarize_phase(
+            input,
+            sink,
+            config,
             speakers,
-        ));
-        let result = run_diarize_streaming(input, diar_dur_sec, speakers, sink, config);
-        match result {
-            Ok((segs, name)) => {
-                let unique = segs
-                    .iter()
-                    .map(|s| s.speaker)
-                    .collect::<std::collections::HashSet<_>>()
-                    .len();
-                logfile::info(&format!(
-                    "diarized: {name} · {unique} speakers · {} segments · {:.1}s",
-                    segs.len(),
-                    diar_t0.elapsed().as_secs_f64(),
-                ));
-                (segs, Some(name))
-            }
-            Err(e) => {
-                logfile::warn(&format!("diarization failed: {e}"));
-                (Vec::new(), None)
-            }
-        }
+            window.total_dur_ms,
+            scanned_end,
+        )
     } else {
         (Vec::new(), None)
     };
@@ -333,51 +425,78 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     }
 
     sink.phase(Phase::Writing);
-
-    let language = if detected_language.is_empty() {
+    let language = if st.detected_language.is_empty() {
         config.language.clone()
     } else {
-        detected_language
+        st.detected_language
     };
+    let transcript = build_and_cache_transcript(BuildArgs {
+        segments: &segments,
+        diar_segs: &diar_segs,
+        diar_name,
+        config,
+        key: &key,
+        key_params: &key_params,
+        speakers,
+        language,
+        device_label,
+        duration_ms,
+    })?;
+    sink.phase(Phase::Done);
+    Ok(transcript)
+}
 
+struct BuildArgs<'a> {
+    segments: &'a [Segment],
+    diar_segs: &'a [DiarSegment],
+    diar_name: Option<String>,
+    config: &'a Config,
+    key: &'a str,
+    key_params: &'a cache::KeyParams,
+    speakers: u32,
+    language: String,
+    device_label: String,
+    duration_ms: u64,
+}
+
+fn build_and_cache_transcript(args: BuildArgs<'_>) -> Result<Transcript> {
     let transcript = transcript::build(
-        &segments,
-        &diar_segs,
+        args.segments,
+        args.diar_segs,
         Meta {
-            model: config.model.clone(),
-            language: language.clone(),
-            duration_ms,
-            diarizer: diar_name,
-            device: Some(device_label),
+            model: args.config.model.clone(),
+            language: args.language.clone(),
+            duration_ms: args.duration_ms,
+            diarizer: args.diar_name,
+            device: Some(args.device_label),
         },
     );
-
     let entry = CacheEntry {
-        key: key.clone(),
-        source_path: key_params.source_path.clone(),
-        source_name: key_params
+        key: args.key.to_string(),
+        source_path: args.key_params.source_path.clone(),
+        source_name: args
+            .key_params
             .source_path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
-        model: config.model.clone(),
-        language,
-        speakers,
-        no_diarize: !config.diarize,
+        model: args.config.model.clone(),
+        language: args.language,
+        speakers: args.speakers,
+        no_diarize: !args.config.diarize,
         utterances: transcript.utterances.len(),
-        duration_ms,
+        duration_ms: args.duration_ms,
         created_at: Utc::now(),
         size_bytes: 0,
     };
     cache::store(entry, &transcript)?;
-    let _ = partial::clear(&key);
+    let _ = partial::clear(args.key);
     logfile::info(&format!(
         "cache stored: key={} utterances={} speakers_detected={}",
-        key,
+        args.key,
         transcript.utterances.len(),
         transcript.speakers_detected,
     ));
-    sink.phase(Phase::Done);
     Ok(transcript)
 }
 
