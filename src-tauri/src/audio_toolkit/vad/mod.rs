@@ -14,6 +14,7 @@ pub enum VadFrame<'a> {
 
 pub trait VoiceActivityDetector: Send {
     fn push_frame<'a>(&'a mut self, frame: &'a [f32]) -> Result<VadFrame<'a>>;
+    #[allow(dead_code)]
     fn is_voice(&mut self, frame: &[f32]) -> Result<bool> {
         Ok(matches!(self.push_frame(frame)?, VadFrame::Speech(_)))
     }

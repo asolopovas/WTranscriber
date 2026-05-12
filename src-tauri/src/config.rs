@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     constants,
-    error::{Error, Result},
+    error::Result,
     logfile,
     models::{Family, by_id, default_id},
     paths,
