@@ -23,9 +23,11 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 let name = "wt";
 let image = "system-images;android-34;google_apis_playstore;x86_64";
+let windowed = false;
 for (let i = 1; i < args.length; i++) {
   if (args[i] === "--name") name = args[++i] ?? name;
   else if (args[i] === "--image") image = args[++i] ?? image;
+  else if (args[i] === "--window") windowed = true;
 }
 
 const tmpDir = path.resolve("tmp");
@@ -112,27 +114,27 @@ const start = async (): Promise<void> => {
       process.exit(1);
     }
   }
-  log(`booting AVD '${name}' (headless, swiftshader, KVM)`);
-  const out = openSync(logFile, "a");
-  const child = spawn(
-    emulator,
-    [
-      "-avd",
-      name,
-      "-no-window",
-      "-no-audio",
-      "-no-snapshot-save",
-      "-gpu",
-      "swiftshader_indirect",
-      "-accel",
-      "on",
-      "-netdelay",
-      "none",
-      "-netspeed",
-      "full",
-    ],
-    { stdio: ["ignore", out, out], detached: true },
+  log(
+    `booting AVD '${name}' (${windowed ? "windowed" : "headless"}, ${windowed ? "host gpu" : "swiftshader"}, KVM)`,
   );
+  const out = openSync(logFile, "a");
+  const emuArgs = [
+    "-avd",
+    name,
+    "-no-snapshot-save",
+    "-accel",
+    "on",
+    "-netdelay",
+    "none",
+    "-netspeed",
+    "full",
+  ];
+  if (windowed) {
+    emuArgs.push("-gpu", "auto");
+  } else {
+    emuArgs.push("-no-window", "-no-audio", "-gpu", "swiftshader_indirect");
+  }
+  const child = spawn(emulator, emuArgs, { stdio: ["ignore", out, out], detached: true });
   child.unref();
   await Bun.write(pidFile, String(child.pid));
 

@@ -53,20 +53,27 @@ bootstrap-if-stale:
 
 # ─── develop ──────────────────────────────────────────────────────────────────
 
-# Desktop HMR (Windows). Vite + tauri dev.
-[windows, group('develop')]
-dev:
+# HMR session. `host` (default) = desktop Vite + tauri dev; `android` = windowed emulator; `usb` = adb-attached device.
+[group('develop')]
+dev target="host":
+    just _dev-{{target}}
+
+[windows, private]
+_dev-host:
     $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
-# Desktop HMR (Linux/macOS). Vite + tauri dev.
-[unix, group('develop')]
-dev:
+[unix, private]
+_dev-host:
     RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
-# Alias: Android USB HMR session (same as `just android`).
-[group('develop')]
-dev-android device="":
-    {{_run}} --tag dev-android --idle 120 --max 2100 -- cargo xtask android bootstrap usb {{device}}
+[private]
+_dev-usb:
+    {{_run}} --tag dev-usb --idle 120 --max 2100 -- cargo xtask android bootstrap usb
+
+[private]
+_dev-android:
+    {{_run}} --tag dev-emu --idle 30 --max 300 -- bun scripts/android-emu.ts start --window
+    {{_run}} --tag dev-android --idle 120 --max 2100 -- cargo xtask android bootstrap usb
 
 # Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
 [windows, group('develop')]
