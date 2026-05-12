@@ -1,4 +1,3 @@
-mod canary;
 mod chunk;
 mod nemo_ctc;
 mod processor;
@@ -6,8 +5,7 @@ mod recognizer;
 mod runtime;
 mod sherpa;
 mod transducer;
-mod whisper;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 mod whisper_cpp;
 
 pub use runtime::threads;
@@ -40,36 +38,19 @@ pub fn run(
         return run_in_process(samples, audio_dur_sec, config, cancelled, on_chunk);
     }
     let (segs, lang, rtf) = match config.engine {
-        Engine::WhisperOnnx => {
-            whisper::run(samples, audio_dur_sec, config, on_progress, cancelled)?
+        Engine::Parakeet => {
+            transducer::run(samples, audio_dur_sec, config, on_progress, cancelled)?
         }
-        Engine::Zipformer => transducer::run(
-            transducer::Kind::Zipformer,
-            samples,
-            audio_dur_sec,
-            config,
-            on_progress,
-            cancelled,
-        )?,
-        Engine::Parakeet => transducer::run(
-            transducer::Kind::Parakeet,
-            samples,
-            audio_dur_sec,
-            config,
-            on_progress,
-            cancelled,
-        )?,
-        Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
         Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
         Engine::WhisperCpp => {
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            #[cfg(not(target_os = "ios"))]
             {
                 whisper_cpp::run(samples, audio_dur_sec, config, on_progress, cancelled)?
             }
-            #[cfg(any(target_os = "android", target_os = "ios"))]
+            #[cfg(target_os = "ios")]
             {
                 return Err(Error::Config(
-                    "whisper-cpp engine is desktop-only on this build".into(),
+                    "whisper-cpp engine is unavailable on this build".into(),
                 ));
             }
         }
@@ -89,10 +70,7 @@ fn use_in_process(config: &Config) -> bool {
         .ok()
         .is_some_and(|v| v == "1")
     {
-        return matches!(
-            config.engine,
-            Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
-        );
+        return matches!(config.engine, Engine::Parakeet | Engine::NemoCtc);
     }
 
     if matches!(config.device, crate::config::Device::Cuda) && !cfg!(feature = "cuda") {
@@ -106,13 +84,8 @@ fn use_in_process(config: &Config) -> bool {
     {
         return false;
     }
-    matches!(
-        config.engine,
-        Engine::WhisperOnnx | Engine::Zipformer | Engine::Parakeet | Engine::NemoCtc
-    )
+    matches!(config.engine, Engine::Parakeet | Engine::NemoCtc)
 }
-
-const WHISPER_MAX_CHUNK_SEC: f64 = 15.0;
 
 #[allow(clippy::significant_drop_tightening)]
 fn run_in_process(
@@ -131,10 +104,7 @@ fn run_in_process(
         .as_mut()
         .ok_or_else(|| Error::Transcribe("recognizer cache empty after ensure".into()))?;
     let sample_rate = i32::try_from(crate::audio::WHISPER_SAMPLE_RATE).unwrap_or(16_000);
-    let chunk_sec = match config.engine {
-        Engine::WhisperOnnx => WHISPER_MAX_CHUNK_SEC,
-        _ => audio_dur_sec.max(1.0),
-    };
+    let chunk_sec = audio_dur_sec.max(1.0);
     let chunks = chunk::split_chunks(samples, chunk_sec);
 
     let t0 = std::time::Instant::now();
@@ -239,15 +209,10 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap();
         clear_env();
 
-        assert!(!use_in_process(&cfg(Engine::Canary, Device::Cpu)));
-        assert!(!use_in_process(&cfg(Engine::Canary, Device::Cuda)));
+        assert!(!use_in_process(&cfg(Engine::WhisperCpp, Device::Cpu)));
+        assert!(!use_in_process(&cfg(Engine::WhisperCpp, Device::Cuda)));
 
-        for e in [
-            Engine::WhisperOnnx,
-            Engine::Zipformer,
-            Engine::Parakeet,
-            Engine::NemoCtc,
-        ] {
+        for e in [Engine::Parakeet, Engine::NemoCtc] {
             assert!(
                 use_in_process(&cfg(e, Device::Cpu)),
                 "{e:?} on CPU should be in-process"
@@ -255,7 +220,6 @@ mod tests {
         }
 
         if !cfg!(feature = "cuda") {
-            assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
             assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cuda)));
         }
     }
@@ -266,22 +230,19 @@ mod tests {
 
         clear_env();
         set_env("WT_USE_SUBPROCESS", "1");
-        assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cpu)));
         assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cpu)));
 
         clear_env();
         set_env("WT_FORCE_INPROCESS", "1");
-        assert!(use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
+        assert!(use_in_process(&cfg(Engine::Parakeet, Device::Cuda)));
         assert!(use_in_process(&cfg(Engine::NemoCtc, Device::Cuda)));
-
-        assert!(!use_in_process(&cfg(Engine::Canary, Device::Cuda)));
+        assert!(!use_in_process(&cfg(Engine::WhisperCpp, Device::Cuda)));
 
         if cfg!(feature = "cuda") {
             clear_env();
             set_env("WT_NO_INPROCESS_CUDA", "1");
-            assert!(!use_in_process(&cfg(Engine::WhisperOnnx, Device::Cuda)));
-
-            assert!(use_in_process(&cfg(Engine::WhisperOnnx, Device::Cpu)));
+            assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cuda)));
+            assert!(use_in_process(&cfg(Engine::Parakeet, Device::Cpu)));
         }
 
         clear_env();

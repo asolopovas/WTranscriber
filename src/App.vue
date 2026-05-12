@@ -638,14 +638,14 @@ const exportFormat = ref<ExportFormat>("txt");
 
 const redoDiarizeOpen = ref(false);
 const redoDiarizeTarget = ref<DirEntry | null>(null);
-const redoDiarizeDiarizer = ref<Config["diarizer"]>("nemo");
+const redoDiarizeDiarizer = ref<Config["diarizer"]>("sortformer-onnx");
 const redoDiarizeSpeakers = ref<number>(0);
 
 function openRedoDiarize(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.cache_key || busy.value[target.path]) return;
   redoDiarizeTarget.value = target;
-  redoDiarizeDiarizer.value = config.value?.diarizer ?? "nemo";
+  redoDiarizeDiarizer.value = config.value?.diarizer ?? "sortformer-onnx";
   redoDiarizeSpeakers.value = config.value?.speakers ?? 0;
   redoDiarizeOpen.value = true;
 }

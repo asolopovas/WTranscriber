@@ -15,11 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
     audio,
-    audio_toolkit::{
-        stream::stream_slabs,
-        vad::{self, RegionStream, RegionStreamConfig},
-    },
-    config::{Config, Engine},
+    audio_toolkit::stream::stream_slabs,
+    config::Config,
     diarizer::{self, Segment as DiarSegment},
     engine,
     error::Result,
@@ -58,15 +55,6 @@ pub async fn run(job: &Job) -> Result<Transcript> {
 pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript> {
     let input = job.input.clone();
     let config = job.config.clone();
-
-    if matches!(config.engine, Engine::WhisperOnnx) && !vad::model::is_installed() {
-        match vad::model::ensure().await {
-            Ok(p) => logfile::info(&format!("silero vad ready: {}", p.display())),
-            Err(e) => logfile::warn(&format!(
-                "silero vad fetch failed ({e}); falling back to fixed slabs"
-            )),
-        }
-    }
 
     tokio::task::spawn_blocking(move || run_blocking(&input, &config, sink.as_ref()))
         .await
@@ -153,22 +141,12 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         segments: Vec::new(),
     });
     let slab = slab_sec();
-    let use_vad = matches!(config.engine, Engine::WhisperOnnx) && vad::model::is_installed();
-    let vad_max_region_sec: f64 = 15.0;
     if state.segments.is_empty() {
-        if use_vad {
-            logfile::info(&format!(
-                "streaming start: vad-regions max={vad_max_region_sec:.0}s engine={} model={}",
-                config.engine.as_str(),
-                config.model,
-            ));
-        } else {
-            logfile::info(&format!(
-                "streaming start: slab={slab:.0}s engine={} model={}",
-                config.engine.as_str(),
-                config.model,
-            ));
-        }
+        logfile::info(&format!(
+            "streaming start: slab={slab:.0}s engine={} model={}",
+            config.engine.as_str(),
+            config.model,
+        ));
     } else {
         logfile::info(&format!(
             "resuming from {} ({} cached segs)",
@@ -266,31 +244,14 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         Ok(())
     };
 
-    let stream_result = if use_vad {
-        let model = vad::model::model_path()?;
-        let vad_cfg = RegionStreamConfig {
-            max_region_sec: vad_max_region_sec,
-            ..RegionStreamConfig::default()
-        };
-        RegionStream::run(
-            input,
-            start_ms,
-            end_ms_opt,
-            &model,
-            vad_cfg,
-            cancel_for_stream,
-            &mut process_region,
-        )
-    } else {
-        stream_slabs(
-            input,
-            start_ms,
-            end_ms_opt,
-            slab,
-            cancel_for_stream,
-            |region| process_region(region).map(|()| true),
-        )
-    };
+    let stream_result = stream_slabs(
+        input,
+        start_ms,
+        end_ms_opt,
+        slab,
+        cancel_for_stream,
+        |region| process_region(region).map(|()| true),
+    );
 
     let scanned_end = stream_result?;
     if sink.is_cancelled() {
@@ -455,32 +416,8 @@ fn run_diarize_streaming(
     sink.set_diarize_backend(&backend_name);
     let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
     let cancelled = || sink.is_cancelled();
-    match backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress) {
-        Ok(segs) => Ok((segs, backend_name)),
-        Err(e)
-            if config.diarizer == crate::config::DiarizerChoice::Nemo
-                && backend_name == "nemo-sortformer" =>
-        {
-            logfile::warn(&format!(
-                "diarizer nemo failed at runtime ({e}); falling back to titanet"
-            ));
-            let fallback =
-                diarizer::new_with_choice(speakers, crate::config::DiarizerChoice::Titanet)?;
-            let fallback_name = fallback.name();
-            sink.set_diarize_backend(&fallback_name);
-            let mut fb_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
-            let fb_cancelled = || sink.is_cancelled();
-            let segs = fallback.diarize(
-                &wav,
-                speakers,
-                audio_dur_sec,
-                &fb_cancelled,
-                &mut fb_progress,
-            )?;
-            Ok((segs, fallback_name))
-        }
-        Err(e) => Err(e),
-    }
+    let segs = backend.diarize(&wav, speakers, audio_dur_sec, &cancelled, &mut on_progress)?;
+    Ok((segs, backend_name))
 }
 
 fn apply_dedup(segments: &mut Vec<Segment>) {

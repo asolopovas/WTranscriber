@@ -4,41 +4,6 @@ use super::catalog::{Entry, Family, FileSpec};
 pub(super) fn default_catalog() -> Vec<Entry> {
     vec![
         Entry {
-            id: "sherpa-whisper-turbo".into(),
-            family: Family::Asr,
-            engine: "whisper-onnx".into(),
-            display_name: "Whisper large-v3-turbo (ONNX, multilingual)".into(),
-            description: "OpenAI Whisper large-v3-turbo via ONNX Runtime, 99 languages. \
-                          Legacy: no word timestamps in this export, so diarization may \
-                          collapse on long ASR spans \u{2014} prefer Parakeet or whisper.cpp.".into(),
-            languages: vec!["auto", "en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "zh", "ja", "ko", "ar", "tr", "hi"]
-                .into_iter().map(String::from).collect(),
-            size_bytes: 1_036_613_791,
-            default_active: false,
-            android_default: false,
-            desktop_only: false,
-            files: vec![
-                FileSpec {
-                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-encoder.int8.onnx".into(),
-                    rel_path: "sherpa-whisper-turbo/turbo-encoder.int8.onnx".into(),
-                    size_bytes: 674_716_297,
-                    sha256: "b02dcdf54f348741e93fe732b67d933c8dcb6735655f710640143081db38878b".into(),
-                },
-                FileSpec {
-                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-decoder.int8.onnx".into(),
-                    rel_path: "sherpa-whisper-turbo/turbo-decoder.int8.onnx".into(),
-                    size_bytes: 361_080_764,
-                    sha256: "20accd02388482eb3a46bd615631adfdc85e1eb2c7db9ea3f02a40ffe6b81547".into(),
-                },
-                FileSpec {
-                    url: "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/main/turbo-tokens.txt".into(),
-                    rel_path: "sherpa-whisper-turbo/turbo-tokens.txt".into(),
-                    size_bytes: 816_730,
-                    sha256: "b34b360dbb493e781e479794586d661700670d65564001f23024971d1f2fa126".into(),
-                },
-            ],
-        },
-        Entry {
             id: "parakeet-tdt-0.6b-v3-int8".into(),
             family: Family::Asr,
             engine: "parakeet".into(),
@@ -90,7 +55,7 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             size_bytes: 874_000_000,
             default_active: false,
             android_default: false,
-            desktop_only: true,
+            desktop_only: false,
             files: vec![FileSpec {
                 url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin".into(),
                 rel_path: "whisper-cpp-large-v3-turbo-q8/ggml-large-v3-turbo-q8_0.bin".into(),
@@ -108,8 +73,8 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 16_500_000,
             default_active: true,
-            android_default: false,
-            desktop_only: true,
+            android_default: true,
+            desktop_only: false,
             files: vec![FileSpec {
                 url: "https://huggingface.co/deepghs/silero-lang95-onnx/resolve/main/lang_classifier_95.onnx".into(),
                 rel_path: "silero-lang95-onnx/lang_classifier_95.onnx".into(),
@@ -188,27 +153,14 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 492_242_946,
             default_active: true,
-            android_default: false,
-            desktop_only: true,
+            android_default: true,
+            desktop_only: false,
             files: vec![FileSpec {
                 url: "https://huggingface.co/cgus/diar_streaming_sortformer_4spk-v2.1-onnx/resolve/main/diar_streaming_sortformer_4spk-v2.1.onnx".into(),
                 rel_path: "sortformer-v2-onnx/model.onnx".into(),
                 size_bytes: 492_242_946,
                 sha256: "82b9c735e1cfc6b36b4ff8a994d9a0573e922d0e80a58a8553b2c58f7aff0c00".into(),
             }],
-        },
-        Entry {
-            id: "nemo-sortformer-v2".into(),
-            family: Family::Diarizer,
-            engine: "nemo-sortformer".into(),
-            display_name: "NVIDIA NeMo Sortformer (Python runtime, legacy)".into(),
-            description: "Original Python-based NeMo diarizer. Requires ~5 GB Python + PyTorch runtime; superseded by sortformer-v2-onnx-4spk.".into(),
-            languages: Vec::new(),
-            size_bytes: 5_000_000_000,
-            default_active: false,
-            android_default: false,
-            desktop_only: true,
-            files: Vec::new(),
         },
         Entry {
             id: "sherpa-pyannote-titanet".into(),
@@ -220,7 +172,7 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             languages: Vec::new(),
             size_bytes: 107_398_406,
             default_active: false,
-            android_default: true,
+            android_default: false,
             desktop_only: false,
             files: vec![
                 FileSpec {

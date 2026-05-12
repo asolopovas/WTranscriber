@@ -130,6 +130,14 @@ fn voiced_window(samples: &[f32], target_seconds: usize) -> Vec<f32> {
 
 /// Decode the audio file, take a voiced probe window via Silero VAD, run the
 /// classifier, and return a lowercase language code (`"en"`, `"ru"`, …).
+pub async fn detect_async(input: &std::path::Path) -> Result<String> {
+    let _ = vad_kit::model::ensure().await;
+    let input = input.to_path_buf();
+    tokio::task::spawn_blocking(move || detect(&input))
+        .await
+        .map_err(|e| Error::Transcribe(format!("lang-id task: {e}")))?
+}
+
 pub fn detect(input: &std::path::Path) -> Result<String> {
     ensure_session()?;
     let samples = audio::decode::decode_to_pcm_f32(input, SAMPLE_RATE as i32)?;

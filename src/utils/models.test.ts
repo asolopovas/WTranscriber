@@ -15,7 +15,7 @@ import {
 const model = (overrides: Partial<ModelInfo>): ModelInfo => ({
   id: "id",
   family: "asr",
-  engine: "whisper-onnx",
+  engine: "parakeet",
   display_name: "Model",
   description: "",
   size_bytes: 1,
@@ -27,13 +27,13 @@ const model = (overrides: Partial<ModelInfo>): ModelInfo => ({
 
 const config = (): Config => ({
   model: "",
-  engine: "whisper-onnx",
-  language: "en",
+  engine: "parakeet",
+  language: "auto",
   device: "cuda",
   threads: 4,
   diarize: true,
   speakers: null,
-  diarizer: "nemo",
+  diarizer: "sortformer-onnx",
   auto_rename: false,
   llm_model: null,
   last_dir: null,
@@ -60,17 +60,16 @@ describe("model helpers", () => {
     expect(cfg.llm_model).toBe("llm-default");
   });
 
-  it("normalises system-dependent config defaults", () => {
+  it("downgrades cuda to cpu when system reports no cuda", () => {
     const cfg = config();
-    cfg.diarizer = "nemo";
 
     applySystemConfigDefaults(cfg, {
-      os: "android",
-      arch: "aarch64",
-      cpu_threads: 8,
-      is_mobile: true,
+      os: "linux",
+      arch: "x86_64",
+      cpu_threads: 16,
+      is_mobile: false,
       cuda_available: false,
-      nnapi_available: true,
+      nnapi_available: false,
       app_version: "test",
       workdir: null,
       models_dir: null,
@@ -80,26 +79,20 @@ describe("model helpers", () => {
     });
 
     expect(cfg.device).toBe("cpu");
-    expect(cfg.diarizer).toBe("titanet");
   });
 
   it("maps diarizer choices to model ids", () => {
     expect(modelIdForDiarizer("sortformer-onnx")).toBe("sortformer-v2-onnx-4spk");
-    expect(modelIdForDiarizer("nemo")).toBe("nemo-sortformer-v2");
     expect(modelIdForDiarizer("titanet")).toBe("sherpa-pyannote-titanet");
   });
 
-  it("filters diarizer options by platform", () => {
-    expect(availableDiarizerOptions(false).map((option) => option.value)).toEqual([
-      "sortformer-onnx",
-      "titanet",
-      "nemo",
-    ]);
-    expect(availableDiarizerOptions(true).map((option) => option.value)).toEqual(["titanet"]);
+  it("exposes the same diarizer options on every platform", () => {
+    const values = ["sortformer-onnx", "titanet"];
+    expect(availableDiarizerOptions(false).map((o) => o.value)).toEqual(values);
+    expect(availableDiarizerOptions(true).map((o) => o.value)).toEqual(values);
   });
 
   it("builds speaker options for each diarizer cap", () => {
-    expect(diarizerSpeakerCap("nemo")).toBe(4);
     expect(diarizerSpeakerCap("sortformer-onnx")).toBe(4);
     expect(diarizerSpeakerCap("titanet")).toBe(10);
     const titanetOptions = speakerOptionsForDiarizer("titanet");
@@ -110,11 +103,11 @@ describe("model helpers", () => {
   it("applies ASR model only when engine is known", () => {
     const cfg = config();
 
-    applyAsrModel(cfg, model({ id: "known", engine: "parakeet" }));
-    expect(cfg).toMatchObject({ model: "known", engine: "parakeet" });
+    applyAsrModel(cfg, model({ id: "known", engine: "whisper-cpp" }));
+    expect(cfg).toMatchObject({ model: "known", engine: "whisper-cpp" });
 
     applyAsrModel(cfg, model({ id: "future", engine: "future-engine" }));
-    expect(cfg).toMatchObject({ model: "future", engine: "parakeet" });
+    expect(cfg).toMatchObject({ model: "future", engine: "whisper-cpp" });
   });
 
   it("syncs missing selected ASR model to an installed fallback", () => {
@@ -122,9 +115,9 @@ describe("model helpers", () => {
     cfg.model = "missing";
 
     syncAsrEngineAndModel(cfg, [
-      model({ id: "fallback", engine: "zipformer", default_active: true }),
+      model({ id: "fallback", engine: "whisper-cpp", default_active: true }),
     ]);
 
-    expect(cfg).toMatchObject({ model: "fallback", engine: "zipformer" });
+    expect(cfg).toMatchObject({ model: "fallback", engine: "whisper-cpp" });
   });
 });

@@ -1,10 +1,9 @@
 import type { Config, DiarizerChoice, Engine, Family, ModelInfo, SystemInfo } from "@/types";
 
-const ENGINES = new Set<string>(["whisper-onnx", "zipformer", "parakeet", "canary", "nemo-ctc"]);
+const ENGINES = new Set<string>(["parakeet", "nemo-ctc", "whisper-cpp"]);
 
 export const DIARIZER_BY_MODEL_ID: Record<string, DiarizerChoice> = {
   "sortformer-v2-onnx-4spk": "sortformer-onnx",
-  "nemo-sortformer-v2": "nemo",
   "sherpa-pyannote-titanet": "titanet",
 };
 
@@ -18,14 +17,8 @@ export const DIARIZER_OPTIONS: readonly DiarizerOption[] = [
   {
     value: "sortformer-onnx",
     label: "NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)",
-    desktopOnly: true,
   },
-  { value: "titanet", label: "pyannote-3.0 + TitaNet-Large" },
-  {
-    value: "nemo",
-    label: "NVIDIA NeMo Sortformer (Python, legacy)",
-    desktopOnly: true,
-  },
+  { value: "titanet", label: "pyannote-3.0 + TitaNet-Large (>4 speakers)" },
 ];
 
 export function availableDiarizerOptions(isMobile: boolean): readonly DiarizerOption[] {
@@ -33,7 +26,7 @@ export function availableDiarizerOptions(isMobile: boolean): readonly DiarizerOp
 }
 
 export function diarizerSpeakerCap(choice: DiarizerChoice): number {
-  return choice === "nemo" || choice === "sortformer-onnx" ? 4 : 10;
+  return choice === "sortformer-onnx" ? 4 : 10;
 }
 
 export function speakerOptionsForDiarizer(
@@ -80,11 +73,6 @@ export function applyMissingModelDefaults(config: Config, models: ModelInfo[]) {
 
 export function applySystemConfigDefaults(config: Config, sys: SystemInfo | null) {
   if (sys && !sys.cuda_available && config.device === "cuda") config.device = "cpu";
-  if (sys?.is_mobile && config.diarizer !== "titanet") config.diarizer = "titanet";
-  const diarizer = config.diarizer as string;
-  if (diarizer === "sherpa" || diarizer === "auto" || diarizer === "eres2net") {
-    config.diarizer = sys?.is_mobile ? "titanet" : "nemo";
-  }
 }
 
 export function applyAsrModel(config: Config, model: ModelInfo) {

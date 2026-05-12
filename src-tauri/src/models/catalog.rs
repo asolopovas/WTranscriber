@@ -130,8 +130,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_catalog_has_whisper_turbo() {
-        assert!(by_id("sherpa-whisper-turbo").is_some());
+    fn default_catalog_has_parakeet_v3() {
+        assert!(by_id("parakeet-tdt-0.6b-v3-int8").is_some());
+    }
+
+    #[test]
+    fn default_catalog_has_whisper_cpp() {
+        assert!(by_id("whisper-cpp-large-v3-turbo-q8").is_some());
     }
 
     #[test]
@@ -140,12 +145,11 @@ mod tests {
     }
 
     #[test]
-    fn diarizer_family_has_nemo_and_fallback() {
+    fn diarizer_family_has_sortformer_and_titanet() {
         assert!(by_family(Family::Diarizer).len() >= 2);
     }
 
     #[test]
-    #[cfg(not(target_os = "android"))]
     fn default_diarizer_is_sortformer_onnx() {
         assert_eq!(
             default_id(Family::Diarizer),
@@ -163,11 +167,12 @@ mod tests {
         assert_eq!(Family::Asr.as_str(), "asr");
         assert_eq!(Family::Diarizer.as_str(), "diarizer");
         assert_eq!(Family::Llm.as_str(), "llm");
+        assert_eq!(Family::LangId.as_str(), "lang-id");
     }
 
     #[test]
     fn engine_kind_matches_catalog_engine_string() {
-        let entry = by_id("sherpa-whisper-turbo").unwrap();
+        let entry = by_id("parakeet-tdt-0.6b-v3-int8").unwrap();
         assert_eq!(entry.engine_kind().unwrap().as_str(), entry.engine);
     }
 
@@ -183,18 +188,18 @@ mod tests {
 
     #[test]
     fn model_dir_uses_first_segment_of_rel_path() {
-        let dir = model_dir("sherpa-whisper-turbo").unwrap();
-        assert!(dir.ends_with("sherpa-whisper-turbo"));
+        let dir = model_dir("parakeet-tdt-0.6b-v3-int8").unwrap();
+        assert!(dir.ends_with("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"));
     }
 
     #[test]
-    fn asr_family_contains_whisper_and_parakeet() {
+    fn asr_family_contains_parakeet_and_whisper_cpp() {
         let ids: Vec<&str> = by_family(Family::Asr)
             .iter()
             .map(|e| e.id.as_str())
             .collect();
-        assert!(ids.contains(&"sherpa-whisper-turbo"));
         assert!(ids.contains(&"parakeet-tdt-0.6b-v3-int8"));
+        assert!(ids.contains(&"whisper-cpp-large-v3-turbo-q8"));
     }
 
     #[test]

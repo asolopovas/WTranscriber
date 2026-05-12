@@ -1,7 +1,5 @@
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-mod nemo;
 mod sherpa;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(target_os = "ios"))]
 mod sortformer_onnx;
 
 use std::path::Path;
@@ -32,21 +30,19 @@ pub trait Backend {
 }
 
 pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = choice;
-        return SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
-            .map(|d| Box::new(d) as Box<dyn Backend>);
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        let titanet_fallback = || {
-            SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
-                .map(|d| Box::new(d) as Box<dyn Backend>)
-        };
-        match choice {
-            DiarizerChoice::SortformerOnnx => {
+    let titanet_fallback = || {
+        SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
+            .map(|d| Box::new(d) as Box<dyn Backend>)
+    };
+    match choice {
+        DiarizerChoice::SortformerOnnx => {
+            #[cfg(target_os = "ios")]
+            {
+                let _ = num_speakers;
+                titanet_fallback()
+            }
+            #[cfg(not(target_os = "ios"))]
+            {
                 if num_speakers > 4 {
                     crate::logfile::info(&format!(
                         "sortformer-onnx supports max 4 speakers; {num_speakers} requested, using titanet"
@@ -63,18 +59,9 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
                     }
                 }
             }
-            DiarizerChoice::Nemo => match nemo::NemoDiarizer::new() {
-                Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
-                Err(e) => {
-                    crate::logfile::warn(&format!(
-                        "diarizer nemo failed at init ({e}); falling back to titanet"
-                    ));
-                    titanet_fallback()
-                }
-            },
-            DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())
-                .map(|d| Box::new(d) as Box<dyn Backend>),
         }
+        DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())
+            .map(|d| Box::new(d) as Box<dyn Backend>),
     }
 }
 
@@ -160,19 +147,19 @@ mod tests {
         assert_eq!(speaker_id_for_time(0.5, 1.5, &diar, Some(1)), Some(1));
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "ios"))]
     #[test]
     fn desktop_default_prefers_nemo_for_auto_speakers() {
         assert!(!prefers_sherpa(0, false));
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "ios"))]
     #[test]
     fn desktop_fixed_speaker_count_prefers_sherpa() {
         assert!(prefers_sherpa(2, false));
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "ios"))]
     const fn prefers_sherpa(num_speakers: u32, prefer_sherpa: bool) -> bool {
         prefer_sherpa || num_speakers > 0
     }

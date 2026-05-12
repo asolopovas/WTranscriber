@@ -20,7 +20,6 @@ use wtranscriber_lib::{
 #[value(rename_all = "kebab-case")]
 enum DiarizerArg {
     SortformerOnnx,
-    Nemo,
     Titanet,
 }
 
@@ -28,7 +27,6 @@ impl From<DiarizerArg> for DiarizerChoice {
     fn from(v: DiarizerArg) -> Self {
         match v {
             DiarizerArg::SortformerOnnx => Self::SortformerOnnx,
-            DiarizerArg::Nemo => Self::Nemo,
             DiarizerArg::Titanet => Self::Titanet,
         }
     }
@@ -49,7 +47,7 @@ A rolling log is written to ~/.local/share/wtranscriber/wt.log (same as the GUI)
       wt -l en --speakers 2 *.wav        # English, 2-speaker diarization\n  \
       wt --rename audio.wav              # LLM-suggested rename of the source file\n  \
       wt models list                     # show catalog + install state\n  \
-      wt models install sherpa-whisper-turbo",
+      wt models install whisper-cpp-large-v3-turbo-q8",
     arg_required_else_help = true
 )]
 struct Cli {
@@ -73,7 +71,7 @@ struct Cli {
         short,
         long,
         value_name = "MODEL",
-        help = "ASR model id from `wt models list` (e.g. `sherpa-whisper-turbo`)"
+        help = "ASR model id from `wt models list` (e.g. `parakeet-tdt-0.6b-v3-int8`)"
     )]
     model: Option<String>,
 
@@ -99,7 +97,7 @@ struct Cli {
         long,
         value_enum,
         value_name = "DIARIZER",
-        help = "Diarizer backend: sortformer-onnx, nemo (Python), titanet"
+        help = "Diarizer backend: sortformer-onnx (default, \u{2264}4 spk) or titanet (>4 spk)"
     )]
     diarizer: Option<DiarizerArg>,
 
@@ -154,12 +152,12 @@ enum ModelsAction {
     List,
     #[command(about = "Download and install a model by id (see `wt models list`)")]
     Install {
-        #[arg(help = "Model id, e.g. `sherpa-whisper-turbo`")]
+        #[arg(help = "Model id, e.g. `parakeet-tdt-0.6b-v3-int8`")]
         id: String,
     },
     #[command(about = "Print install status (installed | not_installed | partial) for a model id")]
     Status {
-        #[arg(help = "Model id, e.g. `sherpa-whisper-turbo`")]
+        #[arg(help = "Model id, e.g. `parakeet-tdt-0.6b-v3-int8`")]
         id: String,
     },
 }
@@ -343,7 +341,7 @@ impl Sink for CliSink {
     }
 }
 
-fn probe_language(input: &Path) -> Option<String> {
+async fn probe_language(input: &Path) -> Option<String> {
     if !wtranscriber_lib::lang_id::is_installed() {
         eprintln!(
             "auto-route: silero-lang95-onnx not installed; \
@@ -356,7 +354,7 @@ fn probe_language(input: &Path) -> Option<String> {
     if !canonical.exists() {
         return None;
     }
-    match wtranscriber_lib::lang_id::detect(&canonical) {
+    match wtranscriber_lib::lang_id::detect_async(&canonical).await {
         Ok(code) => {
             eprintln!("silero-langid -> {code}");
             Some(code)
@@ -411,7 +409,7 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
         let routing_lang: Option<String> = if lang_known {
             Some(raw_lang)
         } else if !cli.inputs.is_empty() {
-            probe_language(&cli.inputs[0])
+            probe_language(&cli.inputs[0]).await
         } else {
             None
         };
@@ -435,15 +433,6 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
         }
     }
     let _ = lang_explicit;
-
-    if config.diarize && matches!(config.engine, Engine::WhisperOnnx) {
-        let warning = "whisper-onnx ASR + diarization: the bundled sherpa-onnx-whisper \
-             export lacks cross-attention so per-segment speaker assignment will \
-             collapse on long ASR spans. Prefer --model parakeet-tdt-0.6b-v3-int8 \
-             (EU langs incl. Russian) or --model gigaam-v3-ru (Russian)";
-        logfile::warn(warning);
-        eprintln!("warning: {warning}");
-    }
 
     if matches!(config.device, Device::Cuda) && !cfg!(feature = "cuda") {
         let msg = "this build does not ship CUDA; \

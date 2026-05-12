@@ -8,7 +8,7 @@ use std::{
 
 use sherpa_onnx::{
     OfflineModelConfig, OfflineNemoEncDecCtcModelConfig, OfflineRecognizer,
-    OfflineRecognizerConfig, OfflineTransducerModelConfig, OfflineWhisperModelConfig,
+    OfflineRecognizerConfig, OfflineTransducerModelConfig,
 };
 
 use crate::{
@@ -80,12 +80,8 @@ fn provider_for(device: Device) -> &'static str {
 
 fn build_config(config: &Config, provider: &str, threads: u32) -> Result<OfflineRecognizerConfig> {
     match config.engine {
-        Engine::WhisperOnnx => whisper_config(config, provider, threads),
-        Engine::Zipformer | Engine::Parakeet => transducer_config(config, provider, threads),
+        Engine::Parakeet => transducer_config(config, provider, threads),
         Engine::NemoCtc => nemo_ctc_config(config, provider, threads),
-        Engine::Canary => Err(Error::Config(
-            "canary engine in-process path not yet implemented".into(),
-        )),
         Engine::WhisperCpp => Err(Error::Config(
             "whisper-cpp engine bypasses the sherpa recognizer; \
              dispatch happens in engine::run"
@@ -174,40 +170,6 @@ fn locate_three(
         suffixes,
         dir.display()
     )))
-}
-
-fn whisper_config(
-    config: &Config,
-    provider: &str,
-    threads: u32,
-) -> Result<OfflineRecognizerConfig> {
-    let dir = model_dir(&config.model)?;
-    let [encoder, decoder, tokens] = locate_three(
-        &dir,
-        &config.model,
-        &["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"],
-    )?;
-    let language =
-        (config.language != "auto" && !config.language.is_empty()).then(|| config.language.clone());
-    Ok(OfflineRecognizerConfig {
-        model_config: OfflineModelConfig {
-            whisper: OfflineWhisperModelConfig {
-                encoder: Some(encoder.to_string_lossy().into_owned()),
-                decoder: Some(decoder.to_string_lossy().into_owned()),
-                language,
-                task: Some("transcribe".into()),
-                tail_paddings: -1,
-                enable_token_timestamps: true,
-                enable_segment_timestamps: false,
-            },
-            tokens: Some(tokens.to_string_lossy().into_owned()),
-            provider: Some(provider.into()),
-            num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
-            debug: true,
-            ..OfflineModelConfig::default()
-        },
-        ..OfflineRecognizerConfig::default()
-    })
 }
 
 fn transducer_config(
@@ -301,43 +263,43 @@ mod tests {
 
     #[test]
     fn key_equal_when_relevant_fields_match() {
-        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let a = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
         assert_eq!(a, b);
     }
 
     #[test]
     fn key_differs_when_model_differs() {
-        let a = key_for(&cfg("m1", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m2", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
+        let a = key_for(&cfg("m1", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m2", Engine::Parakeet, Device::Cpu, 4, "en"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn key_differs_when_engine_differs() {
-        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let a = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::NemoCtc, Device::Cpu, 4, "en"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn key_differs_when_device_differs() {
-        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cuda, 4, "en"));
+        let a = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cuda, 4, "en"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn key_differs_when_threads_differ() {
-        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 8, "en"));
+        let a = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 8, "en"));
         assert_ne!(a, b);
     }
 
     #[test]
     fn key_differs_when_language_differs() {
-        let a = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "en"));
-        let b = key_for(&cfg("m", Engine::WhisperOnnx, Device::Cpu, 4, "ru"));
+        let a = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "en"));
+        let b = key_for(&cfg("m", Engine::Parakeet, Device::Cpu, 4, "ru"));
         assert_ne!(a, b);
     }
 }

@@ -35,10 +35,7 @@ pub struct Config {
 #[value(rename_all = "kebab-case")]
 pub enum Engine {
     #[default]
-    WhisperOnnx,
-    Zipformer,
     Parakeet,
-    Canary,
     NemoCtc,
     WhisperCpp,
 }
@@ -47,10 +44,7 @@ impl Engine {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::WhisperOnnx => "whisper-onnx",
-            Self::Zipformer => "zipformer",
             Self::Parakeet => "parakeet",
-            Self::Canary => "canary",
             Self::NemoCtc => "nemo-ctc",
             Self::WhisperCpp => "whisper-cpp",
         }
@@ -61,10 +55,7 @@ impl std::str::FromStr for Engine {
     type Err = ();
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "whisper-onnx" => Ok(Self::WhisperOnnx),
-            "zipformer" => Ok(Self::Zipformer),
             "parakeet" => Ok(Self::Parakeet),
-            "canary" => Ok(Self::Canary),
             "nemo-ctc" => Ok(Self::NemoCtc),
             "whisper-cpp" => Ok(Self::WhisperCpp),
             _ => Err(()),
@@ -93,21 +84,20 @@ impl Device {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiarizerChoice {
-    #[serde(alias = "auto", alias = "sortformer")]
+    #[serde(
+        alias = "auto",
+        alias = "sortformer",
+        alias = "nemo",
+        alias = "nemo-python"
+    )]
     SortformerOnnx,
-    #[serde(alias = "nemo-python")]
-    Nemo,
     #[serde(alias = "sherpa", alias = "eres2net")]
     Titanet,
 }
 
 impl Default for DiarizerChoice {
     fn default() -> Self {
-        if cfg!(any(target_os = "android", target_os = "ios")) {
-            Self::Titanet
-        } else {
-            Self::SortformerOnnx
-        }
+        Self::SortformerOnnx
     }
 }
 
@@ -116,16 +106,13 @@ impl DiarizerChoice {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SortformerOnnx => "sortformer-v2-onnx-4spk",
-            Self::Nemo => "nemo-sortformer-v2",
             Self::Titanet => "sherpa-pyannote-titanet",
         }
     }
 
     #[must_use]
     pub const fn embedding_rel(self) -> &'static str {
-        match self {
-            Self::SortformerOnnx | Self::Nemo | Self::Titanet => "titanet_large.onnx",
-        }
+        "titanet_large.onnx"
     }
 }
 
@@ -155,10 +142,10 @@ fn default_asr() -> (String, Engine) {
     {
         return (
             id.to_string(),
-            entry.engine_kind().unwrap_or(Engine::WhisperOnnx),
+            entry.engine_kind().unwrap_or(Engine::Parakeet),
         );
     }
-    ("sherpa-whisper-turbo".into(), Engine::WhisperOnnx)
+    ("parakeet-tdt-0.6b-v3-int8".into(), Engine::Parakeet)
 }
 
 fn default_llm_model() -> Option<String> {
@@ -227,17 +214,15 @@ impl Config {
             Ok(cfg) => cfg,
             Err(e) => {
                 let backup = corrupt_config_backup_path(&path);
-                logfile::error(&format!(
-                    "config parse failed ({}): {e}; backing up to {}",
+                logfile::warn(&format!(
+                    "config parse failed ({}): {e}; backing up to {} and resetting to defaults",
                     path.display(),
                     backup.display()
                 ));
                 std::fs::copy(&path, &backup)?;
-                return Err(Error::Config(format!(
-                    "invalid config file {}; backed up to {}: {e}",
-                    path.display(),
-                    backup.display()
-                )));
+                let fresh = Self::default();
+                fresh.save()?;
+                return Ok(fresh);
             }
         };
         if migrate_for_platform(&mut cfg) {
@@ -294,16 +279,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "android"))]
-    fn default_asr_desktop_is_parakeet_v3() {
-        let cfg = Config::default();
-        assert_eq!(cfg.model, "parakeet-tdt-0.6b-v3-int8");
-        assert!(matches!(cfg.engine, Engine::Parakeet));
-    }
-
-    #[test]
-    #[cfg(target_os = "android")]
-    fn default_asr_android_is_parakeet_v3() {
+    fn default_asr_is_parakeet_v3() {
         let cfg = Config::default();
         assert_eq!(cfg.model, "parakeet-tdt-0.6b-v3-int8");
         assert!(matches!(cfg.engine, Engine::Parakeet));
@@ -311,24 +287,14 @@ mod tests {
 
     #[test]
     fn engine_string_matches_catalog_values() {
-        assert_eq!(Engine::WhisperOnnx.as_str(), "whisper-onnx");
-        assert_eq!(Engine::Zipformer.as_str(), "zipformer");
         assert_eq!(Engine::Parakeet.as_str(), "parakeet");
-        assert_eq!(Engine::Canary.as_str(), "canary");
         assert_eq!(Engine::NemoCtc.as_str(), "nemo-ctc");
         assert_eq!(Engine::WhisperCpp.as_str(), "whisper-cpp");
     }
 
     #[test]
     fn engine_from_str_roundtrip() {
-        for e in [
-            Engine::WhisperOnnx,
-            Engine::Zipformer,
-            Engine::Parakeet,
-            Engine::Canary,
-            Engine::NemoCtc,
-            Engine::WhisperCpp,
-        ] {
+        for e in [Engine::Parakeet, Engine::NemoCtc, Engine::WhisperCpp] {
             assert_eq!(e.as_str().parse::<Engine>().unwrap(), e);
         }
     }
@@ -344,7 +310,6 @@ mod tests {
             DiarizerChoice::SortformerOnnx.as_str(),
             "sortformer-v2-onnx-4spk"
         );
-        assert_eq!(DiarizerChoice::Nemo.as_str(), "nemo-sortformer-v2");
         assert_eq!(DiarizerChoice::Titanet.as_str(), "sherpa-pyannote-titanet");
     }
 
@@ -357,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_config_is_backed_up_and_reported() {
+    fn invalid_config_is_backed_up_and_reset_to_defaults() {
         let _g = crate::paths::PATHS_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -367,10 +332,9 @@ mod tests {
         crate::paths::set_config_file(config_file.clone());
         std::fs::write(&config_file, "not-json").unwrap();
 
-        let err = Config::load().unwrap_err();
+        let cfg = Config::load().expect("invalid config should reset to defaults");
+        assert_eq!(cfg.model, Config::default().model);
 
-        assert!(err.to_string().contains("invalid config file"));
-        assert_eq!(std::fs::read_to_string(&config_file).unwrap(), "not-json");
         let backups = std::fs::read_dir(tmp.path())
             .unwrap()
             .filter_map(std::result::Result::ok)
@@ -382,6 +346,8 @@ mod tests {
             })
             .count();
         assert_eq!(backups, 1);
+        let reset = std::fs::read_to_string(&config_file).unwrap();
+        assert!(reset.contains("parakeet-tdt-0.6b-v3-int8"));
         crate::paths::clear_test_overrides();
     }
 
@@ -410,24 +376,14 @@ mod tests {
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let mut missing: Vec<String> = Vec::new();
-        let engines = [
-            Engine::WhisperOnnx,
-            Engine::Zipformer,
-            Engine::Parakeet,
-            Engine::Canary,
-            Engine::NemoCtc,
-        ];
+        let engines = [Engine::Parakeet, Engine::NemoCtc, Engine::WhisperCpp];
         for e in engines {
             let needle = format!("\"{}\"", e.as_str());
             if !raw.contains(&needle) {
                 missing.push(format!("Engine::{e:?} expects {needle}"));
             }
         }
-        let diarizers = [
-            DiarizerChoice::SortformerOnnx,
-            DiarizerChoice::Nemo,
-            DiarizerChoice::Titanet,
-        ];
+        let diarizers = [DiarizerChoice::SortformerOnnx, DiarizerChoice::Titanet];
         for d in diarizers {
             let serialised = serde_json::to_string(&d).unwrap();
             if !raw.contains(&serialised) {

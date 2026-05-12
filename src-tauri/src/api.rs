@@ -45,15 +45,12 @@ pub fn route_model_for_lang(lang: &str) -> Option<(String, Engine)> {
             "gigaam-v3-ru",
             "parakeet-tdt-0.6b-v3-int8",
             "whisper-cpp-large-v3-turbo-q8",
-            "sherpa-whisper-turbo",
         ],
         "bg" | "hr" | "cs" | "da" | "nl" | "en" | "et" | "fi" | "fr" | "de" | "el" | "hu"
-        | "it" | "lv" | "lt" | "mt" | "pl" | "pt" | "ro" | "sk" | "sl" | "es" | "sv" | "uk" => &[
-            "parakeet-tdt-0.6b-v3-int8",
-            "whisper-cpp-large-v3-turbo-q8",
-            "sherpa-whisper-turbo",
-        ],
-        _ => &["whisper-cpp-large-v3-turbo-q8", "sherpa-whisper-turbo"],
+        | "it" | "lv" | "lt" | "mt" | "pl" | "pt" | "ro" | "sk" | "sl" | "es" | "sv" | "uk" => {
+            &["parakeet-tdt-0.6b-v3-int8", "whisper-cpp-large-v3-turbo-q8"]
+        }
+        _ => &["whisper-cpp-large-v3-turbo-q8"],
     };
     candidates
         .iter()
