@@ -11,10 +11,11 @@ function Have($cmd) { [bool](Get-Command $cmd -ErrorAction SilentlyContinue) }
 
 function Add-Path($dir) {
     if (-not (Test-Path $dir)) { return }
-    $cur = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $cur = [Environment]::GetEnvironmentVariable('Path', 'User')
     if ($cur -notlike "*$dir*") {
-        [Environment]::SetEnvironmentVariable('Path', "$cur;$dir", 'Machine')
-        Write-Host "  + PATH += $dir"
+        $new = if ([string]::IsNullOrEmpty($cur)) { $dir } else { "$cur;$dir" }
+        [Environment]::SetEnvironmentVariable('Path', $new, 'User')
+        Write-Host "  + PATH += $dir (User)"
     }
     if ($env:Path -notlike "*$dir*") { $env:Path += ";$dir" }
 }

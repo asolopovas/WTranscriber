@@ -13,12 +13,11 @@ interface Options {
   tag: string;
   idle: number;
   max: number;
-  heartbeat: number;
   cmd: string[];
 }
 
 const parseArgs = (argv: string[]): Options => {
-  const o: Options = { tag: "task", idle: 90, max: 600, heartbeat: 5, cmd: [] };
+  const o: Options = { tag: "task", idle: 90, max: 600, cmd: [] };
   let i = 0;
   while (i < argv.length) {
     const a = argv[i]!;
@@ -29,8 +28,9 @@ const parseArgs = (argv: string[]): Options => {
     if (a === "--tag") o.tag = argv[++i] ?? o.tag;
     else if (a === "--idle") o.idle = Number(argv[++i]);
     else if (a === "--max") o.max = Number(argv[++i]);
-    else if (a === "--heartbeat") o.heartbeat = Number(argv[++i]);
-    else {
+    else if (a === "--heartbeat") {
+      i++;
+    } else {
       console.error(`run.ts: unknown arg ${a}`);
       process.exit(2);
     }
@@ -80,7 +80,6 @@ emitStdout(`${prefix} ${C.green}starting${C.reset} ${opts.cmd.join(" ")}\n`);
 emitStdout(`${prefix} log: ${logPath}\n`);
 
 let lastOutput = Date.now();
-let lastLine = "";
 let killReason: string | null = null;
 
 const child = spawn(opts.cmd[0]!, opts.cmd.slice(1), {
@@ -99,14 +98,12 @@ const pipe = (stream: NodeJS.ReadableStream, emit: (line: string) => void): void
     buf = lines.pop() ?? "";
     for (const ln of lines) {
       lastOutput = Date.now();
-      lastLine = ln;
       emit(`${prefix} ${ln}\n`);
     }
   });
   stream.on("end", () => {
     if (buf.length) {
       lastOutput = Date.now();
-      lastLine = buf;
       emit(`${prefix} ${buf}\n`);
     }
   });
@@ -114,26 +111,17 @@ const pipe = (stream: NodeJS.ReadableStream, emit: (line: string) => void): void
 pipe(child.stdout!, emitStdout);
 pipe(child.stderr!, emitStderr);
 
-const heartbeatMs = Math.max(1000, opts.heartbeat * 1000);
-let lastHeartbeatAt = Date.now();
-
-const watchdog = setInterval(() => {
-  const now = Date.now();
-  const idleMs = now - lastOutput;
-  if (opts.idle > 0 && idleMs > opts.idle * 1000) {
-    killReason = `IDLE_TIMEOUT (${opts.idle}s without output)`;
-    emitStderr(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
-    killProcessTree(child, "SIGKILL");
-    return;
-  }
-  if (idleMs >= opts.heartbeat * 1000 && now - lastHeartbeatAt >= heartbeatMs) {
-    lastHeartbeatAt = now;
-    const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
-    emitStderr(
-      `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
-    );
-  }
-}, 1000);
+const watchdog =
+  opts.idle > 0
+    ? setInterval(() => {
+        const idleMs = Date.now() - lastOutput;
+        if (idleMs > opts.idle * 1000) {
+          killReason = `IDLE_TIMEOUT (${opts.idle}s without output)`;
+          emitStderr(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
+          killProcessTree(child, "SIGKILL");
+        }
+      }, 1000)
+    : null;
 
 const hardTimer =
   opts.max > 0
@@ -145,7 +133,7 @@ const hardTimer =
     : null;
 
 const cleanup = (): void => {
-  clearInterval(watchdog);
+  if (watchdog) clearInterval(watchdog);
   if (hardTimer) clearTimeout(hardTimer);
   try {
     closeSync(logFd);

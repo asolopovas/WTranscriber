@@ -10,7 +10,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ANDROID_NDK_ROOT=/opt/android-sdk/ndk/27.2.12479018 \
     ANDROID_NDK_HOME=/opt/android-sdk/ndk/27.2.12479018 \
     JAVA_HOME=/usr/lib/jvm/default-java \
-    PATH=/cache/cargo/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/bin:/usr/bin:/bin
+    CUDA_HOME=/usr/local/cuda \
+    CUDA_PATH=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64 \
+    PATH=/cache/cargo/bin:/usr/local/cuda/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         build-essential \
@@ -21,6 +24,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         default-jdk-headless \
         file \
         git \
+        gnupg \
         libayatana-appindicator3-dev \
         libclang-dev \
         libgtk-3-dev \
@@ -35,6 +39,18 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         unzip \
         wget \
         xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG CUDA_APT_VERSION=12-9
+RUN curl -fsSL -o /tmp/cuda-keyring.deb \
+        https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i /tmp/cuda-keyring.deb \
+    && rm /tmp/cuda-keyring.deb \
+    && apt-get update -qq \
+    && apt-get install -y --no-install-recommends \
+        cuda-toolkit-${CUDA_APT_VERSION} \
+        libcudnn9-dev-cuda-12 \
+    && ln -sfn /usr/local/cuda-12.9 /usr/local/cuda \
     && rm -rf /var/lib/apt/lists/*
 
 ARG RUST_VERSION=1.88.0

@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 
-export const detachedSpawnOptions: Pick<SpawnOptions, "detached"> = { detached: true };
+export const detachedSpawnOptions: Pick<SpawnOptions, "detached"> =
+  process.platform === "win32" ? {} : { detached: true };
 
 export function killProcessTree(
   child: Pick<ChildProcess, "pid" | "kill">,
