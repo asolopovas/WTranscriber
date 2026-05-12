@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
+import { DEV_PORT, HMR_PORT } from "./dev.config";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -31,14 +32,14 @@ export default defineConfig(() => ({
 
   clearScreen: false,
   server: {
-    port: 1420,
+    port: DEV_PORT,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: HMR_PORT,
         }
       : undefined,
     watch: {

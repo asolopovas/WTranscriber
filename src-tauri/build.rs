@@ -137,24 +137,28 @@ fn cuda_runtime_lib_dir() -> Option<PathBuf> {
 
 fn cuda_runtime_root() -> Option<PathBuf> {
     let version = include_str!("sherpa-version.txt").trim_end();
+    #[allow(dead_code, clippy::items_after_statements)]
+    mod ident {
+        include!("../shared/identity.rs");
+    }
     let base = if cfg!(target_os = "windows") {
         let appdata = std::env::var_os("APPDATA")?;
         PathBuf::from(appdata)
-            .join("asolopovas")
-            .join("wtranscriber")
+            .join(ident::APP_ORG)
+            .join(ident::APP_NAME)
             .join("data")
     } else if cfg!(target_os = "linux") {
         let home = std::env::var_os("HOME")?;
         PathBuf::from(home)
             .join(".local")
             .join("share")
-            .join("wtranscriber")
+            .join(ident::APP_NAME)
     } else if cfg!(target_os = "macos") {
         let home = std::env::var_os("HOME")?;
         PathBuf::from(home)
             .join("Library")
             .join("Application Support")
-            .join("com.asolopovas.wtranscriber")
+            .join(ident::APP_ID)
     } else {
         return None;
     };

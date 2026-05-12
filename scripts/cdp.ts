@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 
+import { CDP_HOST, CDP_PORT } from "../dev.config";
+
 const expr = process.argv[2] ?? "1+1";
-const HOST = process.env.CDP_HOST ?? "127.0.0.1";
-const PORT = process.env.CDP_PORT ?? "9222";
+const HOST = process.env.CDP_HOST ?? CDP_HOST;
+const PORT = process.env.CDP_PORT ?? String(CDP_PORT);
 const BASE = `http://${HOST}:${PORT}`;
 
 type CdpTarget = {

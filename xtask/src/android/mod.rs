@@ -11,7 +11,11 @@ mod proc;
 
 pub use patch::sign_patch_inline;
 
-const ANDROID_PACKAGE: &str = "com.asolopovas.wtranscriber";
+#[allow(dead_code)]
+mod ident {
+    include!("../../../shared/identity.rs");
+}
+const ANDROID_PACKAGE: &str = ident::APP_ID;
 
 #[derive(Subcommand)]
 #[command(about = "Android build / dev / doctor / prebuilts / sign-patch / cli helpers")]

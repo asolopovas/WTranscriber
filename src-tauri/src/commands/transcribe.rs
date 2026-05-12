@@ -17,6 +17,8 @@ use std::{
 
 use tokio_util::sync::CancellationToken;
 
+const PROGRESS_TICK_INTERVAL: Duration = Duration::from_millis(500);
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::{runtime::Handle, task::JoinHandle};
@@ -272,7 +274,7 @@ impl TranscribeSink {
         let diarize_only = self.diarize_only;
         let diarize_prior_rtf = self.diarize_prior_rtf;
         let join = self.handle.spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(500));
+            let mut interval = tokio::time::interval(PROGRESS_TICK_INTERVAL);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 interval.tick().await;

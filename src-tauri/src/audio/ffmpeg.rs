@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::{
+    constants::DEFAULT_SAMPLE_RATE,
     error::{Error, Result},
     process::quiet_command,
 };
@@ -166,12 +167,13 @@ pub fn apply_trim(input: &Path, start_ms: u64, end_ms: Option<u64>) -> Result<()
 }
 
 pub fn run(ffmpeg: &Path, input: &Path, output: &Path) -> Result<()> {
+    let sample_rate = DEFAULT_SAMPLE_RATE.to_string();
     let out = quiet_command(ffmpeg.as_os_str())
         .args(["-loglevel", "error", "-y", "-i"])
         .arg(input)
         .args([
             "-ar",
-            "16000",
+            sample_rate.as_str(),
             "-ac",
             "1",
             "-sample_fmt",

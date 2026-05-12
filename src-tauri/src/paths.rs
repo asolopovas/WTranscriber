@@ -5,7 +5,10 @@ use std::{
 
 use directories::ProjectDirs;
 
-use crate::error::{Error, Result};
+use crate::{
+    constants,
+    error::{Error, Result},
+};
 
 #[derive(Clone, Debug)]
 struct Resolved {
@@ -23,7 +26,11 @@ static MODELS_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 static CONFIG_FILE_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 static FALLBACK: LazyLock<Option<Resolved>> = LazyLock::new(|| {
-    if let Some(d) = ProjectDirs::from("com", "asolopovas", "wtranscriber") {
+    if let Some(d) = ProjectDirs::from(
+        constants::APP_QUALIFIER,
+        constants::APP_ORG,
+        constants::APP_NAME,
+    ) {
         return Some(Resolved {
             config: d.config_dir().to_path_buf(),
             data: d.data_dir().to_path_buf(),
@@ -35,9 +42,9 @@ static FALLBACK: LazyLock<Option<Resolved>> = LazyLock::new(|| {
         .or_else(|| std::env::var_os("ANDROID_DATA").map(PathBuf::from))
         .or_else(|| std::env::temp_dir().into())?;
     Some(Resolved {
-        config: base.join(".config").join("wtranscriber"),
-        data: base.join(".local").join("share").join("wtranscriber"),
-        cache: base.join(".cache").join("wtranscriber"),
+        config: base.join(".config").join(constants::APP_NAME),
+        data: base.join(".local").join("share").join(constants::APP_NAME),
+        cache: base.join(".cache").join(constants::APP_NAME),
     })
 });
 
@@ -124,13 +131,13 @@ pub fn models_dir() -> Result<PathBuf> {
         std::fs::create_dir_all(p)?;
         return Ok(p.clone());
     }
-    let d = data_dir()?.join("models");
+    let d = data_dir()?.join(constants::MODELS_DIRNAME);
     std::fs::create_dir_all(&d)?;
     Ok(d)
 }
 
 pub fn third_party_dir() -> Result<PathBuf> {
-    let d = data_dir()?.join("third_party");
+    let d = data_dir()?.join(constants::THIRD_PARTY_DIRNAME);
     std::fs::create_dir_all(&d)?;
     Ok(d)
 }
@@ -156,5 +163,41 @@ pub fn config_file() -> Result<PathBuf> {
         }
         return Ok(p.clone());
     }
-    Ok(config_dir()?.join("config.yml"))
+    Ok(config_dir()?.join(constants::CONFIG_FILENAME))
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_persistent_root() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_PERSISTENT_ROOT)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_persistent_models_dir() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_PERSISTENT_MODELS_DIR)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_persistent_config_file() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_PERSISTENT_CONFIG_FILE)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_external_transcripts_dir() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_EXTERNAL_TRANSCRIPTS_DIR)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_internal_data_root() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_INTERNAL_DATA_ROOT)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
+pub fn android_legacy_root() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_LEGACY_ROOT)
 }

@@ -10,11 +10,14 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
-use crate::error::{Error, Result};
-
-const MAX_READ_RETRIES: u32 = 8;
-const MAX_DIAL_RETRIES: u32 = 30;
-const REPORT_INTERVAL: Duration = Duration::from_millis(250);
+use crate::{
+    constants::{
+        DOWNLOAD_MAX_DIAL_RETRIES as MAX_DIAL_RETRIES,
+        DOWNLOAD_MAX_READ_RETRIES as MAX_READ_RETRIES,
+        DOWNLOAD_PROGRESS_INTERVAL as REPORT_INTERVAL, DOWNLOAD_REQUEST_TIMEOUT,
+    },
+    error::{Error, Result},
+};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ByteProgress {
@@ -40,7 +43,7 @@ pub async fn download_file(
     ));
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
+        .timeout(DOWNLOAD_REQUEST_TIMEOUT)
         .build()
         .map_err(|e| Error::Other(e.into()))?;
 

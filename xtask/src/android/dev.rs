@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use crate::util::root;
 
-use super::BootstrapMode;
 use super::adb::{
     adb_capture, adb_devices, adb_reverse, adb_run, attach_webview, detect_dev_host,
     detect_device_target, wait_for_attach, with_device,
@@ -20,6 +19,7 @@ use super::proc::{
     kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,
     tcp_open, wait_for_port,
 };
+use super::{ANDROID_PACKAGE, BootstrapMode};
 
 pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
     let tmp = root().join("tmp");
@@ -168,14 +168,14 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     if let Err(err) = bring_up_result {
         if install_signature_mismatch(&[&dev_log, &dev_err]) {
             eprintln!(
-                "detected APK signature mismatch — uninstalling com.asolopovas.wtranscriber and retrying once"
+                "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
             );
             kill_pid(dev_pid);
             kill_pid(logcat_pid);
             reap_tauri_logcat_orphans();
             let _ = adb_run(
                 device,
-                &["uninstall", "com.asolopovas.wtranscriber"],
+                &["uninstall", ANDROID_PACKAGE],
                 Duration::from_secs(30),
             );
             let _ = fs::remove_file(&pids_path);

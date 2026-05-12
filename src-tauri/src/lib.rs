@@ -4,6 +4,7 @@ mod audio_toolkit;
 mod browser;
 mod commands;
 mod config;
+mod constants;
 mod diarizer;
 mod engine;
 mod error;
@@ -45,16 +46,17 @@ fn init_logging() {
         .init();
 
     logfile::info(&format!(
-        "wtranscriber v{} starting",
+        "{} v{} starting",
+        constants::APP_ID,
         env!("CARGO_PKG_VERSION")
     ));
 }
 
 #[cfg(target_os = "android")]
 fn setup_android_paths(app: &tauri::App) {
-    let data_dir = std::path::PathBuf::from("/data/user/0/com.asolopovas.wtranscriber/files");
+    let data_dir = paths::android_internal_data_root().to_path_buf();
     let writable = std::fs::create_dir_all(&data_dir).is_ok()
-        && std::fs::create_dir_all(data_dir.join("models")).is_ok();
+        && std::fs::create_dir_all(data_dir.join(constants::MODELS_DIRNAME)).is_ok();
     let data_dir = if writable {
         data_dir
     } else {
@@ -63,21 +65,21 @@ fn setup_android_paths(app: &tauri::App) {
             .path()
             .app_local_data_dir()
             .or_else(|_| app.path().app_data_dir())
-            .unwrap_or_else(|_| std::path::PathBuf::from("/sdcard"));
+            .unwrap_or_else(|_| std::path::PathBuf::from(constants::ANDROID_SDCARD_FALLBACK));
         let _ = std::fs::create_dir_all(&fallback);
-        let _ = std::fs::create_dir_all(fallback.join("models"));
+        let _ = std::fs::create_dir_all(fallback.join(constants::MODELS_DIRNAME));
         fallback
     };
-    let internal_config = data_dir.join("config.yml");
+    let internal_config = data_dir.join(constants::CONFIG_FILENAME);
     paths::set_config_file(internal_config.clone());
-    let cache_dir = data_dir.join("cache");
+    let cache_dir = data_dir.join(constants::CACHE_DIRNAME);
     let _ = std::fs::create_dir_all(&cache_dir);
     paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
-    let models_dir = data_dir.join("models");
+    let models_dir = data_dir.join(constants::MODELS_DIRNAME);
     let _ = std::fs::create_dir_all(&models_dir);
     if android::android_has_all_files_access() {
         android::restore_config_from_persistent(&internal_config);
-        if std::path::Path::new(android::PERSISTENT_MODELS_DIR).exists() {
+        if paths::android_persistent_models_dir().exists() {
             android::restore_models_from_persistent(&models_dir);
         }
         let mut cfg = config::Config::load().unwrap_or_default();
@@ -90,13 +92,11 @@ fn setup_android_paths(app: &tauri::App) {
     }
     paths::set_models_dir(models_dir);
 
-    let ext_workdir = std::path::PathBuf::from(
-        "/sdcard/Android/data/com.asolopovas.wtranscriber/files/transcripts",
-    );
+    let ext_workdir = paths::android_external_transcripts_dir().to_path_buf();
     let workdir = if std::fs::create_dir_all(&ext_workdir).is_ok() {
         ext_workdir
     } else {
-        let fallback = data_dir.join("transcripts");
+        let fallback = data_dir.join(constants::TRANSCRIPTS_DIRNAME);
         let _ = std::fs::create_dir_all(&fallback);
         fallback
     };

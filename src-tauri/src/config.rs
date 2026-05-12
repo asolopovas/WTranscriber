@@ -2,6 +2,7 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    constants,
     error::{Error, Result},
     logfile,
     models::{Family, by_id, default_id},
@@ -175,8 +176,8 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
     }
     if let Some(p) = cfg.last_dir.as_ref() {
         let s = p.to_string_lossy();
-        if s.starts_with("/sdcard/Documents/WTranscriber")
-            || s.starts_with("/storage/emulated/0/Documents/WTranscriber")
+        if s.starts_with(constants::ANDROID_LEGACY_ROOT)
+            || s.starts_with(constants::ANDROID_LEGACY_ROOT_EMULATED)
         {
             cfg.last_dir = None;
             dirty = true;
@@ -393,6 +394,52 @@ mod tests {
         assert!(matches!(v, DiarizerChoice::SortformerOnnx));
         let v: DiarizerChoice = serde_json::from_str("\"sortformer\"").unwrap();
         assert!(matches!(v, DiarizerChoice::SortformerOnnx));
+    }
+
+    #[test]
+    fn types_ts_mirrors_all_rust_enum_strings() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("src")
+            .join("types.ts");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let mut missing: Vec<String> = Vec::new();
+        let engines = [
+            Engine::WhisperOnnx,
+            Engine::Zipformer,
+            Engine::Parakeet,
+            Engine::Canary,
+            Engine::NemoCtc,
+        ];
+        for e in engines {
+            let needle = format!("\"{}\"", e.as_str());
+            if !raw.contains(&needle) {
+                missing.push(format!("Engine::{e:?} expects {needle}"));
+            }
+        }
+        let diarizers = [
+            DiarizerChoice::SortformerOnnx,
+            DiarizerChoice::Nemo,
+            DiarizerChoice::Titanet,
+        ];
+        for d in diarizers {
+            let serialised = serde_json::to_string(&d).unwrap();
+            if !raw.contains(&serialised) {
+                missing.push(format!("DiarizerChoice::{d:?} expects {serialised}"));
+            }
+        }
+        for d in [Device::Cpu, Device::Cuda] {
+            let needle = format!("\"{}\"", d.as_str());
+            if !raw.contains(&needle) {
+                missing.push(format!("Device::{d:?} expects {needle}"));
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "src/types.ts is out of sync with Rust enums:\n  {}",
+            missing.join("\n  ")
+        );
     }
 
     #[test]

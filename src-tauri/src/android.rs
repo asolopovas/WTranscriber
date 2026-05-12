@@ -7,13 +7,6 @@ use crate::config;
 use crate::{logfile, paths};
 
 #[cfg(target_os = "android")]
-const PERSISTENT_ROOT_DIR: &str = "/storage/emulated/0/WTranscriber";
-#[cfg(target_os = "android")]
-pub(crate) const PERSISTENT_MODELS_DIR: &str = "/storage/emulated/0/WTranscriber/models";
-#[cfg(target_os = "android")]
-const PERSISTENT_CONFIG_FILE: &str = "/storage/emulated/0/WTranscriber/config.yml";
-
-#[cfg(target_os = "android")]
 #[allow(unsafe_code)]
 mod android_jni {
     use std::sync::OnceLock;
@@ -168,7 +161,7 @@ pub const fn android_notify_transcription_done(_title: &str, _text: &str, _succe
 
 #[cfg(target_os = "android")]
 pub(crate) fn restore_models_from_persistent(internal: &std::path::Path) {
-    let public = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    let public = paths::android_persistent_models_dir();
     if !public.exists() {
         return;
     }
@@ -230,7 +223,7 @@ fn copy_recursive_merge(src: &std::path::Path, dst: &std::path::Path) -> std::io
 
 #[cfg(target_os = "android")]
 fn backup_models_to_persistent(internal: &std::path::Path) {
-    let public = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    let public = paths::android_persistent_models_dir();
     if std::fs::create_dir_all(public).is_err() {
         return;
     }
@@ -306,7 +299,7 @@ pub fn enable_persistent_storage(app: AppHandle) -> std::result::Result<bool, St
             restore_config_from_persistent(&internal_config);
         }
         if let Ok(internal) = paths::models_dir() {
-            if std::path::Path::new(PERSISTENT_MODELS_DIR).exists() {
+            if paths::android_persistent_models_dir().exists() {
                 restore_models_from_persistent(&internal);
             }
             backup_models_to_persistent(&internal);
@@ -327,7 +320,7 @@ pub(crate) fn restore_config_from_persistent(internal_config: &std::path::Path) 
     if internal_config.exists() {
         return;
     }
-    let public = std::path::Path::new(PERSISTENT_CONFIG_FILE);
+    let public = paths::android_persistent_config_file();
     if !public.exists() {
         return;
     }
@@ -348,10 +341,10 @@ fn backup_config_to_persistent() {
     if !internal.exists() {
         return;
     }
-    if std::fs::create_dir_all(PERSISTENT_ROOT_DIR).is_err() {
+    if std::fs::create_dir_all(paths::android_persistent_root()).is_err() {
         return;
     }
-    let public = std::path::Path::new(PERSISTENT_CONFIG_FILE);
+    let public = paths::android_persistent_config_file();
     if let Err(e) = std::fs::copy(&internal, public) {
         logfile::error(&format!("android: backup config.yml failed: {e}"));
     }
@@ -393,7 +386,7 @@ fn backup_single_model(model_id: &str) {
     if !src.exists() {
         return;
     }
-    let public_root = std::path::Path::new(PERSISTENT_MODELS_DIR);
+    let public_root = paths::android_persistent_models_dir();
     if std::fs::create_dir_all(public_root).is_err() {
         return;
     }
@@ -429,7 +422,7 @@ pub fn android_remove_from_persistent(model_id: &str) {
         if !android_has_all_files_access() {
             return;
         }
-        let public = std::path::Path::new(PERSISTENT_MODELS_DIR).join(model_id);
+        let public = paths::android_persistent_models_dir().join(model_id);
         if public.exists() {
             let _ = remove_recursive(&public);
         }
@@ -453,18 +446,18 @@ pub(crate) fn migrate_legacy_android_data(
     new_data_dir: &std::path::Path,
     _workdir: &std::path::Path,
 ) {
-    let legacy = std::path::PathBuf::from("/sdcard/Documents/WTranscriber");
+    let legacy = paths::android_legacy_root();
     if !legacy.exists() {
         return;
     }
-    let new_config = new_data_dir.join("config.yml");
+    let new_config = new_data_dir.join(crate::constants::CONFIG_FILENAME);
     if !new_config.exists()
-        && let Ok(raw) = std::fs::read_to_string(legacy.join("config.yml"))
+        && let Ok(raw) = std::fs::read_to_string(legacy.join(crate::constants::CONFIG_FILENAME))
         && std::fs::write(&new_config, &raw).is_ok()
     {
         logfile::info("android: migrated legacy config.yml");
     }
-    let new_models = new_data_dir.join("models");
+    let new_models = new_data_dir.join(crate::constants::MODELS_DIRNAME);
     let legacy_models = legacy.join("Models");
     let Ok(entries) = std::fs::read_dir(&legacy_models) else {
         return;
