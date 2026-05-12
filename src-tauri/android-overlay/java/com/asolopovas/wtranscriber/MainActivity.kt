@@ -71,33 +71,39 @@ class MainActivity : TauriActivity() {
 
   @Keep
   fun revealPath(path: String): Boolean {
-    val file = java.io.File(path)
-    if (!file.exists()) return false
-    return runCatching {
-      val uri = androidx.core.content.FileProvider.getUriForFile(
+    val target = java.io.File(path)
+    if (!target.exists()) return false
+    val folder = if (target.isDirectory) target else target.parentFile ?: return false
+    val uri = runCatching {
+      androidx.core.content.FileProvider.getUriForFile(
         this,
         "$packageName.fileprovider",
-        file,
+        folder,
       )
-      val mime = if (file.isDirectory) {
-        "resource/folder"
-      } else {
-        contentResolver.getType(uri) ?: "*/*"
-      }
+    }.getOrElse {
+      android.util.Log.w("WTranscriber", "revealPath: FileProvider failed for $folder: $it")
+      return false
+    }
+    val mimes = arrayOf("resource/folder", "vnd.android.document/directory", "*/*")
+    for (mime in mimes) {
       val view = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(uri, mime)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
-      val chooser = Intent.createChooser(view, null).apply {
+      val chooser = Intent.createChooser(view, "Open in file manager").apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
-      startActivity(chooser)
-      true
-    }.getOrElse {
-      android.util.Log.w("WTranscriber", "revealPath failed for $path: $it")
-      false
+      try {
+        startActivity(chooser)
+        return true
+      } catch (e: android.content.ActivityNotFoundException) {
+        android.util.Log.d("WTranscriber", "revealPath: no handler for $mime")
+      } catch (e: Exception) {
+        android.util.Log.w("WTranscriber", "revealPath failed for $path ($mime): $e")
+      }
     }
+    return false
   }
 
   @Keep

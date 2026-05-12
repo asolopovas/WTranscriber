@@ -10,6 +10,8 @@ import Button from "@components/ui/Button.vue";
 import MenuItem from "@components/ui/MenuItem.vue";
 import Checkbox from "@components/ui/Checkbox.vue";
 
+const isAndroid = /Android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : "");
+
 const props = withDefaults(
   defineProps<{
     entries: DirEntry[];
@@ -136,6 +138,7 @@ defineExpose({
             <TranscribeIcon :size="24" />
           </Button>
           <Button
+            v-if="!isAndroid"
             class="hidden md:inline-flex w-11 h-11"
             variant="ghost"
             shape="icon"
