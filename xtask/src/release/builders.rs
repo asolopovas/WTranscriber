@@ -56,23 +56,26 @@ pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i
         println!("[and] --skip-rebuild, reusing existing apk");
         return Ok(0);
     }
-    let rc = crate::android::sign_patch_inline()?;
-    if rc != 0 {
-        return Ok(rc);
+    if std::env::var("WT_ANDROID_NATIVE").is_ok() {
+        let rc = crate::android::sign_patch_inline()?;
+        if rc != 0 {
+            return Ok(rc);
+        }
+        ensure_dev_keystore_properties(dev)?;
+        let mut env_vars: Vec<(&str, &str)> =
+            vec![("CARGO_INCREMENTAL", "1"), ("WT_SKIP_FRONTEND", "1")];
+        if dev {
+            env_vars.push(("WT_DEV_APK", "1"));
+        }
+        return run_streamed(
+            "and",
+            std::env::current_exe()?.to_string_lossy().as_ref(),
+            &["android", "build", "--target", "aarch64"],
+            &env_vars,
+            lock,
+        );
     }
-    ensure_dev_keystore_properties(dev)?;
-    let mut env_vars: Vec<(&str, &str)> =
-        vec![("CARGO_INCREMENTAL", "1"), ("WT_SKIP_FRONTEND", "1")];
-    if dev {
-        env_vars.push(("WT_DEV_APK", "1"));
-    }
-    run_streamed(
-        "and",
-        std::env::current_exe()?.to_string_lossy().as_ref(),
-        &["android", "build", "--target", "aarch64"],
-        &env_vars,
-        lock,
-    )
+    build_android_in_docker(dev, lock)
 }
 
 pub(super) fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
@@ -121,60 +124,89 @@ pub(super) fn build_deb_docker(skip: bool, lock: &SharedOut) -> Result<i32> {
     build_deb_in_docker(lock)
 }
 
-fn build_deb_in_docker(lock: &SharedOut) -> Result<i32> {
-    let image = std::env::var("WT_DEB_IMAGE").unwrap_or_else(|_| "wt-deb-builder:debian12".into());
-    let vol_cargo = std::env::var("WT_DEB_CARGO_VOL").unwrap_or_else(|_| "wt-deb-cargo".into());
-    let vol_target = std::env::var("WT_DEB_TARGET_VOL").unwrap_or_else(|_| "wt-deb-target".into());
-    let vol_bun = std::env::var("WT_DEB_BUN_VOL").unwrap_or_else(|_| "wt-deb-bun".into());
+fn builder_image() -> String {
+    std::env::var("WT_BUILDER_IMAGE").unwrap_or_else(|_| "wt-builder:debian12".into())
+}
 
-    let root_path = root();
-    let root_str = root_path.to_string_lossy().to_string();
-    let rebuild = std::env::var("WT_DEB_REBUILD").ok().as_deref() == Some("1");
+fn builder_volumes() -> (String, String, String, String) {
+    (
+        std::env::var("WT_BUILDER_CARGO_VOL").unwrap_or_else(|_| "wt-builder-cargo".into()),
+        std::env::var("WT_BUILDER_TARGET_VOL").unwrap_or_else(|_| "wt-builder-target".into()),
+        std::env::var("WT_BUILDER_BUN_VOL").unwrap_or_else(|_| "wt-builder-bun".into()),
+        std::env::var("WT_BUILDER_GRADLE_VOL").unwrap_or_else(|_| "wt-builder-gradle".into()),
+    )
+}
 
+fn root_for_mount() -> String {
+    let r = root().to_string_lossy().to_string();
+    if cfg!(target_os = "windows") {
+        r.replace('\\', "/")
+    } else {
+        r
+    }
+}
+
+fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
+    let rebuild = std::env::var("WT_BUILDER_REBUILD").ok().as_deref() == Some("1");
     let need_build = rebuild
         || std::process::Command::new("docker")
-            .args(["image", "inspect", &image])
+            .args(["image", "inspect", image])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| !s.success())
             .unwrap_or(true);
-    if need_build {
-        println!("[deb] building image {image}");
-        let rc = run_streamed(
-            "deb",
-            "docker",
-            &[
-                "build",
-                "-f",
-                "docker/Dockerfile.deb",
-                "-t",
-                &image,
-                "docker/",
-            ],
-            &[],
-            lock,
-        )?;
-        if rc != 0 {
-            return Ok(rc);
-        }
+    if !need_build {
+        return Ok(());
     }
+    println!("[docker] building image {image} from docker/Dockerfile.builder");
+    let rc = run_streamed(
+        "docker",
+        "docker",
+        &[
+            "build",
+            "-f",
+            "docker/Dockerfile.builder",
+            "-t",
+            image,
+            "docker/",
+        ],
+        &[],
+        lock,
+    )?;
+    if rc != 0 {
+        anyhow::bail!("docker build failed (exit {rc})");
+    }
+    Ok(())
+}
 
-    for vol in [&vol_cargo, &vol_target, &vol_bun] {
-        let exists = std::process::Command::new("docker")
-            .args(["volume", "inspect", vol])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !exists {
-            let rc = run_streamed("deb", "docker", &["volume", "create", vol], &[], lock)?;
-            if rc != 0 {
-                return Ok(rc);
-            }
-        }
+fn ensure_volume(tag: &str, name: &str, lock: &SharedOut) -> Result<()> {
+    let exists = std::process::Command::new("docker")
+        .args(["volume", "inspect", name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if exists {
+        return Ok(());
     }
+    let rc = run_streamed(tag, "docker", &["volume", "create", name], &[], lock)?;
+    if rc != 0 {
+        anyhow::bail!("docker volume create {name} failed (exit {rc})");
+    }
+    Ok(())
+}
+
+fn build_deb_in_docker(lock: &SharedOut) -> Result<i32> {
+    let image = builder_image();
+    let (vol_cargo, vol_target, vol_bun, _vol_gradle) = builder_volumes();
+
+    ensure_builder_image(&image, lock)?;
+
+    ensure_volume("deb", &vol_cargo, lock)?;
+    ensure_volume("deb", &vol_target, lock)?;
+    ensure_volume("deb", &vol_bun, lock)?;
 
     let inner = r#"
 set -euo pipefail
@@ -188,13 +220,7 @@ cp -f "$SRC"/*.deb "$DST"/
 "#;
 
     println!("[deb] running build inside {image}");
-    let mount_src = if cfg!(target_os = "windows") {
-        // Docker Desktop on Windows requires forward slashes
-        root_str.replace('\\', "/")
-    } else {
-        root_str.clone()
-    };
-    let mount = format!("{mount_src}:/work");
+    let mount = format!("{}:/work", root_for_mount());
     let vmc = format!("{vol_cargo}:/cache/cargo");
     let vmt = format!("{vol_target}:/cache/target");
     let vmb = format!("{vol_bun}:/cache/bun");
@@ -223,4 +249,63 @@ cp -f "$SRC"/*.deb "$DST"/
         inner,
     ];
     run_streamed("deb", "docker", &args, &[], lock)
+}
+
+fn build_android_in_docker(dev: bool, lock: &SharedOut) -> Result<i32> {
+    let image = builder_image();
+    let (vol_cargo, vol_target, vol_bun, vol_gradle) = builder_volumes();
+
+    ensure_builder_image(&image, lock)?;
+    ensure_volume("and", &vol_cargo, lock)?;
+    ensure_volume("and", &vol_target, lock)?;
+    ensure_volume("and", &vol_bun, lock)?;
+    ensure_volume("and", &vol_gradle, lock)?;
+
+    // The container's NDK + SDK already live at /opt/android-sdk; xtask's
+    // android/paths.rs reads NDK_HOME, which the image sets. sherpa-onnx
+    // prebuilts still come from .android-prebuilt (downloaded by xtask on
+    // first run, lives on the bind-mounted /work).
+    let dev_env = if dev { "WT_DEV_APK=1" } else { "" };
+    let inner = format!(
+        r#"
+set -euo pipefail
+unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR || true
+bun install --frozen-lockfile --no-progress 2>&1 | tail -5
+{dev_env} WT_SKIP_FRONTEND=1 cargo run --manifest-path xtask/Cargo.toml --quiet -- android build --target aarch64
+"#
+    );
+
+    println!("[and] running android build inside {image}");
+    let mount = format!("{}:/work", root_for_mount());
+    let vmc = format!("{vol_cargo}:/cache/cargo");
+    let vmt = format!("{vol_target}:/cache/target");
+    let vmb = format!("{vol_bun}:/cache/bun");
+    let vmg = format!("{vol_gradle}:/root/.gradle");
+    let args = vec![
+        "run",
+        "--rm",
+        "-v",
+        &mount,
+        "-v",
+        &vmc,
+        "-v",
+        &vmt,
+        "-v",
+        &vmb,
+        "-v",
+        &vmg,
+        "-e",
+        "CARGO_TARGET_DIR=/cache/target",
+        "-e",
+        "CARGO_INCREMENTAL=1",
+        "-e",
+        "BUN_INSTALL_CACHE_DIR=/cache/bun",
+        "-w",
+        "/work",
+        &image,
+        "bash",
+        "-lc",
+        &inner,
+    ];
+    run_streamed("and", "docker", &args, &[], lock)
 }

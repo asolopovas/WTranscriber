@@ -137,10 +137,10 @@ build-host: bootstrap
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
     {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
 
-# Linux .deb built inside Debian 12 container (glibc 2.36 floor).
+# Linux .deb built inside the unified debian:12 builder container (glibc 2.36 floor).
 [group('build')]
 build-deb-docker:
-    {{_run}} --tag build-deb-docker --idle 180 --max 3600 -- bash docker/build-deb.sh
+    {{_run}} --tag build-deb-docker --idle 180 --max 3600 -- cargo xtask release --dev --no-host --no-android --no-windows-vm
 
 # ─── android: dev session ─────────────────────────────────────────────────────
 
