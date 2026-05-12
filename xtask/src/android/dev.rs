@@ -58,6 +58,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             "chromium:V",
             "am_crash:V",
             "am_proc_died:V",
+            "am_proc_start:V",
             "am_kill:V",
         ],
     )
@@ -142,6 +143,8 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             |s| {
                 s.contains("Info Opening ")
                     || s.contains("Info Installing")
+                    || s.contains("Performing Streamed Install")
+                    || (s.contains("Starting: Intent") && s.contains("wtranscriber"))
                     || (s.contains("am_proc_start") && s.contains("wtranscriber"))
             },
             Duration::from_secs(1800),
