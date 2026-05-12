@@ -58,6 +58,16 @@ bootstrap-if-stale:
 dev:
     $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
+# Desktop HMR (Linux/macOS). Vite + tauri dev.
+[unix, group('develop')]
+dev:
+    RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
+
+# Alias: Android USB HMR session (same as `just android`).
+[group('develop')]
+dev-android device="":
+    {{_run}} --tag dev-android --idle 120 --max 2100 -- cargo xtask android bootstrap usb {{device}}
+
 # Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
 [windows, group('develop')]
 dev-cpu:
