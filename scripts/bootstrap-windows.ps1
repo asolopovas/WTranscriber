@@ -67,8 +67,8 @@ $nsis = 'C:\Program Files (x86)\NSIS\makensis.exe'
 if (-not (Test-Path $nsis)) {
     Write-Host '-> NSIS' -ForegroundColor Cyan
     Winget-Install 'NSIS.NSIS'
-    Add-Path 'C:\Program Files (x86)\NSIS'
 }
+Add-Path 'C:\Program Files (x86)\NSIS'
 
 if (-not (Have cmake)) {
     Write-Host '-> CMake (sherpa-onnx static needs it)' -ForegroundColor Cyan
@@ -184,7 +184,7 @@ if (Test-Path $sherpaVerFile) {
 }
 
 Write-Host '=== Done. Re-open shell or run `refreshenv` ===' -ForegroundColor Green
-foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','gcc','ninja','sccache','lld-link') {
+foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','ninja','sccache','lld-link') {
     if (Have $t) { Write-Host "  OK  $t" } else { Write-Host "  MISS $t" -ForegroundColor Yellow }
 }
 if (Test-Path (Join-Path $llvmBin 'libclang.dll')) { Write-Host "  OK  libclang" } else { Write-Host "  MISS libclang" -ForegroundColor Yellow }
