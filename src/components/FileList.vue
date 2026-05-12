@@ -10,6 +10,8 @@ import Button from "@components/ui/Button.vue";
 import MenuItem from "@components/ui/MenuItem.vue";
 import Checkbox from "@components/ui/Checkbox.vue";
 
+const isAndroid = /Android/i.test(typeof navigator !== "undefined" ? navigator.userAgent : "");
+
 const props = withDefaults(
   defineProps<{
     entries: DirEntry[];
@@ -240,6 +242,7 @@ defineExpose({
                 Rename
               </MenuItem>
               <MenuItem
+                v-if="!isAndroid"
                 icon="folder_open"
                 @click="
                   openMenuPath = null;
