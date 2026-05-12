@@ -7,8 +7,8 @@ use crate::util::{exe, root, sh, sh_in};
 
 use super::ANDROID_PACKAGE;
 use super::patch::{
-    copy_llama_jni, patch_gradle_build_config, patch_gradle_properties, patch_manifest,
-    sign_patch_inline, sign_with_debug_keystore,
+    copy_llama_jni, patch_generated_activities, patch_gradle_build_config, patch_gradle_properties,
+    patch_manifest, patch_plugin_consumer_rules, sign_patch_inline, sign_with_debug_keystore,
 };
 use super::paths::{
     abi_for, android_home, apk_release_dir, clang_ext, ndk_bin, ndk_home, prebuilt_dir,
@@ -68,6 +68,8 @@ pub(super) fn prepare(target: &str, with_sign: bool) -> Result<Vec<(String, Stri
     }
     patch_gradle_build_config()?;
     patch_gradle_properties()?;
+    patch_generated_activities()?;
+    patch_plugin_consumer_rules()?;
     copy_llama_jni(target)?;
     patch_manifest()?;
     build_env(target)

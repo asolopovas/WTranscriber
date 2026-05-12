@@ -1,5 +1,12 @@
-//! Silero LangID (95-class) probe for routing audio to the right ASR.
+//! Silero `LangID` (95-class) probe for routing audio to the right ASR.
 //! Loads `silero-lang95-onnx/lang_classifier_95.onnx` once and reuses it.
+
+#![allow(
+    clippy::significant_drop_tightening,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
 
 use std::sync::{Mutex, OnceLock};
 
@@ -45,6 +52,7 @@ fn model_path() -> Result<std::path::PathBuf> {
         .ok_or_else(|| Error::Transcribe("Silero LangID has no .onnx file in catalog".into()))
 }
 
+#[must_use]
 pub fn is_installed() -> bool {
     matches!(model_path(), Ok(p) if p.exists())
 }
@@ -107,9 +115,8 @@ fn voiced_window(samples: &[f32], target_seconds: usize) -> Vec<f32> {
 
     let mut collected: Vec<f32> = Vec::with_capacity(target);
     for frame in scan_slice.chunks_exact(FRAME_SAMPLES) {
-        match vad.push_frame(frame) {
-            Ok(VadFrame::Speech(out)) => collected.extend_from_slice(out),
-            _ => {}
+        if let Ok(VadFrame::Speech(out)) = vad.push_frame(frame) {
+            collected.extend_from_slice(out)
         }
         if collected.len() >= target {
             break;

@@ -89,7 +89,71 @@ if (-not (Have just)) {
     Add-Path "$env:USERPROFILE\.cargo\bin"
 }
 
+if (-not (Have ninja)) {
+    Write-Host '-> Ninja (CMAKE_GENERATOR=Ninja)' -ForegroundColor Cyan
+    Winget-Install 'Ninja-build.Ninja'
+    Add-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+}
+
+$llvmBin = 'C:\Program Files\LLVM\bin'
+if (-not (Test-Path (Join-Path $llvmBin 'libclang.dll'))) {
+    Write-Host '-> LLVM (libclang for bindgen)' -ForegroundColor Cyan
+    Winget-Install 'LLVM.LLVM'
+}
+if (Test-Path $llvmBin) {
+    [Environment]::SetEnvironmentVariable('LIBCLANG_PATH', $llvmBin, 'User')
+    $env:LIBCLANG_PATH = $llvmBin
+}
+
+$cudaRoot = $env:CUDA_PATH
+$cudaOk = $cudaRoot -and (Test-Path (Join-Path $cudaRoot 'bin\nvcc.exe'))
+if (-not $cudaOk) {
+    $detected = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'bin\nvcc.exe') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($detected) {
+        $cudaRoot = $detected.FullName
+        $cudaOk = $true
+    }
+}
+if (-not $cudaOk) {
+    Write-Host '-> CUDA Toolkit 12.x (whisper-rs-sys + parakeet-rs cuda features)' -ForegroundColor Cyan
+    Write-Host '   (large download, ~3 GB; pin to 12.9 to match runtime DLLs)'
+    Winget-Install 'Nvidia.CUDA'
+    $detected = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path (Join-Path $_.FullName 'bin\nvcc.exe') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if ($detected) { $cudaRoot = $detected.FullName }
+}
+if ($cudaRoot -and (Test-Path (Join-Path $cudaRoot 'bin\nvcc.exe'))) {
+    [Environment]::SetEnvironmentVariable('CUDA_PATH', $cudaRoot, 'User')
+    $env:CUDA_PATH = $cudaRoot
+    Add-Path (Join-Path $cudaRoot 'bin')
+} else {
+    Write-Host '   WARN  CUDA_PATH still unresolved; `just build` (default cuda feature) will fail.' -ForegroundColor Yellow
+    Write-Host '         Re-open shell and re-run, or build with --no-default-features --features sherpa-static.' -ForegroundColor Yellow
+}
+
+$cudnnDll = Join-Path $env:LOCALAPPDATA 'Programs\cuDNN\v9\bin\cudnn64_9.dll'
+$sysDll   = 'C:\Windows\System32\cudnn64_9.dll'
+if (-not ((Test-Path $cudnnDll) -or (Test-Path $sysDll))) {
+    Write-Host '-> cuDNN 9 (CUDA 12)' -ForegroundColor Cyan
+    & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'install-cudnn.ps1')
+}
+
+$sherpaVerFile = Join-Path $PSScriptRoot '..\src-tauri\sherpa-version.txt'
+if (Test-Path $sherpaVerFile) {
+    $sherpaVer = (Get-Content $sherpaVerFile -Raw).Trim()
+    $sherpaLib = Join-Path $env:LOCALAPPDATA "Programs\sherpa-onnx-cuda\$sherpaVer"
+    if (-not (Test-Path (Join-Path $sherpaLib '*\lib\sherpa-onnx-c-api.lib'))) {
+        Write-Host '-> sherpa-onnx CUDA runtime' -ForegroundColor Cyan
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'install-sherpa-cuda.ps1')
+    }
+}
+
 Write-Host '=== Done. Re-open shell or run `refreshenv` ===' -ForegroundColor Green
-foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','gcc') {
+foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','gcc','ninja') {
     if (Have $t) { Write-Host "  OK  $t" } else { Write-Host "  MISS $t" -ForegroundColor Yellow }
 }
+if (Test-Path (Join-Path $llvmBin 'libclang.dll')) { Write-Host "  OK  libclang" } else { Write-Host "  MISS libclang" -ForegroundColor Yellow }
+if ($cudaRoot -and (Test-Path (Join-Path $cudaRoot 'bin\nvcc.exe'))) { Write-Host "  OK  nvcc ($cudaRoot)" } else { Write-Host "  MISS nvcc" -ForegroundColor Yellow }

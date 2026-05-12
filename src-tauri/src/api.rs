@@ -27,19 +27,17 @@ pub fn is_model_installed(id: &str) -> bool {
         .is_ok_and(|paths| !paths.is_empty() && paths.iter().all(|p| p.exists()))
 }
 
-/// Pick the best installed ASR model id (and its engine) for a detected
-/// language code. Priority follows current benchmarks:
-///   `ru`            -> GigaAM v3 (Russian-specialised)
+/// Pick the best installed ASR model id (and its engine) for a detected language code.
+///
+/// Priority follows current benchmarks:
+///   `ru`            -> `GigaAM` v3 (Russian-specialised)
 ///   parakeet's 25   -> Parakeet TDT 0.6B v3 (token timestamps, fast)
 ///   everything else -> Whisper-turbo (multilingual fallback)
 /// Falls through to the next candidate if a model is not installed.
 #[must_use]
 pub fn route_model_for_lang(lang: &str) -> Option<(String, Engine)> {
     let normalised = lang.trim().to_ascii_lowercase();
-    let lang_code = normalised
-        .split(|c: char| c == '-' || c == '_')
-        .next()
-        .unwrap_or("");
+    let lang_code = normalised.split(['-', '_']).next().unwrap_or("");
     let candidates: &[&str] = match lang_code {
         "ru" => &[
             "gigaam-v3-ru",

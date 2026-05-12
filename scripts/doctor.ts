@@ -110,6 +110,31 @@ if (platform() === "win32") {
       ? ok(dll)
       : warn("absent — GPU sidecar will fall back to CPU");
   });
+  add("CUDA Toolkit", async () => {
+    const cudaPath = process.env.CUDA_PATH;
+    if (!cudaPath) {
+      return fail(
+        "CUDA_PATH not set — default `cuda` feature needs it (install CUDA Toolkit 12.x)",
+      );
+    }
+    const nvcc = path.join(cudaPath, "bin", "nvcc.exe");
+    if (!(await Bun.file(nvcc).exists())) {
+      return fail(
+        `${nvcc} missing — CUDA_PATH points at a non-existent install (reinstall CUDA Toolkit or use --no-default-features --features sherpa-static)`,
+      );
+    }
+    return ok(`${cudaPath}`);
+  });
+  add("cuDNN", async () => {
+    const candidates = [
+      "C:\\Windows\\System32\\cudnn64_9.dll",
+      path.join(process.env.LOCALAPPDATA ?? "", "Programs", "cuDNN", "v9", "bin", "cudnn64_9.dll"),
+    ];
+    for (const c of candidates) {
+      if (c && (await Bun.file(c).exists())) return ok(c);
+    }
+    return warn("cudnn64_9.dll not found — `just cudnn` to install");
+  });
 }
 
 const symbol: Record<Status, string> = { ok: "OK  ", warn: "WARN", fail: "FAIL" };

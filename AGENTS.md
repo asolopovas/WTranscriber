@@ -56,6 +56,21 @@ just release-stable    check + bump + tag + build + publish
 
 `.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt` for `src-tauri`/`xtask`, TS/Vue/scripts/docs via `prettier --write`), re-stages, then gates on `bun run typecheck` for TS/Vue/scripts changes. Rust correctness (clippy, tests) is **not** in the hook — it lives in `just check` and CI. Run `just check` before opening a PR.
 
+## Tauri 2.11 patches
+
+In-tree workarounds for upstream issues until Tauri 2.12 lands:
+
+- `src-tauri/gen/android/app/src/main/java/com/asolopovas/wtranscriber/generated/{Tauri,Wry}Activity.kt` carry a `@file:Suppress("DEPRECATION")` so the Activity `onDestroy`/`onRestart` overrides don't fail `-Werror` Kotlin builds.
+- `xtask/src/android/patch.rs::patch_plugin_consumer_rules` touches an empty `consumer-rules.pro` inside each plugin's `android/` dir referenced by `gen/android/tauri.settings.gradle` (covers `tauri-plugin-dialog`, `tauri-plugin-fs`). Wired into `prepare()` before every Android build.
+- `src-tauri/build.rs::stub_windows_bundle_resources` touches zero-byte placeholders for the Windows bundle DLLs declared in `tauri.windows.conf.json`, so `tauri_build`'s resource validation passes during `just check` / dev builds on a fresh checkout. `install_cuda_dlls` then overwrites them with real binaries from `%APPDATA%` during release builds. Pre-bundle: verify file sizes before shipping a release.
+- `src-tauri/build.rs::invalidate_stale_cmake_caches` wipes `target/{debug,release}/build/{whisper-rs-sys-*,sherpa-onnx-sys-*}` when `CMAKE_GENERATOR` changes vs the `target/.cmake-generator` sentinel.
+
+Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migration.
+
+## Windows host setup
+
+`scripts/bootstrap-windows.ps1` (run by `just bootstrap`, which is a dependency of `just build`) installs/repairs: VS 2022 Build Tools, rustup (msvc), Bun, Node, NSIS, CMake, Ninja, LLVM/libclang, MSYS2, just, **CUDA Toolkit 12.x** (via `Nvidia.CUDA`), **cuDNN 9** (via `scripts/install-cudnn.ps1`), and **sherpa-onnx CUDA runtime** (via `scripts/install-sherpa-cuda.ps1`). Subsequent runs are idempotent. `just doctor` validates the same prerequisites are reachable from the current shell.
+
 ## Scratch artefacts
 
 - `logs/<tag>.log` — per-tag build logs written by `scripts/run.ts`. **Wiped on every `just build*`.**

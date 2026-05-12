@@ -1,9 +1,95 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
+    stub_windows_bundle_resources();
+    invalidate_stale_cmake_caches();
     tauri_build::build();
     point_sherpa_lib_dir_to_cuda();
     install_cuda_dlls();
+}
+
+// cmake-rs reuses build dirs across invocations and reads CMAKE_GENERATOR from
+// env. Switching generator (e.g. Visual Studio ↔ Ninja) leaves a CMakeCache
+// that pins the previous generator's instance/toolset; subsequent configures
+// fail with "Generator X does not support instance specification". cargo
+// doesn't notice the env change. We fingerprint the active generator under
+// target/ and rm -rf any whisper-rs-sys / sherpa-onnx-sys build dirs on
+// mismatch.
+fn invalidate_stale_cmake_caches() {
+    let manifest = match std::env::var_os("CARGO_MANIFEST_DIR") {
+        Some(v) => PathBuf::from(v),
+        None => return,
+    };
+    println!("cargo:rerun-if-env-changed=CMAKE_GENERATOR");
+    let target =
+        std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| manifest.join("target"), PathBuf::from);
+    let generator = std::env::var("CMAKE_GENERATOR").unwrap_or_default();
+    let sentinel = target.join(".cmake-generator");
+    let prev = std::fs::read_to_string(&sentinel).unwrap_or_default();
+    if prev == generator {
+        return;
+    }
+    for profile in ["debug", "release"] {
+        let build = target.join(profile).join("build");
+        if !build.is_dir() {
+            continue;
+        }
+        let Ok(rd) = std::fs::read_dir(&build) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let name = entry.file_name();
+            let s = name.to_string_lossy();
+            if s.starts_with("whisper-rs-sys-") || s.starts_with("sherpa-onnx-sys-") {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+    if let Some(parent) = sentinel.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&sentinel, &generator);
+}
+
+// tauri_build::build() validates every bundle resource path on every cargo
+// build (clippy, test, dev). The Windows config references
+// target/release/*.dll and target/release/wt.exe — these only exist after a
+// release build + sherpa-cuda runtime install. To keep `just check` and dev
+// builds green on a fresh checkout, touch zero-byte placeholders so path
+// validation passes. xtask release verifies real content before bundling.
+fn stub_windows_bundle_resources() {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let manifest = match std::env::var_os("CARGO_MANIFEST_DIR") {
+        Some(v) => PathBuf::from(v),
+        None => return,
+    };
+    let release = manifest.join("target").join("release");
+    if std::fs::create_dir_all(&release).is_err() {
+        return;
+    }
+    for name in [
+        "sherpa-onnx-c-api.dll",
+        "sherpa-onnx-cxx-api.dll",
+        "onnxruntime.dll",
+        "onnxruntime_providers_shared.dll",
+        "wt.exe",
+    ] {
+        let p = release.join(name);
+        if !p.exists() {
+            let _ = touch(&p);
+        }
+    }
+}
+
+fn touch(p: &Path) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(p)
+        .map(|_| ())
 }
 
 // When the `cuda` feature is on, redirect the sherpa-onnx crate's build

@@ -50,6 +50,7 @@ A rolling log is written to ~/.local/share/wtranscriber/wt.log (same as the GUI)
       wt models install whisper-cpp-large-v3-turbo-q8",
     arg_required_else_help = true
 )]
+#[allow(clippy::struct_excessive_bools)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -428,7 +429,7 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
                 config.engine = eng;
             }
             if !lang_known {
-                config.language = lang.to_owned();
+                lang.clone_into(&mut config.language);
             }
         }
     }

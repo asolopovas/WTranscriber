@@ -1,3 +1,9 @@
+#![allow(
+    clippy::significant_drop_tightening,
+    clippy::too_many_lines,
+    clippy::items_after_statements
+)]
+
 use std::sync::{Mutex, OnceLock};
 
 use whisper_rs::{
@@ -76,7 +82,7 @@ fn ensure_state(model_path: &std::path::Path) -> Result<()> {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn t_centisec_to_ms(t: i64) -> u64 {
+const fn t_centisec_to_ms(t: i64) -> u64 {
     if t < 0 {
         return 0;
     }
@@ -187,9 +193,7 @@ pub fn run(
 
     let detected_idx = state.full_lang_id_from_state();
     let detected = if detected_idx >= 0 {
-        whisper_rs::get_lang_str(detected_idx)
-            .map(str::to_owned)
-            .unwrap_or_else(|| lang.to_owned())
+        whisper_rs::get_lang_str(detected_idx).map_or_else(|| lang.to_owned(), str::to_owned)
     } else {
         lang.to_owned()
     };

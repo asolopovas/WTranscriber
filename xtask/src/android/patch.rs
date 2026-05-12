@@ -141,6 +141,81 @@ pub(super) fn copy_llama_jni(target: &str) -> Result<()> {
     Ok(())
 }
 
+// tauri 2.11.x generates Activity.kt files that override `onDestroy`/
+// `onRestart`, which are deprecated in newer androidx.activity. Tauri 2.12 is
+// expected to migrate these onto DefaultLifecycleObserver; until then, inject
+// `@file:Suppress("DEPRECATION")` into the generated overrides so they don't
+// fail Kotlin `-Werror` builds. Idempotent.
+pub(super) fn patch_generated_activities() -> Result<()> {
+    let dir = gen_android()
+        .join("app")
+        .join("src")
+        .join("main")
+        .join("java")
+        .join("com")
+        .join("asolopovas")
+        .join("wtranscriber")
+        .join("generated");
+    for name in ["TauriActivity.kt", "WryActivity.kt"] {
+        let p = dir.join(name);
+        if !p.exists() {
+            continue;
+        }
+        let raw = fs::read_to_string(&p)?;
+        if raw.contains("@file:Suppress(\"DEPRECATION\")") {
+            continue;
+        }
+        let Some(idx) = raw.find("\npackage ") else {
+            continue;
+        };
+        let mut patched = String::with_capacity(raw.len() + 64);
+        patched.push_str(&raw[..idx]);
+        patched.push_str(
+            "\n\n@file:Suppress(\"DEPRECATION\") // tauri 2.11 onDestroy/onRestart deprecations",
+        );
+        patched.push_str(&raw[idx..]);
+        fs::write(&p, patched)?;
+    }
+    Ok(())
+}
+
+// tauri-plugin-dialog 2.7.x and tauri-plugin-fs 2.5.x ship build.gradle.kts
+// with `consumerProguardFiles("consumer-rules.pro")` but don't include the
+// file, breaking AGP's library packaging. Until the plugins ship the file
+// (expected with tauri ≥ 2.12), touch an empty consumer-rules.pro inside
+// each referenced plugin android/ dir.
+pub(super) fn patch_plugin_consumer_rules() -> Result<()> {
+    let settings = gen_android().join("tauri.settings.gradle");
+    if !settings.exists() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&settings)?;
+    for line in raw.lines() {
+        let Some(start) = line.find("new File(\"") else {
+            continue;
+        };
+        let after = &line[start + "new File(\"".len()..];
+        let Some(end) = after.find('"') else {
+            continue;
+        };
+        let dir = Path::new(&after[..end]);
+        if !dir.is_dir() {
+            continue;
+        }
+        let target = dir.join("consumer-rules.pro");
+        if target.exists() {
+            continue;
+        }
+        if let Err(e) = fs::write(
+            &target,
+            "# stub: upstream plugin omits consumer-rules.pro (tauri 2.11)\n",
+        ) {
+            eprintln!("[and] could not stub {}: {e}", target.display());
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn patch_manifest() -> Result<()> {
     apply_android_overlay()?;
     let main = gen_android().join("app").join("src").join("main");
