@@ -11,7 +11,7 @@
 | `just release-publish <ch>`   | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z` |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
-`release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-wsl`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
+`release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
 ## Windows VM preflight
 
@@ -67,7 +67,7 @@ Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["ns
 - Windows host: `wtranscriber-setup-*.exe` (NSIS)
 - Linux host: `wtranscriber_*_amd64.deb`
 - macOS host (manual): `WTranscriber.app` bundle (not in the release matrix)
-- Windows + WSL: `.deb` at `$HOME/.cache/wtranscriber-wsl-target/`
+- Windows host (Docker): `.deb` produced inside `debian:12-slim` container, written to `src-tauri/target/release/bundle/deb/`
 - Android: `wtranscriber-*.apk` (signed if `keystore.properties` present)
 - `SHA256SUMS[-<ver>]` and `release-manifest-<ver>.json`
 - `<artifact>.sig` per binary if `TAURI_SIGNING_PRIVATE_KEY` is exported

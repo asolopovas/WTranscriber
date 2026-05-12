@@ -10,10 +10,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::thread;
 
-use self::artifacts::{
-    copy_into_channel, find_apk, find_host_bundle, find_wsl_deb, write_sha256sums,
-};
-use self::builders::{build_android, build_host, build_wsl};
+use self::artifacts::{copy_into_channel, find_apk, find_deb, find_host_bundle, write_sha256sums};
+use self::builders::{build_android, build_deb_docker, build_host};
 use self::config::ReleaseConfig;
 use self::windows_vm::{build_windows_vm, fetch_windows_vm_exe};
 use crate::util::{
@@ -24,7 +22,7 @@ type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);
 
 #[derive(ClapArgs)]
 #[command(
-    about = "Build the full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host: Linux builds Windows via the configured VM, Windows builds Linux via WSL"
+    about = "Build the full release matrix (Linux .deb + Windows .exe + Android .apk); auto-detects host: Linux builds Windows via the configured VM, Windows builds Linux via Docker (debian:12)"
 )]
 pub struct Args {
     #[arg(long)]
@@ -34,7 +32,7 @@ pub struct Args {
     #[arg(long)]
     pub no_android: bool,
     #[arg(long)]
-    pub no_wsl: bool,
+    pub no_deb: bool,
     #[arg(long)]
     pub no_windows_vm: bool,
     #[arg(long)]
@@ -86,10 +84,13 @@ pub fn run(args: Args) -> Result<()> {
     }
     let skip = args.skip_rebuild;
     let dev = args.dev;
-    match (is_windows(), args.no_wsl, args.no_windows_vm) {
+    match (is_windows(), args.no_deb, args.no_windows_vm) {
         (true, false, _) => {
             let l = lock.clone();
-            tasks.push(("wsl", Box::new(move |_| build_wsl(skip, &l).unwrap_or(127))));
+            tasks.push((
+                "deb",
+                Box::new(move |_| build_deb_docker(skip, &l).unwrap_or(127)),
+            ));
         }
         (false, _, false) => {
             let l = lock.clone();
@@ -149,15 +150,14 @@ pub fn run(args: Args) -> Result<()> {
         }
     }
 
-    if let Some(&rc) = results.get("wsl") {
+    if let Some(&rc) = results.get("deb") {
         match rc {
-            -1 => eprintln!("⚠  WSL build skipped (no distro with bun + cargo)"),
             0 => {
-                if let Some((src, name)) = find_wsl_deb(&ver, &branch, args.dev) {
+                if let Some((src, name)) = find_deb(&ver, &branch, args.dev) {
                     artifacts.push(copy_into_channel(&src, &name, &out_channel_dir)?);
                 }
             }
-            _ => eprintln!("⚠  WSL build failed (exit {rc}); continuing without .deb"),
+            _ => eprintln!("⚠  docker .deb build failed (exit {rc}); continuing without .deb"),
         }
     }
 

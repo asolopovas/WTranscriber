@@ -3,7 +3,6 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::artifacts::win_path_to_wsl;
 use crate::util::{SharedOut, root, run_streamed};
 
 pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
@@ -16,9 +15,9 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         std::env::remove_var("SHERPA_ONNX_LIB");
         std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
     }
-    if cfg!(target_os = "linux") && std::env::var("WT_HOST_DEB_DOCKER").is_ok() {
-        println!("[host] building .deb inside debian:12 container (WT_HOST_DEB_DOCKER set)");
-        return run_streamed("host", "bash", &["docker/build-deb.sh"], &[], lock);
+    if cfg!(target_os = "linux") {
+        println!("[host] building .deb inside debian:12 container (linux host)");
+        return build_deb_in_docker(lock);
     }
     let rc = run_streamed(
         "host",
@@ -114,14 +113,10 @@ pub(super) fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn build_wsl(skip: bool, lock: &SharedOut) -> Result<i32> {
+pub(super) fn build_deb_docker(skip: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
         println!("[deb] --skip-rebuild, looking for existing .deb");
         return Ok(0);
-    }
-    if std::env::var("WT_DEB_VIA_WSL").is_ok() {
-        let wsl_script = format!("{}/scripts/wsl-build-deb.sh", win_path_to_wsl(&root()));
-        return run_streamed("wsl", "wsl", &["--", "bash", &wsl_script], &[], lock);
     }
     build_deb_in_docker(lock)
 }

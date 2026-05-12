@@ -56,46 +56,26 @@ pub(super) fn find_host_bundle(ver: &str, branch: &str, dev: bool) -> Option<(Pa
     None
 }
 
-pub(super) fn win_path_to_wsl(p: &Path) -> String {
-    let s = p.to_string_lossy().replace('\\', "/");
-    if s.len() >= 3 {
-        let bytes = s.as_bytes();
-        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
-            let drive = (bytes[0] as char).to_ascii_lowercase();
-            return format!("/mnt/{}{}", drive, &s[2..]);
+pub(super) fn find_deb(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
+    let dir = root()
+        .join("src-tauri")
+        .join("target")
+        .join("release")
+        .join("bundle")
+        .join("deb");
+    let entries = fs::read_dir(&dir).ok()?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|x| x.to_str()) == Some("deb") {
+            let name = if dev {
+                format!("wtranscriber-{branch}_amd64.deb")
+            } else {
+                format!("wtranscriber_{ver}_amd64.deb")
+            };
+            return Some((p, name));
         }
     }
-    s
-}
-
-pub(super) fn find_wsl_deb(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, String)> {
-    let probe = std::process::Command::new("wsl")
-        .args([
-            "--",
-            "bash",
-            "-lc",
-            "ls \"$HOME/src/WTranscriber/src-tauri/target/release/bundle/deb/\"*.deb 2>/dev/null | head -1",
-        ])
-        .output()
-        .ok()?;
-    let wsl_path = String::from_utf8_lossy(&probe.stdout).trim().to_string();
-    if wsl_path.is_empty() {
-        return None;
-    }
-    let to_win = std::process::Command::new("wsl")
-        .args(["--", "bash", "-c", &format!("wslpath -w '{wsl_path}'")])
-        .output()
-        .ok()?;
-    let win_path = String::from_utf8_lossy(&to_win.stdout).trim().to_string();
-    if win_path.is_empty() {
-        return None;
-    }
-    let name = if dev {
-        format!("wtranscriber-{branch}_amd64.deb")
-    } else {
-        format!("wtranscriber_{ver}_amd64.deb")
-    };
-    Some((PathBuf::from(win_path), name))
+    None
 }
 
 #[allow(clippy::too_many_lines)]
@@ -311,19 +291,6 @@ pub(super) fn write_sha256sums(artifacts: &[PathBuf], sums_path: &Path) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn win_path_to_wsl_converts_drive_paths() {
-        assert_eq!(
-            win_path_to_wsl(Path::new("C:\\Users\\me\\artifact.exe")),
-            "/mnt/c/Users/me/artifact.exe"
-        );
-    }
-
-    #[test]
-    fn win_path_to_wsl_leaves_non_drive_paths() {
-        assert_eq!(win_path_to_wsl(Path::new("relative/path")), "relative/path");
-    }
 
     #[test]
     fn write_sha256sums_uses_file_names() {
