@@ -4,6 +4,7 @@ use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 mod adb;
 mod build;
 mod dev;
+mod lldb;
 mod logs;
 mod patch;
 mod paths;

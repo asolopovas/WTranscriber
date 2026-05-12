@@ -73,7 +73,7 @@ _dev-usb:
 [private]
 _dev-android:
     {{_run}} --tag dev-emu --idle 30 --max 300 -- bun scripts/android-emu.ts start --window
-    {{_run}} --tag dev-android --idle 120 --max 2100 -- cargo xtask android bootstrap usb
+    {{_run}} --tag dev-android --idle 120 --max 2100 -- cargo xtask android bootstrap usb emulator-5554
 
 # Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
 [windows, group('develop')]
@@ -93,6 +93,10 @@ cli *args:
 [group('develop')]
 preview:
     {{_run}} --tag preview --idle 60 --max 60 -- bun run preview
+
+[group('develop')]
+dev-log:
+    {{_run}} --tag dev-log --idle 0 --max 0 -- bun scripts/dev-tail.ts tmp/dev-vital.log
 
 [group('develop')]
 typecheck:

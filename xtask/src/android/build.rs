@@ -71,9 +71,29 @@ pub(super) fn prepare(target: &str, with_sign: bool) -> Result<Vec<(String, Stri
     patch_gradle_properties()?;
     patch_generated_activities()?;
     patch_plugin_consumer_rules()?;
+    purge_other_jni_abis(target)?;
     copy_jni_prebuilts(target)?;
     patch_manifest()?;
     build_env(target)
+}
+
+fn purge_other_jni_abis(target: &str) -> Result<()> {
+    let keep = abi_for(target)?.abi;
+    let jni = root().join("src-tauri/gen/android/app/src/main/jniLibs");
+    if !jni.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&jni)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        if entry.file_name().to_string_lossy() == keep {
+            continue;
+        }
+        let _ = fs::remove_dir_all(entry.path());
+    }
+    Ok(())
 }
 
 pub(super) fn preflight_node_modules() -> Result<()> {

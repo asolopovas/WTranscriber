@@ -10,6 +10,7 @@ use super::adb::{
     detect_device_target, wait_for_attach, with_device,
 };
 use super::build::{preflight_node_modules, prepare};
+use super::lldb;
 use super::logs::{
     LogStreamer, api_probe, file_age_seconds, install_signature_mismatch, is_app_crash_signal,
     json_seconds, last_line_matching, pids_device, read_pids, tail_any,
@@ -72,6 +73,13 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         &tmp.join("logcat.log"),
         &tmp.join("logcat.err.log"),
     )?;
+    let vital_pid = spawn_detached(
+        "bun",
+        &["scripts/dev-vital.ts"],
+        &[],
+        &tmp.join("dev-vital.out.log"),
+        &tmp.join("dev-vital.err.log"),
+    )?;
 
     let mut env = Vec::<(String, String)>::new();
     let mut args = vec![
@@ -114,9 +122,9 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         }
         true
     };
-    let bring_up = || -> Result<()> {
+    let bring_up = || -> Result<lldb::LldbInfo> {
         eprintln!(
-            "[stage 4/6] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)"
+            "[stage 4/7] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err],
@@ -126,7 +134,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             healthy,
         )?;
         eprintln!(
-            "[stage 5a/6] waiting for cargo+gradle build → APK install/launch (event: \"Info Opening\"/\"Finished\"/am_proc_start in logs, ≤1800s)"
+            "[stage 5a/7] waiting for cargo+gradle build → APK install/launch (event: \"Info Opening\"/\"Finished\"/am_proc_start in logs, ≤1800s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
@@ -134,14 +142,13 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             |s| {
                 s.contains("Info Opening ")
                     || s.contains("Info Installing")
-                    || (s.contains("Finished ") && s.contains("profile"))
-                    || s.contains("am_proc_start") && s.contains("wtranscriber")
+                    || (s.contains("am_proc_start") && s.contains("wtranscriber"))
             },
             Duration::from_secs(1800),
             healthy,
         )?;
         eprintln!(
-            "[stage 5b/6] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤90s)"
+            "[stage 5b/7] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤90s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
@@ -152,7 +159,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             Duration::from_secs(90),
             healthy,
         )?;
-        eprintln!("[stage 6/6] attaching CDP and probing tauri IPC");
+        eprintln!("[stage 6/7] attaching CDP and probing tauri IPC");
         wait_for_attach(device, Duration::from_secs(10))?;
         match api_probe(Duration::from_secs(20)) {
             Some(_) => {}
@@ -160,60 +167,77 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
                 "warning: Tauri IPC probe did not return within 20s; session is up (WebView connected to :1420), continuing"
             ),
         }
-        Ok(())
+        eprintln!("[stage 7/7] attaching lldb (blocking)");
+        let info = lldb::attach(device)?;
+        lldb::write_vscode_launch(info.app_pid, info.host_port)?;
+        eprintln!(
+            "  ✓ lldb attached app_pid={} server_pid={} port={}",
+            info.app_pid, info.server_pid, info.host_port
+        );
+        Ok(info)
     };
     let bring_up_result = bring_up();
     streamer.stop();
     let _ = alive;
-    if let Err(err) = bring_up_result {
-        if install_signature_mismatch(&[&dev_log, &dev_err]) {
-            eprintln!(
-                "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
-            );
+    let info = match bring_up_result {
+        Ok(info) => info,
+        Err(err) => {
+            if install_signature_mismatch(&[&dev_log, &dev_err]) {
+                eprintln!(
+                    "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
+                );
+                kill_pid(dev_pid);
+                kill_pid(logcat_pid);
+                kill_pid(vital_pid);
+                reap_tauri_logcat_orphans();
+                let _ = adb_run(
+                    device,
+                    &["uninstall", ANDROID_PACKAGE],
+                    Duration::from_secs(30),
+                );
+                let _ = fs::remove_file(&pids_path);
+                return cmd_bootstrap(mode, device);
+            }
+            eprintln!("bootstrap failed: {err:#}");
+            eprintln!("--- last 10 lines of android-dev.err.log ---");
+            if let Ok(raw) = fs::read_to_string(&dev_err) {
+                for line in raw.lines().rev().take(10).collect::<Vec<_>>().iter().rev() {
+                    eprintln!("  {line}");
+                }
+            }
             kill_pid(dev_pid);
             kill_pid(logcat_pid);
+            kill_pid(vital_pid);
+            lldb::cleanup(device, None);
             reap_tauri_logcat_orphans();
             let _ = adb_run(
                 device,
-                &["uninstall", ANDROID_PACKAGE],
-                Duration::from_secs(30),
+                &["forward", "--remove", "tcp:9222"],
+                Duration::from_secs(3),
             );
-            let _ = fs::remove_file(&pids_path);
-            return cmd_bootstrap(mode, device);
+            let _ = adb_run(
+                device,
+                &["reverse", "--remove", "tcp:1420"],
+                Duration::from_secs(3),
+            );
+            let _ = adb_run(
+                device,
+                &["reverse", "--remove", "tcp:1421"],
+                Duration::from_secs(3),
+            );
+            let _ = fs::remove_file(tmp.join("_platform"));
+            return Err(err);
         }
-        eprintln!("bootstrap failed: {err:#}");
-        eprintln!("--- last 10 lines of android-dev.err.log ---");
-        if let Ok(raw) = fs::read_to_string(&dev_err) {
-            for line in raw.lines().rev().take(10).collect::<Vec<_>>().iter().rev() {
-                eprintln!("  {line}");
-            }
-        }
-        kill_pid(dev_pid);
-        kill_pid(logcat_pid);
-        reap_tauri_logcat_orphans();
-        let _ = adb_run(
-            device,
-            &["forward", "--remove", "tcp:9222"],
-            Duration::from_secs(3),
-        );
-        let _ = adb_run(
-            device,
-            &["reverse", "--remove", "tcp:1420"],
-            Duration::from_secs(3),
-        );
-        let _ = adb_run(
-            device,
-            &["reverse", "--remove", "tcp:1421"],
-            Duration::from_secs(3),
-        );
-        let _ = fs::remove_file(tmp.join("_platform"));
-        return Err(err);
-    }
+    };
     let pids = json!({
         "device": device,
         "dev_wrapper": dev_pid,
         "dev_port_owner": port_owner(1420),
-        "logcat": logcat_pid
+        "logcat": logcat_pid,
+        "vital": vital_pid,
+        "lldb_server": info.server_pid,
+        "lldb_port": info.host_port,
+        "app_pid": info.app_pid
     });
     fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
     println!(
@@ -359,12 +383,19 @@ pub(super) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
     let device = device_arg
         .map(str::to_string)
         .or_else(|| pids_device(&pids_path));
-    for key in ["logcat", "dev_wrapper", "dev_port_owner"] {
+    for key in [
+        "vital",
+        "lldb_server",
+        "logcat",
+        "dev_wrapper",
+        "dev_port_owner",
+    ] {
         if let Some(pid) = pids.get(key) {
             kill_pid(*pid);
             println!("stopped {key} pid={pid}");
         }
     }
+    lldb::cleanup(device.as_deref(), pids.get("app_pid").copied());
     reap_tauri_logcat_orphans();
     if !keep_reverse {
         let d = device.as_deref();
@@ -412,8 +443,27 @@ pub(super) fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>)
     if !watch {
         tauri_args.push("--no-watch");
     }
+    let tauri_device_name = device.map(|d| {
+        if let Some(rest) = d.strip_prefix("emulator-") {
+            let _ = rest;
+            super::proc::capture_timeout(
+                "adb",
+                &["-s", d, "emu", "avd", "name"],
+                Duration::from_secs(3),
+            )
+            .and_then(|s| s.lines().next().map(|l| l.trim().to_string()))
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| d.to_string())
+        } else {
+            d.to_string()
+        }
+    });
+    if let Some(ref name) = tauri_device_name {
+        tauri_args.push(name);
+    }
+    tauri_args.extend_from_slice(&["--", "--no-default-features", "--features", "android"]);
     if let Some(d) = device {
-        tauri_args.push(d);
+        env.push(("ANDROID_SERIAL".into(), d.to_string()));
     }
     spawn_with_env("bun", &tauri_args, &env)
 }
