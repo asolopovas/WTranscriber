@@ -117,7 +117,6 @@ const start = async (): Promise<void> => {
   log(
     `booting AVD '${name}' (${windowed ? "windowed" : "headless"}, ${windowed ? "host gpu" : "swiftshader"}, KVM)`,
   );
-  const out = openSync(logFile, "a");
   const emuArgs = [
     "-avd",
     name,
@@ -134,15 +133,27 @@ const start = async (): Promise<void> => {
   } else {
     emuArgs.push("-no-window", "-no-audio", "-gpu", "swiftshader_indirect");
   }
-  const child = isWin
-    ? spawn("cmd.exe", ["/c", "start", "", "/B", emulator, ...emuArgs], {
-        stdio: ["ignore", out, out],
-        detached: true,
-        windowsHide: true,
-      })
-    : spawn(emulator, emuArgs, { stdio: ["ignore", out, out], detached: true });
-  child.unref();
-  await Bun.write(pidFile, String(child.pid));
+  let emuPid: number | undefined;
+  if (isWin) {
+    const psArgList = emuArgs.map((a) => `'${a.replace(/'/g, "''")}'`).join(",");
+    const psCmd =
+      `$p = Start-Process -FilePath '${emulator.replace(/'/g, "''")}' ` +
+      `-ArgumentList @(${psArgList}) -WindowStyle Hidden -PassThru; $p.Id`;
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", psCmd], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    emuPid = Number.parseInt((r.stdout ?? "").trim(), 10) || undefined;
+  } else {
+    const out = openSync(logFile, "a");
+    const child = spawn(emulator, emuArgs, {
+      stdio: ["ignore", out, out],
+      detached: true,
+    });
+    child.unref();
+    emuPid = child.pid;
+  }
+  if (emuPid) await Bun.write(pidFile, String(emuPid));
 
   await withDeadline("waiting for adb device", 60_000, 1000, () =>
     adbDevices().some((d) => d.startsWith("emulator-")),
