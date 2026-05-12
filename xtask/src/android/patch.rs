@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::util::{exe, root, sh};
 
-use super::paths::{abi_for, android_home, gen_android};
+use super::paths::{abi_for, android_home, gen_android, prebuilt_dir};
 
 pub(super) fn patch_gradle_properties() -> Result<()> {
     let path = gen_android().join("gradle.properties");
@@ -121,22 +121,41 @@ pub(super) fn sign_with_debug_keystore(unsigned: &Path, signed: &Path) -> Result
     Ok(())
 }
 
-pub(super) fn copy_llama_jni(target: &str) -> Result<()> {
+pub(super) fn copy_jni_prebuilts(target: &str) -> Result<()> {
     let abi = abi_for(target)?.abi;
-    let llama_src = root()
-        .join("src-tauri")
-        .join("jniLibs")
-        .join(abi)
-        .join("libllama-cli.so");
     let gen_dir = gen_android()
         .join("app")
         .join("src")
         .join("main")
         .join("jniLibs")
         .join(abi);
-    if llama_src.exists() && gen_dir.exists() {
-        fs::create_dir_all(&gen_dir)?;
+    if !gen_dir.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(&gen_dir)?;
+
+    let llama_src = root()
+        .join("src-tauri")
+        .join("jniLibs")
+        .join(abi)
+        .join("libllama-cli.so");
+    if llama_src.exists() {
         fs::copy(&llama_src, gen_dir.join("libllama-cli.so"))?;
+    }
+
+    let sherpa_dir = prebuilt_dir(target)?;
+    if sherpa_dir.is_dir() {
+        for entry in fs::read_dir(&sherpa_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("so") {
+                continue;
+            }
+            let Some(name) = path.file_name() else {
+                continue;
+            };
+            fs::copy(&path, gen_dir.join(name))?;
+        }
     }
     Ok(())
 }
