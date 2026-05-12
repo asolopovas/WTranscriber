@@ -50,6 +50,62 @@ wt models install sherpa-whisper-turbo
 wt models status sherpa-pyannote-titanet
 ```
 
+## Disk usage
+
+On first launch the app downloads runtimes and models into the OS user dirs (`%APPDATA%\asolopovas\wtranscriber\` on Windows, `~/.local/share/wtranscriber/` on Linux). The installer itself is small (~24 MB Windows NSIS, ~38 MB Linux `.deb`, ~42 MB Android `.apk`); the bulk lands on first run.
+
+### Default essentials (first-run automatic downloads)
+
+Desktop, NVIDIA GPU host:
+
+| Component                                 |    Download | Notes                                |
+| ----------------------------------------- | ----------: | ------------------------------------ |
+| Whisper large-v3-turbo (ASR)              |      989 MB | `sherpa-whisper-turbo`, 99 languages |
+| Sortformer 4-speaker v2.1 ONNX (diarizer) |      470 MB | `sortformer-v2-onnx-4spk`            |
+| Qwen3 0.6B Q4_K_M (LLM, auto-rename)      |      378 MB | `qwen3-0.6b-q4km`                    |
+| sherpa-onnx CUDA runtime (Windows)        |      296 MB | extracts to ~700 MB                  |
+| cuDNN 9.21.1.3 (Windows)                  |      646 MB | extracts to ~1.0 GB                  |
+| llama.cpp b9045 (Windows)                 |       15 MB | naming engine                        |
+| **Total bandwidth**                       | **~2.8 GB** |                                      |
+| **Total disk after install**              | **~3.7 GB** | runtimes are extracted               |
+
+Android default essentials (Parakeet + TitaNet + Qwen3 0.6B) total **~1.1 GB**; the APK already bundles its native libs so there's no separate runtime download.
+
+### Optional ASR models
+
+| ID                          |   Size | Languages                     |
+| --------------------------- | -----: | ----------------------------- |
+| `sherpa-whisper-turbo`      | 989 MB | 99 (multilingual)             |
+| `parakeet-tdt-0.6b-v3-int8` | 640 MB | 25 EU langs (Android default) |
+| `gigaam-v3-ru`              | 214 MB | Russian-only                  |
+
+### Optional LLM models (auto-rename)
+
+| ID                          |    Size |
+| --------------------------- | ------: |
+| `qwen3-0.6b-q4km` (default) |  378 MB |
+| `qwen3-1.7b-q4km`           | 1.03 GB |
+
+### Optional diarizers
+
+| ID                                  |   Size | Notes                                     |
+| ----------------------------------- | -----: | ----------------------------------------- |
+| `sortformer-v2-onnx-4spk` (default) | 470 MB | ≤4 speakers, GPU-accelerated              |
+| `sherpa-pyannote-titanet`           | 102 MB | fallback, no GPU needed (Android default) |
+| `nemo-sortformer-v2`                |  ~5 GB | Python + PyTorch runtime, legacy          |
+
+### Runtime archives (host downloads, auto-installed)
+
+| Component           | Windows x64 | Linux x64 |
+| ------------------- | ----------: | --------: |
+| sherpa-onnx (CPU)   |       17 MB |     26 MB |
+| sherpa-onnx (CUDA)  |      296 MB |    191 MB |
+| cuDNN 9 (CUDA 12)   |      646 MB |    925 MB |
+| llama.cpp b9045     |       15 MB |     14 MB |
+| NeMo Python runtime |         n/a |     ~5 GB |
+
+The desktop build links sherpa-onnx-cpu statically when configured with `sherpa-static`, so CPU-only users skip the sherpa runtime download entirely.
+
 ## License
 
 MIT
