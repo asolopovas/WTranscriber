@@ -1,6 +1,16 @@
 [alias]
 xtask = "run --quiet --manifest-path xtask/Cargo.toml --"
 
+[env]
+# Pin the CMake generator so `cargo build/clippy/test` outside of `just` agrees
+# with what `just` exports. scripts/parallel.ts wipes whisper-rs-sys /
+# sherpa-onnx-sys build dirs whenever CMAKE_GENERATOR differs from its sentinel
+# (see src-tauri/build.rs::invalidate_stale_cmake_caches). Without this pin, a
+# bare `cargo clippy` (sees no env var) leaves "" in the sentinel, so the next
+# `just check` triggers a cold C++ rebuild of whisper.cpp + ggml (~5 min).
+# force = false: the user / `just` can still override.
+CMAKE_GENERATOR = { value = "Ninja", force = false }
+
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN", "-C", "link-arg=-Wl,-rpath,$ORIGIN/../lib"]
 

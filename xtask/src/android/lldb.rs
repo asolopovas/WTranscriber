@@ -54,9 +54,9 @@ pub(super) fn attach(device: Option<&str>) -> Result<LldbInfo> {
     )
     .context("adb push lldb-server failed")?;
 
+    let pkg = ANDROID_PACKAGE;
     let cp_cmd = format!(
-        "run-as {pkg} cp /data/local/tmp/lldb-server ./lldb-server && run-as {pkg} chmod 700 lldb-server",
-        pkg = ANDROID_PACKAGE
+        "run-as {pkg} cp /data/local/tmp/lldb-server ./lldb-server && run-as {pkg} chmod 700 lldb-server"
     );
     adb_run(device, &["shell", &cp_cmd], Duration::from_secs(15))
         .context("adb shell run-as cp/chmod lldb-server failed")?;
@@ -64,11 +64,7 @@ pub(super) fn attach(device: Option<&str>) -> Result<LldbInfo> {
     let tmp = root().join("tmp");
     fs::create_dir_all(&tmp)?;
     let unix_path = format!("unix-abstract:///{ANDROID_PACKAGE}-lldb");
-    let shell_cmd = format!(
-        "run-as {pkg} ./lldb-server platform --listen {unix} --server",
-        pkg = ANDROID_PACKAGE,
-        unix = unix_path
-    );
+    let shell_cmd = format!("run-as {pkg} ./lldb-server platform --listen {unix_path} --server");
     let mut adb_args: Vec<&str> = Vec::new();
     if let Some(d) = device {
         adb_args.push("-s");

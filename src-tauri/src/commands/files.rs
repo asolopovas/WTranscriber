@@ -111,7 +111,7 @@ pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
             .arg(format!("/select,{}", path.display()))
             .spawn()
             .map_err(|e| Error::Config(format!("explorer failed: {e}")))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "macos")]
     {
@@ -120,7 +120,7 @@ pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
             .arg(&path)
             .spawn()
             .map_err(|e| Error::Config(format!("open -R failed: {e}")))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
     {
@@ -131,7 +131,7 @@ pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
             .arg(parent)
             .spawn()
             .map_err(|e| Error::Config(format!("xdg-open failed: {e}")))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(target_os = "android")]
     {

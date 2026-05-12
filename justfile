@@ -22,6 +22,12 @@ _libclang_default := if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else {
 _libclang_env := env_var_or_default('LIBCLANG_PATH', '')
 export LIBCLANG_PATH := if _libclang_env == '' { _libclang_default } else { _libclang_env }
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
+# MSVC cl.exe + parallel Ninja builds clash on shared .pdb files (C1041).
+# `CL` is read by cl.exe as prepended flags on every invocation, bypassing
+# any CMAKE_C_FLAGS_RELEASE overrides set by whisper.cpp / ggml CMakeLists.
+# Empty string on non-Windows is harmless (no cl.exe to read it).
+_cl_default := if os() == 'windows' { '/FS' } else { '' }
+export CL := env_var_or_default('CL', _cl_default)
 
 _run := "bun scripts/run.ts"
 _par := "bun scripts/parallel.ts"
