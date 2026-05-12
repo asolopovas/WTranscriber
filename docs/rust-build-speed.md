@@ -7,6 +7,23 @@
 - Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just lint` does this.
 - Profile with `cargo build --timings`; re-measure after each change.
 
+## Toolchain wrappers (committed, installed by `just bootstrap`)
+
+- **sccache** wraps `rustc` (`RUSTC_WRAPPER`) and cmake-driven C/C++ via
+  `CMAKE_{C,CXX}_COMPILER_LAUNCHER`. Survives `cargo clean` and shares
+  artefacts between host + Android targets where deps overlap. Biggest single
+  win on warm rebuilds and after toolchain bumps. `sccache --show-stats`
+  shows hit rate.
+- **LLVM `lld-link`** is selected via
+  `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=lld-link.exe`, set as a User env
+  var by the bootstrap script once LLVM is on PATH. Materially faster than
+  `link.exe` on warm rebuilds. (Env-based rather than committed to
+  `.cargo/config.toml` so fresh checkouts still build with `link.exe` before
+  bootstrap runs.)
+
+To disable either: clear the relevant User env var
+(`[Environment]::SetEnvironmentVariable('NAME', $null, 'User')`).
+
 ## Dev profile (committed in `src-tauri/Cargo.toml`)
 
 ```toml

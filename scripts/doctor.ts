@@ -72,6 +72,16 @@ add("cargo-audit", () =>
   which("cargo-audit") ? ok("present") : warn("missing — `just check` will install it"),
 );
 
+add("sccache", () => {
+  const p = which("sccache");
+  if (!p) return warn("missing — re-run `just bootstrap` for faster rebuilds");
+  const wrapper = process.env.RUSTC_WRAPPER;
+  if (wrapper !== "sccache") {
+    return warn(`installed but RUSTC_WRAPPER=${wrapper ?? "unset"} (expected "sccache")`);
+  }
+  return ok(p);
+});
+
 add("MSRV", async () => {
   const f = Bun.file(path.join("src-tauri", "Cargo.toml"));
   if (!(await f.exists())) return fail("Cargo.toml missing");
@@ -99,6 +109,15 @@ add("node_modules", async () =>
 );
 
 if (platform() === "win32") {
+  add("lld-link", () => {
+    const p = which("lld-link");
+    if (!p) return warn("missing — re-run `just bootstrap` for faster linking");
+    const v = process.env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER;
+    if (v !== "lld-link.exe") {
+      return warn(`installed but CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=${v ?? "unset"}`);
+    }
+    return ok(p);
+  });
   add("LIBCLANG_PATH", async () => {
     const p = process.env.LIBCLANG_PATH;
     if (!p) return warn("not set (needed for some Rust deps)");

@@ -97,12 +97,36 @@ if (-not (Have ninja)) {
 
 $llvmBin = 'C:\Program Files\LLVM\bin'
 if (-not (Test-Path (Join-Path $llvmBin 'libclang.dll'))) {
-    Write-Host '-> LLVM (libclang for bindgen)' -ForegroundColor Cyan
+    Write-Host '-> LLVM (libclang for bindgen + lld-link for fast Rust linking)' -ForegroundColor Cyan
     Winget-Install 'LLVM.LLVM'
 }
 if (Test-Path $llvmBin) {
     [Environment]::SetEnvironmentVariable('LIBCLANG_PATH', $llvmBin, 'User')
     $env:LIBCLANG_PATH = $llvmBin
+    Add-Path $llvmBin
+}
+
+if (-not (Have sccache)) {
+    Write-Host '-> sccache (rustc + cmake C/C++ compile cache)' -ForegroundColor Cyan
+    Winget-Install 'Mozilla.sccache'
+    Add-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+}
+$buildEnv = [ordered]@{}
+if (Have sccache) {
+    $buildEnv['RUSTC_WRAPPER']              = 'sccache'
+    $buildEnv['CMAKE_C_COMPILER_LAUNCHER']  = 'sccache'
+    $buildEnv['CMAKE_CXX_COMPILER_LAUNCHER']= 'sccache'
+}
+if (Test-Path (Join-Path $llvmBin 'lld-link.exe')) {
+    $buildEnv['CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER'] = 'lld-link.exe'
+}
+foreach ($k in $buildEnv.Keys) {
+    $val = $buildEnv[$k]
+    if ([Environment]::GetEnvironmentVariable($k, 'User') -ne $val) {
+        [Environment]::SetEnvironmentVariable($k, $val, 'User')
+        Write-Host "  + $k=$val (User)"
+    }
+    Set-Item -Path "env:$k" -Value $val
 }
 
 # Pin to CUDA 12.x: whisper-rs-sys + parakeet-rs (ggml) + the bundled
@@ -160,7 +184,7 @@ if (Test-Path $sherpaVerFile) {
 }
 
 Write-Host '=== Done. Re-open shell or run `refreshenv` ===' -ForegroundColor Green
-foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','gcc','ninja') {
+foreach ($t in 'just','rustup','rustc','cargo','bun','node','makensis','cmake','gcc','ninja','sccache','lld-link') {
     if (Have $t) { Write-Host "  OK  $t" } else { Write-Host "  MISS $t" -ForegroundColor Yellow }
 }
 if (Test-Path (Join-Path $llvmBin 'libclang.dll')) { Write-Host "  OK  libclang" } else { Write-Host "  MISS libclang" -ForegroundColor Yellow }

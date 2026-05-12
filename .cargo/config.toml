@@ -3,3 +3,8 @@ xtask = "run --quiet --manifest-path xtask/Cargo.toml --"
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN", "-C", "link-arg=-Wl,-rpath,$ORIGIN/../lib"]
+
+# Windows MSVC: linker pin lives in CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER
+# (set by `scripts/bootstrap-windows.ps1` once LLVM is installed). Env-based so
+# the default `link.exe` is still used on fresh checkouts, before bootstrap
+# adds LLVM to PATH.
