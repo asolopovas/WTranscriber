@@ -29,25 +29,20 @@ fn invalidate_stale_cmake_caches() {
     if prev == generator {
         return;
     }
-    for profile in ["debug", "release"] {
-        let build = target.join(profile).join("build");
-        if !build.is_dir() {
-            continue;
-        }
-        let Ok(rd) = std::fs::read_dir(&build) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let name = entry.file_name();
-            let s = name.to_string_lossy();
-            if s.starts_with("whisper-rs-sys-") || s.starts_with("sherpa-onnx-sys-") {
-                let _ = std::fs::remove_dir_all(entry.path());
-            }
-        }
+    // Only print a hint here — actually wiping sibling-package build dirs
+    // (whisper-rs-sys, sherpa-onnx-sys) from inside a build script races
+    // with parallel cargo jobs that may currently be writing into those
+    // very directories (just check launches 11 concurrent cargo invocations).
+    // scripts/parallel.ts performs the real wipe atomically before fanning
+    // out, keyed on the same sentinel.
+    if !prev.is_empty() {
+        println!(
+            "cargo:warning=CMAKE_GENERATOR changed ({prev:?} -> {generator:?}); \
+             run `cargo clean -p whisper-rs-sys -p sherpa-onnx-sys` if cmake \
+             configure fails with stale generator/instance errors"
+        );
     }
-    if let Some(parent) = sentinel.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let _ = std::fs::create_dir_all(&target);
     let _ = std::fs::write(&sentinel, &generator);
 }
 

@@ -49,8 +49,11 @@ if (-not $Version) {
 $stem        = "sherpa-onnx-$Version-cuda-12.x-cudnn-9.x-win-x64-cuda"
 $installRoot = Join-Path $env:LOCALAPPDATA "Programs\sherpa-onnx-cuda\$Version"
 $extractDir  = Join-Path $installRoot $stem
+# The Windows release archive ships .dll + .lib together under lib/. There is
+# no bin/ in the tarball (unlike the Linux .so layout), so DLLs at runtime
+# and import libs at link time both live in $libDir.
 $libDir      = Join-Path $extractDir 'lib'
-$binDir      = Join-Path $extractDir 'bin'
+$binDir      = $libDir
 $cacheDir    = Join-Path $env:APPDATA 'asolopovas\wtranscriber\data\cache\sherpa-onnx-cuda'
 $archive     = "$stem.tar.bz2"
 $archiveUrl  = "https://github.com/k2-fsa/sherpa-onnx/releases/download/$Version/$archive"
@@ -80,7 +83,16 @@ if ((Test-Path $libPath) -and -not $Force) {
   }
 
   Write-Step "Extracting to $installRoot"
-  tar -xjf $archivePath -C $installRoot
+  # GNU tar on Windows interprets "C:..." after -C as a remote host (foo:bar
+  # rsh syntax). Forward-slash the path and pass --force-local to disable that
+  # heuristic. -v keeps the output stream alive past the 120s idle watchdog
+  # in scripts/run.ts (the archive is ~300 MB bz2, several minutes to extract).
+  $extractTo = ($installRoot -replace '\\', '/')
+  tar --force-local -xvjf $archivePath -C $extractTo
+  if ($LASTEXITCODE -ne 0) {
+    Write-Error "tar failed (exit $LASTEXITCODE) extracting $archivePath to $extractTo"
+    exit 1
+  }
 
   if (-not (Test-Path $libPath)) {
     Write-Error "Installation incomplete: $libPath missing"

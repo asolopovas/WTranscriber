@@ -20,7 +20,7 @@ const sys = (overrides: Partial<SystemInfo>): SystemInfo => ({
 });
 
 describe("RedoDiarizeDialog", () => {
-  it("shows desktop diarizers including Sortformer", () => {
+  it("shows both diarizers on desktop", () => {
     const wrapper = mount(RedoDiarizeDialog, {
       props: {
         sys: sys({}),
@@ -36,11 +36,10 @@ describe("RedoDiarizeDialog", () => {
       .map((option) => option.text());
 
     expect(options).toContain("NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)");
-    expect(options).toContain("pyannote-3.0 + TitaNet-Large");
-    expect(options).toContain("NVIDIA NeMo Sortformer (Python, legacy)");
+    expect(options).toContain("pyannote-3.0 + TitaNet-Large (>4 speakers)");
   });
 
-  it("hides desktop-only diarizers on mobile", () => {
+  it("exposes the same diarizers on mobile", () => {
     const wrapper = mount(RedoDiarizeDialog, {
       props: {
         sys: sys({ os: "android", is_mobile: true }),
@@ -55,7 +54,7 @@ describe("RedoDiarizeDialog", () => {
       .findAll("option")
       .map((option) => option.attributes("value"));
 
-    expect(values).toEqual(["titanet"]);
+    expect(values).toEqual(["sortformer-onnx", "titanet"]);
   });
 
   it("clamps speaker count when switching to a four-speaker diarizer", async () => {

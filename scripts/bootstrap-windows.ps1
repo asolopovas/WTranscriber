@@ -105,33 +105,41 @@ if (Test-Path $llvmBin) {
     $env:LIBCLANG_PATH = $llvmBin
 }
 
-$cudaRoot = $env:CUDA_PATH
-$cudaOk = $cudaRoot -and (Test-Path (Join-Path $cudaRoot 'bin\nvcc.exe'))
-if (-not $cudaOk) {
-    $detected = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' -ErrorAction SilentlyContinue |
-        Where-Object { Test-Path (Join-Path $_.FullName 'bin\nvcc.exe') } |
+# Pin to CUDA 12.x: whisper-rs-sys + parakeet-rs (ggml) + the bundled
+# sherpa-onnx-cuda runtime are all built against CUDA 12.x / cuDNN 9. CUDA 13
+# bumps the ABI and won't link.
+$cudaWanted = '12.9'
+function Find-Cuda12 {
+    Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -match '^v12\.' -and (Test-Path (Join-Path $_.FullName 'bin\nvcc.exe'))
+        } |
         Sort-Object Name -Descending | Select-Object -First 1
-    if ($detected) {
-        $cudaRoot = $detected.FullName
-        $cudaOk = $true
+}
+$cuda12 = Find-Cuda12
+if (-not $cuda12) {
+    Write-Host "-> CUDA Toolkit $cudaWanted (whisper-rs-sys + parakeet-rs cuda)" -ForegroundColor Cyan
+    Write-Host '   (large download, ~3 GB; CUDA 13 is ABI-incompatible with the bundled sherpa-cuda runtime)'
+    # --force lets winget install 12.x side-by-side when 13.x is already
+    # registered (winget otherwise tries to upgrade and refuses).
+    winget install --id Nvidia.CUDA --version $cudaWanted --source winget --silent `
+        --accept-package-agreements --accept-source-agreements --scope machine `
+        --disable-interactivity --force 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) {
+        Write-Host "   WARN  winget failed for Nvidia.CUDA $cudaWanted (exit $LASTEXITCODE)" -ForegroundColor Yellow
     }
+    $cuda12 = Find-Cuda12
 }
-if (-not $cudaOk) {
-    Write-Host '-> CUDA Toolkit 12.x (whisper-rs-sys + parakeet-rs cuda features)' -ForegroundColor Cyan
-    Write-Host '   (large download, ~3 GB; pin to 12.9 to match runtime DLLs)'
-    Winget-Install 'Nvidia.CUDA'
-    $detected = Get-ChildItem 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA' -ErrorAction SilentlyContinue |
-        Where-Object { Test-Path (Join-Path $_.FullName 'bin\nvcc.exe') } |
-        Sort-Object Name -Descending | Select-Object -First 1
-    if ($detected) { $cudaRoot = $detected.FullName }
-}
-if ($cudaRoot -and (Test-Path (Join-Path $cudaRoot 'bin\nvcc.exe'))) {
+if ($cuda12) {
+    $cudaRoot = $cuda12.FullName
     [Environment]::SetEnvironmentVariable('CUDA_PATH', $cudaRoot, 'User')
     $env:CUDA_PATH = $cudaRoot
     Add-Path (Join-Path $cudaRoot 'bin')
+    Write-Host "   CUDA_PATH -> $cudaRoot" -ForegroundColor Green
 } else {
-    Write-Host '   WARN  CUDA_PATH still unresolved; `just build` (default cuda feature) will fail.' -ForegroundColor Yellow
-    Write-Host '         Re-open shell and re-run, or build with --no-default-features --features sherpa-static.' -ForegroundColor Yellow
+    Write-Host '   WARN  CUDA 12.x install did not land; `just build` (default cuda feature) will fail.' -ForegroundColor Yellow
+    Write-Host '         Install manually from https://developer.nvidia.com/cuda-12-9-1-download-archive' -ForegroundColor Yellow
+    Write-Host '         or build with --no-default-features --features sherpa-static.' -ForegroundColor Yellow
 }
 
 $cudnnDll = Join-Path $env:LOCALAPPDATA 'Programs\cuDNN\v9\bin\cudnn64_9.dll'

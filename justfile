@@ -279,7 +279,7 @@ audit: _ensure-audit
 # Pre-release gate: 11 jobs in parallel (fmt-check, clippy, clippy-xtask, typecheck, vue-lint, knip, rust-test, xtask-test, js-test, machete, audit).
 [group('quality')]
 check: _ensure-machete _ensure-audit
-    {{_par}} --idle 180 --max 1200 \
+    {{_par}} --idle 600 --max 1800 \
         --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo fmt --manifest-path xtask/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "scripts/**/*.ts" "*.{json,html,md}" "docs/**/*.md"' \
         --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
         --job 'clippy-xtask=cargo clippy --manifest-path xtask/Cargo.toml --all-targets --offline -- -D warnings' \

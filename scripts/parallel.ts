@@ -1,7 +1,47 @@
 #!/usr/bin/env bun
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Auto-recover from a stale cmake build cache when CMAKE_GENERATOR changes
+// across runs. cmake-rs reuses target/*/build/<sys-crate>-<hash>/build/
+// across cargo invocations; switching generator (e.g. Visual Studio → Ninja)
+// leaves CMakeCache.txt pinning the old generator's instance/toolset, and
+// subsequent configures crash with "Generator X does not support instance
+// specification". src-tauri/build.rs only writes a sentinel — we do the
+// actual wipe here, exactly once, before any cargo job starts (doing it from
+// build.rs races against the 11 parallel cargo invocations below).
+function invalidateStaleCmakeCaches(): void {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const target = path.join(repo, "src-tauri", "target");
+  const sentinel = path.join(target, ".cmake-generator");
+  const desired = process.env.CMAKE_GENERATOR ?? "";
+  let prev = "";
+  try {
+    prev = readFileSync(sentinel, "utf8");
+  } catch {
+    prev = "";
+  }
+  if (prev === desired) return;
+  for (const profile of ["debug", "release"]) {
+    const buildDir = path.join(target, profile, "build");
+    if (!existsSync(buildDir)) continue;
+    for (const name of readdirSync(buildDir)) {
+      if (name.startsWith("whisper-rs-sys-") || name.startsWith("sherpa-onnx-sys-")) {
+        rmSync(path.join(buildDir, name), { recursive: true, force: true });
+      }
+    }
+  }
+  mkdirSync(target, { recursive: true });
+  writeFileSync(sentinel, desired);
+  if (prev) {
+    console.error(
+      `[parallel] CMAKE_GENERATOR changed (${JSON.stringify(prev)} -> ${JSON.stringify(desired)}); wiped whisper-rs-sys / sherpa-onnx-sys build dirs`,
+    );
+  }
+}
+invalidateStaleCmakeCaches();
 
 interface Job {
   tag: string;
