@@ -13,7 +13,7 @@ default-run = "wtranscriber"
 [features]
 default = ["cuda"]
 sherpa-static = ["sherpa-onnx/static"]
-cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda"]
+cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda", "whisper-rs/cuda"]
 
 [lib]
 name = "wtranscriber_lib"
@@ -63,6 +63,9 @@ libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 parakeet-rs = { version = "0.3", default-features = false, features = ["sortformer", "ort-defaults"] }
+whisper-rs = { version = "0.16", default-features = false }
+ort = { version = "=2.0.0-rc.12", default-features = false }
+ndarray = "0.16"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"

@@ -6,14 +6,20 @@ use crate::{logfile, models, runtime_install};
 
 #[must_use]
 pub fn essential_model_ids() -> Vec<String> {
-    [
+    let mut ids: Vec<String> = [
         models::Family::Asr,
         models::Family::Diarizer,
         models::Family::Llm,
     ]
     .iter()
     .filter_map(|f| models::default_id(*f).map(String::from))
-    .collect()
+    .collect();
+    if cfg!(not(any(target_os = "android", target_os = "ios")))
+        && let Some(id) = models::default_id(models::Family::LangId)
+    {
+        ids.push(id.to_owned());
+    }
+    ids
 }
 
 static ESSENTIALS_STARTED: AtomicBool = AtomicBool::new(false);

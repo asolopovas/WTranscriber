@@ -7,11 +7,32 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use wtranscriber_lib::{
-    api::{self, Config, Device, Engine, FileProgress, Job, Phase, Result, Sink, Transcript},
+    api::{
+        self, Config, Device, DiarizerChoice, Engine, FileProgress, Job, Phase, Result, Sink,
+        Transcript,
+    },
     logfile, namer,
 };
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+enum DiarizerArg {
+    SortformerOnnx,
+    Nemo,
+    Titanet,
+}
+
+impl From<DiarizerArg> for DiarizerChoice {
+    fn from(v: DiarizerArg) -> Self {
+        match v {
+            DiarizerArg::SortformerOnnx => Self::SortformerOnnx,
+            DiarizerArg::Nemo => Self::Nemo,
+            DiarizerArg::Titanet => Self::Titanet,
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -73,6 +94,21 @@ struct Cli {
 
     #[arg(long, help = "Disable speaker diarization for this run")]
     no_diarize: bool,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "DIARIZER",
+        help = "Diarizer backend: sortformer-onnx, nemo (Python), titanet"
+    )]
+    diarizer: Option<DiarizerArg>,
+
+    #[arg(
+        long,
+        help = "Disable automatic ASR model selection by detected language \
+                (otherwise: ru → GigaAM, parakeet's 25 EU langs → Parakeet, else → Whisper)"
+    )]
+    no_auto_route: bool,
 
     #[arg(
         long,
@@ -307,16 +343,47 @@ impl Sink for CliSink {
     }
 }
 
+fn probe_language(input: &Path) -> Option<String> {
+    if !wtranscriber_lib::lang_id::is_installed() {
+        eprintln!(
+            "auto-route: silero-lang95-onnx not installed; \
+             skipping language probe (install via `wt models install silero-lang95-onnx` \
+             or pass --lang/--model)"
+        );
+        return None;
+    }
+    let canonical = std::path::absolute(input).ok()?;
+    if !canonical.exists() {
+        return None;
+    }
+    match wtranscriber_lib::lang_id::detect(&canonical) {
+        Ok(code) => {
+            eprintln!("silero-langid -> {code}");
+            Some(code)
+        }
+        Err(e) => {
+            logfile::warn(&format!("silero-langid probe failed: {e}"));
+            eprintln!("warning: silero-langid probe failed: {e}");
+            None
+        }
+    }
+}
+
 async fn run_transcribe(cli: Cli) -> Result<()> {
     if cli.inputs.is_empty() {
         return Err(api::Error::Config("no input files".into()));
     }
 
     let mut config = Config::load()?;
+    let model_explicit = cli.model.is_some();
+    let lang_explicit = cli.lang.is_some();
     if let Some(l) = cli.lang {
         config.language = l;
     }
     if let Some(m) = cli.model {
+        if let Some(eng) = api::engine_for_model(&m) {
+            config.engine = eng;
+        }
         config.model = m;
     }
     if let Some(t) = cli.threads {
@@ -331,8 +398,51 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
     if cli.no_diarize {
         config.diarize = false;
     }
+    if let Some(d) = cli.diarizer {
+        config.diarizer = d.into();
+    }
     if let Some(s) = cli.speakers {
         config.speakers = Some(s);
+    }
+
+    if !model_explicit && !cli.no_auto_route {
+        let raw_lang = config.language.trim().to_owned();
+        let lang_known = !raw_lang.is_empty() && !raw_lang.eq_ignore_ascii_case("auto");
+        let routing_lang: Option<String> = if lang_known {
+            Some(raw_lang)
+        } else if !cli.inputs.is_empty() {
+            probe_language(&cli.inputs[0])
+        } else {
+            None
+        };
+        if let Some(lang) = routing_lang.as_deref()
+            && let Some((id, eng)) = api::route_model_for_lang(lang)
+        {
+            if id != config.model {
+                logfile::info(&format!(
+                    "auto-route: language={lang} -> {id} (engine={})",
+                    eng.as_str()
+                ));
+                eprintln!(
+                    "auto-route: lang={lang} -> {id} (pass --no-auto-route or --model to disable)"
+                );
+                config.model = id;
+                config.engine = eng;
+            }
+            if !lang_known {
+                config.language = lang.to_owned();
+            }
+        }
+    }
+    let _ = lang_explicit;
+
+    if config.diarize && matches!(config.engine, Engine::WhisperOnnx) {
+        let warning = "whisper-onnx ASR + diarization: the bundled sherpa-onnx-whisper \
+             export lacks cross-attention so per-segment speaker assignment will \
+             collapse on long ASR spans. Prefer --model parakeet-tdt-0.6b-v3-int8 \
+             (EU langs incl. Russian) or --model gigaam-v3-ru (Russian)";
+        logfile::warn(warning);
+        eprintln!("warning: {warning}");
     }
 
     if matches!(config.device, Device::Cuda) && !cfg!(feature = "cuda") {

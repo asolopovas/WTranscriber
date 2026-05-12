@@ -7,6 +7,8 @@ mod runtime;
 mod sherpa;
 mod transducer;
 mod whisper;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod whisper_cpp;
 
 pub use runtime::threads;
 
@@ -20,7 +22,9 @@ pub fn preflight(config: &Config) -> Result<()> {
     if use_in_process(config) {
         return Ok(());
     }
-
+    if matches!(config.engine, Engine::WhisperCpp) {
+        return Ok(());
+    }
     sherpa::find_binary().map(|_| ())
 }
 
@@ -57,6 +61,18 @@ pub fn run(
         )?,
         Engine::Canary => canary::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
         Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
+        Engine::WhisperCpp => {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                whisper_cpp::run(samples, audio_dur_sec, config, on_progress, cancelled)?
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            {
+                return Err(Error::Config(
+                    "whisper-cpp engine is desktop-only on this build".into(),
+                ));
+            }
+        }
     };
     on_chunk(segs, audio_dur_sec);
     Ok((lang, rtf))

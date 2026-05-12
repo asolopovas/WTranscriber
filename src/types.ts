@@ -15,7 +15,13 @@ export interface SystemInfo {
   total_memory_bytes: number;
 }
 
-export type Engine = "whisper-onnx" | "zipformer" | "parakeet" | "canary" | "nemo-ctc";
+export type Engine =
+  | "whisper-onnx"
+  | "zipformer"
+  | "parakeet"
+  | "canary"
+  | "nemo-ctc"
+  | "whisper-cpp";
 
 export type DiarizerChoice = "sortformer-onnx" | "nemo" | "titanet";
 

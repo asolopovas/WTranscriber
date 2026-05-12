@@ -86,6 +86,11 @@ fn build_config(config: &Config, provider: &str, threads: u32) -> Result<Offline
         Engine::Canary => Err(Error::Config(
             "canary engine in-process path not yet implemented".into(),
         )),
+        Engine::WhisperCpp => Err(Error::Config(
+            "whisper-cpp engine bypasses the sherpa recognizer; \
+             dispatch happens in engine::run"
+                .into(),
+        )),
     }
 }
 

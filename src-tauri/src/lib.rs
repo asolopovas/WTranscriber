@@ -10,6 +10,8 @@ mod engine;
 mod error;
 mod essentials;
 mod fs_utils;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod lang_id;
 mod llm;
 pub mod logfile;
 mod models;

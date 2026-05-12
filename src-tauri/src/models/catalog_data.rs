@@ -8,11 +8,13 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             family: Family::Asr,
             engine: "whisper-onnx".into(),
             display_name: "Whisper large-v3-turbo (ONNX, multilingual)".into(),
-            description: "OpenAI Whisper large-v3-turbo via ONNX Runtime, 99 languages.".into(),
+            description: "OpenAI Whisper large-v3-turbo via ONNX Runtime, 99 languages. \
+                          Legacy: no word timestamps in this export, so diarization may \
+                          collapse on long ASR spans \u{2014} prefer Parakeet or whisper.cpp.".into(),
             languages: vec!["auto", "en", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "uk", "zh", "ja", "ko", "ar", "tr", "hi"]
                 .into_iter().map(String::from).collect(),
             size_bytes: 1_036_613_791,
-            default_active: true,
+            default_active: false,
             android_default: false,
             desktop_only: false,
             files: vec![
@@ -41,11 +43,12 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             family: Family::Asr,
             engine: "parakeet".into(),
             display_name: "Parakeet TDT 0.6B v3 (25 EU langs)".into(),
-            description: "NVIDIA Parakeet TDT v3, 25 European languages. ~671 MB.".into(),
+            description: "NVIDIA Parakeet TDT v3, 25 European languages. ~671 MB. \
+                          Native word timestamps; default desktop and Android ASR.".into(),
             languages: vec!["bg","hr","cs","da","nl","en","et","fi","fr","de","el","hu","it","lv","lt","mt","pl","pt","ro","sk","sl","es","sv","ru","uk"]
                 .into_iter().map(String::from).collect(),
             size_bytes: 670_478_772,
-            default_active: false,
+            default_active: true,
             android_default: true,
             desktop_only: false,
             files: vec![
@@ -74,6 +77,45 @@ pub(super) fn default_catalog() -> Vec<Entry> {
                     sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d".into(),
                 },
             ],
+        },
+        Entry {
+            id: "whisper-cpp-large-v3-turbo-q8".into(),
+            family: Family::Asr,
+            engine: "whisper-cpp".into(),
+            display_name: "Whisper large-v3-turbo (whisper.cpp, Q8_0, multilingual)".into(),
+            description: "OpenAI Whisper large-v3-turbo via whisper.cpp with native word \
+                          timestamps. 99 languages. ~874 MB.".into(),
+            languages: vec!["auto","en","de","fr","es","it","pt","nl","pl","ru","uk","zh","ja","ko","ar","tr","hi"]
+                .into_iter().map(String::from).collect(),
+            size_bytes: 874_000_000,
+            default_active: false,
+            android_default: false,
+            desktop_only: true,
+            files: vec![FileSpec {
+                url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin".into(),
+                rel_path: "whisper-cpp-large-v3-turbo-q8/ggml-large-v3-turbo-q8_0.bin".into(),
+                size_bytes: 874_188_075,
+                sha256: "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1".into(),
+            }],
+        },
+        Entry {
+            id: "silero-lang95-onnx".into(),
+            family: Family::LangId,
+            engine: String::new(),
+            display_name: "Silero Lang95 (language identification)".into(),
+            description: "Silero LangID classifier covering 95 languages. ~16 MB ONNX. \
+                          Used for fast spoken-language detection before ASR routing.".into(),
+            languages: Vec::new(),
+            size_bytes: 16_500_000,
+            default_active: true,
+            android_default: false,
+            desktop_only: true,
+            files: vec![FileSpec {
+                url: "https://huggingface.co/deepghs/silero-lang95-onnx/resolve/main/lang_classifier_95.onnx".into(),
+                rel_path: "silero-lang95-onnx/lang_classifier_95.onnx".into(),
+                size_bytes: 16_972_591,
+                sha256: "12a91f706ad6ca5a5eba4e84a96739d077e56f121ec71db86a752f62e218a227".into(),
+            }],
         },
         Entry {
             id: "gigaam-v3-ru".into(),

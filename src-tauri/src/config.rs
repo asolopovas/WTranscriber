@@ -40,6 +40,7 @@ pub enum Engine {
     Parakeet,
     Canary,
     NemoCtc,
+    WhisperCpp,
 }
 
 impl Engine {
@@ -51,6 +52,7 @@ impl Engine {
             Self::Parakeet => "parakeet",
             Self::Canary => "canary",
             Self::NemoCtc => "nemo-ctc",
+            Self::WhisperCpp => "whisper-cpp",
         }
     }
 }
@@ -64,6 +66,7 @@ impl std::str::FromStr for Engine {
             "parakeet" => Ok(Self::Parakeet),
             "canary" => Ok(Self::Canary),
             "nemo-ctc" => Ok(Self::NemoCtc),
+            "whisper-cpp" => Ok(Self::WhisperCpp),
             _ => Err(()),
         }
     }
@@ -132,7 +135,7 @@ impl Default for Config {
         Self {
             model,
             engine,
-            language: "en".into(),
+            language: "auto".into(),
             device: default_device(),
             threads: num_threads(),
             diarize: true,
@@ -292,10 +295,10 @@ mod tests {
 
     #[test]
     #[cfg(not(target_os = "android"))]
-    fn default_asr_desktop_is_whisper_turbo() {
+    fn default_asr_desktop_is_parakeet_v3() {
         let cfg = Config::default();
-        assert_eq!(cfg.model, "sherpa-whisper-turbo");
-        assert!(matches!(cfg.engine, Engine::WhisperOnnx));
+        assert_eq!(cfg.model, "parakeet-tdt-0.6b-v3-int8");
+        assert!(matches!(cfg.engine, Engine::Parakeet));
     }
 
     #[test]
@@ -313,6 +316,7 @@ mod tests {
         assert_eq!(Engine::Parakeet.as_str(), "parakeet");
         assert_eq!(Engine::Canary.as_str(), "canary");
         assert_eq!(Engine::NemoCtc.as_str(), "nemo-ctc");
+        assert_eq!(Engine::WhisperCpp.as_str(), "whisper-cpp");
     }
 
     #[test]
@@ -323,6 +327,7 @@ mod tests {
             Engine::Parakeet,
             Engine::Canary,
             Engine::NemoCtc,
+            Engine::WhisperCpp,
         ] {
             assert_eq!(e.as_str().parse::<Engine>().unwrap(), e);
         }

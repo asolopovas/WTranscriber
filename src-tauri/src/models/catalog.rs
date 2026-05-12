@@ -10,6 +10,7 @@ pub enum Family {
     Asr,
     Diarizer,
     Llm,
+    LangId,
 }
 
 impl Family {
@@ -19,6 +20,7 @@ impl Family {
             Self::Asr => "asr",
             Self::Diarizer => "diarizer",
             Self::Llm => "llm",
+            Self::LangId => "lang-id",
         }
     }
 }
@@ -133,8 +135,8 @@ mod tests {
     }
 
     #[test]
-    fn default_asr_is_whisper_turbo() {
-        assert_eq!(default_id(Family::Asr), Some("sherpa-whisper-turbo"));
+    fn default_asr_is_parakeet_v3() {
+        assert_eq!(default_id(Family::Asr), Some("parakeet-tdt-0.6b-v3-int8"));
     }
 
     #[test]
