@@ -86,6 +86,14 @@ export interface FileProgress {
   total: number;
 }
 
+export interface RuntimeProgress {
+  id: string;
+  downloaded?: number;
+  total?: number;
+  phase?: string;
+  line?: string;
+}
+
 export interface Utterance {
   start_ms: number;
   end_ms: number;

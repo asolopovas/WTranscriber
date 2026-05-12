@@ -27,6 +27,29 @@ const progress = (overrides: Partial<FileProgress>): FileProgress => ({
 });
 
 describe("SetupGate", () => {
+  it("renders an active runtime row above models", () => {
+    const wrapper = mount(SetupGate, {
+      props: {
+        essentialIds: ["asr"],
+        models: [model({ id: "asr" })],
+        progress: {},
+        errors: {},
+        runtimes: {
+          "sherpa-onnx-cuda": {
+            id: "sherpa-onnx-cuda",
+            downloaded: 350 * 1024 * 1024,
+            total: 700 * 1024 * 1024,
+            phase: "downloading",
+            label: "Speech engine (sherpa-onnx CUDA)",
+          },
+        },
+      },
+    });
+    const text = wrapper.text();
+    expect(text).toContain("Installing Speech engine (sherpa-onnx CUDA)");
+    expect(text).toContain("350 / 700 MB");
+  });
+
   it("renders queued, downloading, installed, and error states", () => {
     const wrapper = mount(SetupGate, {
       props: {
@@ -43,6 +66,7 @@ describe("SetupGate", () => {
         ],
         progress: { asr: progress({}) },
         errors: { missing: true },
+        runtimes: {},
       },
     });
 

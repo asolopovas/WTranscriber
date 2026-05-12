@@ -7,6 +7,7 @@ import type {
   ExportFormat,
   FileProgress,
   ModelInfo,
+  RuntimeProgress,
   Suggestion,
   SystemInfo,
   TranscribeProgress,
@@ -81,4 +82,10 @@ export const events = {
     listen<TranscribeProgress>("transcribe:progress", (e) => cb(e.payload)),
   onEssentialsDone: (cb: (ok: boolean) => void): Promise<UnlistenFn> =>
     listen<boolean>("model:essentials_done", (e) => cb(e.payload)),
+  onRuntimeProgress: (cb: (p: RuntimeProgress) => void): Promise<UnlistenFn> =>
+    listen<RuntimeProgress>("runtime:progress", (e) => cb(e.payload)),
+  onRuntimeDone: (cb: (id: string) => void): Promise<UnlistenFn> =>
+    listen<string>("runtime:done", (e) => cb(e.payload)),
+  onRuntimeError: (cb: (id: string) => void): Promise<UnlistenFn> =>
+    listen<string>("runtime:error", (e) => cb(e.payload)),
 };

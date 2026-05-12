@@ -63,6 +63,7 @@ const essentials = useEssentials(models);
 const essentialIds = essentials.ids;
 const essentialProgress = essentials.progress;
 const essentialErrors = essentials.errors;
+const essentialRuntimes = essentials.runtimes;
 const essentialsReady = essentials.ready;
 
 const storageGateResolved = ref(false);
@@ -789,6 +790,7 @@ const selectedProgress = computed(() =>
     :models="models"
     :progress="essentialProgress"
     :errors="essentialErrors"
+    :runtimes="essentialRuntimes"
   />
   <div class="h-full flex flex-col bg-background text-on-background overflow-hidden">
     <AppHeader

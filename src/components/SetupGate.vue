@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { FileProgress, ModelInfo } from "@/types";
+import type { RuntimeState } from "@composables/useEssentials";
 import { fmtModelSize, MB, progressPct } from "@utils/format";
 import DownloadCircle from "@components/DownloadCircle.vue";
 
@@ -9,21 +10,47 @@ interface Props {
   models: ModelInfo[];
   progress: Record<string, FileProgress>;
   errors: Record<string, true>;
+  runtimes: Record<string, RuntimeState>;
 }
 const props = defineProps<Props>();
 
 interface Row {
   id: string;
   name: string;
+  kind: "runtime" | "model";
   family: string;
   sizeBytes: number;
-  status: "installed" | "downloading" | "queued" | "error";
+  status: "installed" | "downloading" | "queued" | "error" | "starting";
   percent: number;
   downloadedMb: number;
   totalMb: number;
 }
 
-const rows = computed<Row[]>(() => {
+const runtimeRows = computed<Row[]>(() => {
+  const list = Object.values(props.runtimes);
+  return list
+    .filter((r) => r.phase !== "done")
+    .map((r) => {
+      const percent = r.total > 0 ? Math.min(100, (r.downloaded / r.total) * 100) : 0;
+      let status: Row["status"];
+      if (r.phase === "error") status = "error";
+      else if (r.phase === "starting") status = "starting";
+      else status = "downloading";
+      return {
+        id: r.id,
+        name: r.label,
+        kind: "runtime",
+        family: "runtime",
+        sizeBytes: r.total,
+        status,
+        percent,
+        downloadedMb: r.downloaded / MB,
+        totalMb: r.total / MB,
+      };
+    });
+});
+
+const modelRows = computed<Row[]>(() => {
   return props.essentialIds.map((id) => {
     const m = props.models.find((x) => x.id === id);
     const p = props.progress[id];
@@ -43,6 +70,7 @@ const rows = computed<Row[]>(() => {
     return {
       id,
       name: m?.display_name ?? id,
+      kind: "model",
       family: m?.family ?? "",
       sizeBytes: m?.size_bytes ?? 0,
       status,
@@ -53,35 +81,56 @@ const rows = computed<Row[]>(() => {
   });
 });
 
+const allRows = computed<Row[]>(() => [...runtimeRows.value, ...modelRows.value]);
+
 const overall = computed(() => {
-  if (!rows.value.length) return 0;
-  const total = rows.value.reduce((s, r) => s + r.percent, 0);
-  return total / rows.value.length;
+  if (!allRows.value.length) return 0;
+  const total = allRows.value.reduce((s, r) => s + r.percent, 0);
+  return total / allRows.value.length;
 });
 
-const totalBytes = computed(() => rows.value.reduce((s, r) => s + r.sizeBytes, 0));
+const totalBytes = computed(() => allRows.value.reduce((s, r) => s + r.sizeBytes, 0));
 const downloadedBytes = computed(() =>
-  rows.value.reduce((s, r) => {
+  allRows.value.reduce((s, r) => {
     if (r.status === "installed") return s + r.sizeBytes;
     if (r.status === "downloading") return s + r.downloadedMb * MB;
     return s;
   }, 0),
 );
 
-function familyLabel(f: string): string {
-  if (f === "asr") return "Speech";
-  if (f === "diarizer") return "Speakers";
-  if (f === "llm") return "Naming";
-  return f || "Model";
+const activeRuntime = computed<Row | null>(() => {
+  return runtimeRows.value.find((r) => r.status === "downloading") ?? runtimeRows.value[0] ?? null;
+});
+
+const subtitle = computed(() => {
+  const active = activeRuntime.value;
+  if (active) {
+    if (active.status === "error") return `${active.name} failed — see logs.`;
+    if (active.status === "starting") return `Preparing ${active.name}…`;
+    return `Installing ${active.name}…`;
+  }
+  return "Preparing speech, speakers and naming models.";
+});
+
+function familyLabel(row: Row): string {
+  if (row.kind === "runtime") return row.name;
+  if (row.family === "asr") return "Speech";
+  if (row.family === "diarizer") return "Speakers";
+  if (row.family === "llm") return "Naming";
+  return row.family || "Model";
 }
 
 function statusLabel(row: Row): string {
   if (row.status === "installed") return "Ready";
   if (row.status === "error") return "Failed";
+  if (row.status === "starting") return "Starting…";
   if (row.status === "downloading") {
-    return `${row.downloadedMb.toFixed(0)} / ${row.totalMb.toFixed(0)} MB`;
+    if (row.totalMb > 0) {
+      return `${row.downloadedMb.toFixed(0)} / ${row.totalMb.toFixed(0)} MB`;
+    }
+    return `${row.downloadedMb.toFixed(0)} MB downloaded`;
   }
-  return `Queued · ${fmtModelSize(row.sizeBytes)}`;
+  return row.sizeBytes > 0 ? `Queued · ${fmtModelSize(row.sizeBytes)}` : "Queued";
 }
 </script>
 
@@ -112,9 +161,7 @@ function statusLabel(row: Row): string {
         </div>
         <div class="space-y-xs">
           <h1 class="text-headlineSmall text-on-surface">Downloading essentials</h1>
-          <p class="text-bodySmall text-on-surface-variant">
-            Preparing speech, speakers and naming models.
-          </p>
+          <p class="text-bodySmall text-on-surface-variant">{{ subtitle }}</p>
           <p class="text-labelMedium text-on-surface-variant font-mono">
             {{ fmtModelSize(downloadedBytes) }} / {{ fmtModelSize(totalBytes) }} ·
             {{ overall.toFixed(0) }}%
@@ -122,11 +169,11 @@ function statusLabel(row: Row): string {
         </div>
       </div>
 
-      <ul class="flex flex-col gap-sm">
+      <ul class="flex flex-col gap-md">
         <li
-          v-for="r in rows"
-          :key="r.id"
-          class="flex items-center gap-md py-sm px-margin rounded-lg bg-surface-container/60 border border-outline/30"
+          v-for="r in allRows"
+          :key="`${r.kind}:${r.id}`"
+          class="flex items-center gap-md py-md px-margin rounded-lg bg-surface-container/60 border border-outline/30"
         >
           <DownloadCircle
             :percent="r.percent"
@@ -136,7 +183,7 @@ function statusLabel(row: Row): string {
           />
           <div class="flex-1 min-w-0">
             <div class="text-titleSmall text-on-surface leading-tight" :title="r.name">
-              {{ familyLabel(r.family) }}
+              {{ familyLabel(r) }}
             </div>
             <div class="text-labelSmall text-on-surface-variant font-mono">
               {{ statusLabel(r) }}
