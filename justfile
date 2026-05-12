@@ -117,29 +117,34 @@ diagnose-crash:
 
 # ─── build ────────────────────────────────────────────────────────────────────
 
+# Wipe per-tag build logs (logs/). Runs before every build recipe.
+[private]
+clean-logs:
+    @bun -e "import {rmSync,mkdirSync} from 'node:fs'; rmSync('logs',{recursive:true,force:true}); mkdirSync('logs',{recursive:true})"
+
 # Full release matrix: host GUI installer + wt CLI + Android APK; auto-detects host.
 [unix, group('build')]
-build: bootstrap
+build: bootstrap clean-logs
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
 [windows, group('build')]
-build: bootstrap
+build: bootstrap clean-logs
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
 # Current host only: GUI installer (NSIS .exe / .deb / .app) + wt CLI binary.
 [unix, group('build')]
-build-host: bootstrap
+build-host: bootstrap clean-logs
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
     {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
 
 [windows, group('build')]
-build-host: bootstrap
+build-host: bootstrap clean-logs
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
     {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
 
 # Linux .deb built inside the unified debian:12 builder container (glibc 2.36 floor).
 [group('build')]
-build-deb-docker:
+build-deb-docker: clean-logs
     {{_run}} --tag build-deb-docker --idle 180 --max 3600 -- cargo xtask release --dev --no-host --no-android --no-windows-vm
 
 # ─── android: dev session ─────────────────────────────────────────────────────

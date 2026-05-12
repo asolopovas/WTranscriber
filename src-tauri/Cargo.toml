@@ -14,6 +14,7 @@ default-run = "wtranscriber"
 default = ["cuda"]
 sherpa-static = ["sherpa-onnx/static"]
 cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda", "whisper-rs/cuda"]
+android = ["sherpa-onnx/shared"]
 
 [lib]
 name = "wtranscriber_lib"

@@ -58,7 +58,8 @@ just release-stable    check + bump + tag + build + publish
 
 ## Scratch artefacts
 
-`tmp/` is the dev-loop source of truth (PIDs, logs, agent reports). See [`docs/tmp.md`](docs/tmp.md) for the full inventory and cleanup rules.
+- `logs/<tag>.log` — per-tag build logs written by `scripts/run.ts`. **Wiped on every `just build*`.**
+- `tmp/` — dev-loop source of truth (PIDs, logcat, android-dev session logs, agent reports). See [`docs/tmp.md`](docs/tmp.md) for the inventory and cleanup rules.
 
 ## Live dev invariant
 
@@ -68,7 +69,7 @@ just release-stable    check + bump + tag + build + publish
 
 ## Per-turn during a live dev session
 
-- Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → root-cause from `tmp/*.log` + `adb logcat` + `git log -p`.
+- Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → root-cause from `logs/*.log` (build) + `tmp/*.log` (dev session) + `adb logcat` + `git log -p`.
 - Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just android-stop && just android`.
 - New `am_kill` / `am_proc_died` / `am_crash` for the app → inspect `tmp/logcat.log` around the timestamp and bisect against recent commits.
 
@@ -85,16 +86,16 @@ just release-stable    check + bump + tag + build + publish
 
 ## Decision table
 
-| Need                          | Action                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                           |
-| Diagnose a failing log signal | Read `tmp/*.log` + `adb logcat` + `git log -p`; bisect recent commits   |
-| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`      |
-| Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities   |
-| Edit project files            | Main thread (pre-commit hook is the gate)                               |
-| Install + smoke-test          | `just android-install` + `just android-smoke` (or host installer build) |
-| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)      |
-| Stable release                | `just release-stable`                                                   |
+| Need                          | Action                                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                                                              |
+| Diagnose a failing log signal | Read `logs/*.log` (build) + `tmp/*.log` (dev session) + `adb logcat` + `git log -p`; bisect recent commits |
+| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`                                         |
+| Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities                                      |
+| Edit project files            | Main thread (pre-commit hook is the gate)                                                                  |
+| Install + smoke-test          | `just android-install` + `just android-smoke` (or host installer build)                                    |
+| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)                                         |
+| Stable release                | `just release-stable`                                                                                      |
 
 ## Skills
 

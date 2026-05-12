@@ -1,10 +1,16 @@
-# `tmp/` artefacts
+# `tmp/` and `logs/` artefacts
 
-`tmp/` is the dev-loop scratchpad. Every long-running session and every
-agent treats these files as the **source of truth** for liveness. Keep
-this table in sync with reality; it is referenced by `AGENTS.md`,
-`docs/dev-loop.md`, `docs/android.md`, and the `wt-diagnose` / `wt-runner`
-agents.
+Two separate scratch directories:
+
+- **`logs/`** — per-tag build logs written by `scripts/run.ts` (one file
+  per `--tag`, e.g. `logs/build.log`, `logs/deb.log`, `logs/and.log`).
+  **Wiped at the start of every `just build*` recipe** (`build`,
+  `build-host`, `build-deb-docker`). Safe to delete at any time.
+- **`tmp/`** — dev-loop scratchpad. Every long-running session and every
+  agent treats these files as the **source of truth** for liveness. Keep
+  the table below in sync with reality; it is referenced by `AGENTS.md`,
+  `docs/dev-loop.md`, `docs/android.md`, and the `wt-diagnose` /
+  `wt-runner` agents.
 
 ## Inventory
 

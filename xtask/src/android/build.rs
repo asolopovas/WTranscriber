@@ -34,6 +34,8 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
         ("ANDROID_HOME".into(), sdk.display().to_string()),
         ("NDK_HOME".into(), ndk.display().to_string()),
         ("SHERPA_ONNX_LIB_DIR".into(), pdir.display().to_string()),
+        ("ORT_STRATEGY".into(), "system".into()),
+        ("ORT_LIB_LOCATION".into(), pdir.display().to_string()),
         (format!("CC_{}", abi.rust), cc.display().to_string()),
         (format!("CXX_{}", abi.rust), cxx.display().to_string()),
         (format!("AR_{}", abi.rust), ar.display().to_string()),
@@ -121,10 +123,24 @@ pub(super) fn cmd_build(target: &str) -> Result<()> {
             "--target",
             target,
             "--apk",
+            "--",
+            "--no-default-features",
+            "--features",
+            "android",
         ]
     } else {
         vec![
-            "run", "tauri", "android", "build", "--target", target, "--apk",
+            "run",
+            "tauri",
+            "android",
+            "build",
+            "--target",
+            target,
+            "--apk",
+            "--",
+            "--no-default-features",
+            "--features",
+            "android",
         ]
     };
     spawn_with_env("bun", &args, &env)?;

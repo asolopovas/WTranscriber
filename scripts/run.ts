@@ -54,9 +54,9 @@ const start = Date.now();
 const prefix = `${C.cyan}[${tag}]${C.reset}`;
 const stamp = (): string => ((Date.now() - start) / 1000).toFixed(1) + "s";
 
-const tmpDir = join(repoRoot, "tmp");
-mkdirSync(tmpDir, { recursive: true });
-const logPath = join(tmpDir, `${tag}.log`);
+const logsDir = join(repoRoot, "logs");
+mkdirSync(logsDir, { recursive: true });
+const logPath = join(logsDir, `${tag}.log`);
 const logFd = openSync(logPath, "w");
 const logLine = (line: string): void => {
   try {
