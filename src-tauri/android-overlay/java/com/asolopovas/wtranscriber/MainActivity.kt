@@ -74,36 +74,32 @@ class MainActivity : TauriActivity() {
     val target = java.io.File(path)
     if (!target.exists()) return false
     val folder = if (target.isDirectory) target else target.parentFile ?: return false
-    val uri = runCatching {
-      androidx.core.content.FileProvider.getUriForFile(
-        this,
-        "$packageName.fileprovider",
-        folder,
-      )
-    }.getOrElse {
-      android.util.Log.w("WTranscriber", "revealPath: FileProvider failed for $folder: $it")
+    val external = Environment.getExternalStorageDirectory().absolutePath
+    if (!folder.absolutePath.startsWith(external)) {
+      android.util.Log.w("WTranscriber", "revealPath: $folder is not under external storage")
       return false
     }
-    val mimes = arrayOf("resource/folder", "vnd.android.document/directory", "*/*")
-    for (mime in mimes) {
-      val view = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, mime)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      }
-      val chooser = Intent.createChooser(view, "Open in file manager").apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      }
-      try {
-        startActivity(chooser)
-        return true
-      } catch (e: android.content.ActivityNotFoundException) {
-        android.util.Log.d("WTranscriber", "revealPath: no handler for $mime")
-      } catch (e: Exception) {
-        android.util.Log.w("WTranscriber", "revealPath failed for $path ($mime): $e")
-      }
+    val rel = folder.absolutePath.substring(external.length).trimStart('/')
+    val docId = if (rel.isEmpty()) "primary:" else "primary:$rel"
+    val uri = android.provider.DocumentsContract.buildDocumentUri(
+      "com.android.externalstorage.documents",
+      docId,
+    )
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, android.provider.DocumentsContract.Document.MIME_TYPE_DIR)
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    return false
+    return try {
+      startActivity(intent)
+      true
+    } catch (e: android.content.ActivityNotFoundException) {
+      android.util.Log.w("WTranscriber", "revealPath: no file manager handles documents URI $uri")
+      false
+    } catch (e: Exception) {
+      android.util.Log.w("WTranscriber", "revealPath failed for $path: $e")
+      false
+    }
   }
 
   @Keep
