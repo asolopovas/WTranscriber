@@ -102,7 +102,10 @@ Android default essentials (Parakeet + TitaNet + Qwen3 0.6B) total **~1.1 GB**; 
 | sherpa-onnx (CUDA)  |      296 MB |    191 MB |
 | cuDNN 9 (CUDA 12)   |      646 MB |    925 MB |
 | llama.cpp b9045     |       15 MB |     14 MB |
-| NeMo Python runtime |         n/a |     ~5 GB |
+| NeMo Python runtime |      ~5 GB¹ |    ~5 GB² |
+
+¹ Windows: install manually via `scripts/install-nemo-deps.ps1` (or `just nemo-deps`). Auto-install is Linux-only. <br>
+² Linux: auto-installed in the background when the NeMo diarizer is selected on a GPU host. Installs `nemo_toolkit[asr]` into an isolated `uv`-managed Python 3.12 (torch + CUDA wheels + nemo_toolkit).
 
 The desktop build links sherpa-onnx-cpu statically when configured with `sherpa-static`, so CPU-only users skip the sherpa runtime download entirely.
 
