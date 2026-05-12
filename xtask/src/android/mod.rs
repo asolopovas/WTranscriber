@@ -3,12 +3,12 @@ use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 
 mod adb;
 mod build;
-mod dev;
+pub(crate) mod dev;
 mod lldb;
 mod logs;
 mod patch;
 mod paths;
-mod proc;
+pub(crate) mod proc;
 
 pub use patch::sign_patch_inline;
 

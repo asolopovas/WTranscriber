@@ -94,7 +94,7 @@ pub(super) fn spawn_with_env(prog: &str, args: &[&str], env: &[(String, String)]
     Ok(())
 }
 
-pub(super) fn port_owner(port: u16) -> Option<u32> {
+pub(crate) fn port_owner(port: u16) -> Option<u32> {
     if !cfg!(windows) {
         return None;
     }
@@ -165,7 +165,7 @@ pub(super) fn pid_alive(pid: u32) -> bool {
     }
 }
 
-pub(super) fn kill_pid(pid: u32) {
+pub(crate) fn kill_pid(pid: u32) {
     let pid_text = pid.to_string();
     if cfg!(windows) {
         let _ = Command::new("taskkill")

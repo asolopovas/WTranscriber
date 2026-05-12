@@ -32,13 +32,13 @@ Two separate scratch directories:
 ## Rules
 
 - **Never `rm -rf tmp/` while a dev session is live** — kills the
-  liveness contract. Use `just android-stop` first, then run the
+  liveness contract. Use `just dev stop` first, then run the
   `clean-temp.ts` script.
 - **`clean-temp.ts` is safe between turns**; the next bootstrap recreates
   everything it needs.
 - **`tmp/_pids.json` exists ⇒ `:1420` belongs to Vite.** Do not run
   `just android-install`, `just android-build`, `cargo tauri build`, or
-  any release build until `android-stop` removes it.
+  any release build until `just dev stop` removes it.
 - **`location.href` is not a liveness signal on Android.** Tauri reports
   `http://tauri.localhost/` even when HMR is dead. Always cross-check
   `tmp/logcat.log` for fresh `connecting to 127.0.0.1:1420`.

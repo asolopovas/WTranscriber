@@ -27,9 +27,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
     if session_already_healthy(device) {
-        eprintln!(
-            "BOOTSTRAP OK (already running) — use `just android-stop` first to force restart"
-        );
+        eprintln!("BOOTSTRAP OK (already running) — use `just dev stop` first to force restart");
         return Ok(());
     }
     if pids_path.exists() {
@@ -383,7 +381,7 @@ pub(super) fn cmd_status(as_json: bool, device_arg: Option<&str>) -> Result<()> 
     Ok(())
 }
 
-pub(super) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
+pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {
     let tmp = root().join("tmp");
     let pids_path = tmp.join("_pids.json");
     let pids = read_pids(&pids_path);

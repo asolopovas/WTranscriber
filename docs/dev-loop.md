@@ -35,7 +35,7 @@ just android-host             # bootstrap Wi-Fi/LAN session
 just android-status           # bounded health check (≤30 s)
 just android-status-json      # machine-readable health
 just android-smoke            # fail-fast end-to-end probe
-just android-stop             # stop session and forwards
+just dev stop                 # stop session and forwards (desktop + android)
 just android-debug-eval "document.title"
 just android-emu              # cross-platform headless x86_64 emulator
 just android-emu-stop
@@ -56,7 +56,7 @@ Full `tmp/` artefact contract: [`tmp.md`](tmp.md).
 `src/**` edits hot-reload. Any backend / native / config / capability edit:
 
 ```bash
-just android-stop && just android
+just dev stop && just android
 ```
 
 Never run `just android-install`, `just android-build`, `cargo tauri build`, or any release build while `tmp/_pids.json` exists and Vite owns `:1420`.

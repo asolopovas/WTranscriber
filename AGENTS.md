@@ -29,7 +29,7 @@ Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefi
 ```
 just dev               desktop HMR (Linux/Windows)
 just android           Android USB/emu HMR session (idempotent)
-just android-stop      stop the session
+just dev stop          stop any running dev session (desktop + android)
 just android-emu       headless x86_64 emulator (cross-platform)
 just check             parallel pre-release gate
 just build             dev release build (host + Android + Linux .deb in parallel) → `releases/dev/`
@@ -86,7 +86,7 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 ## Per-turn during a live dev session
 
 - Desktop: scan the `[dev]` stream for new error/panic lines. Android: diff `tmp/logcat.log` line counts. New failures → root-cause from `logs/*.log` (build) + `tmp/*.log` (dev session) + `adb logcat` + `git log -p`.
-- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just android-stop && just android`.
+- Android JS edit must show `[vite] hmr update` in `tmp/android-dev.log`. Rust/native/config/capability edit requires `just dev stop && just android`.
 - New `am_kill` / `am_proc_died` / `am_crash` for the app → inspect `tmp/logcat.log` around the timestamp and bisect against recent commits.
 
 ## Tauri workflow by change type
