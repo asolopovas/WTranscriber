@@ -201,7 +201,7 @@ fn dlopen_global(path: &Path) -> std::result::Result<(), String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn preload_cudnn_libs(_dir: &Path) {}
+const fn preload_cudnn_libs(_dir: &Path) {}
 
 fn prepend_to_env(name: &str, dir: &Path) {
     let current = std::env::var_os(name).unwrap_or_default();

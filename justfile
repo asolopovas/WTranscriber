@@ -283,10 +283,10 @@ doctor:
     {{_run}} --tag doctor --idle 30 --max 60 -- bun scripts/doctor.ts
 
 _ensure-machete:
-    @command -v cargo-machete >/dev/null 2>&1 || {{_run}} --tag install-machete --idle 60 --max 600 -- cargo install --locked cargo-machete
+    @bun scripts/ensure-cargo-tool.ts cargo-machete
 
 _ensure-audit:
-    @command -v cargo-audit >/dev/null 2>&1 || {{_run}} --tag install-audit --idle 60 --max 600 -- cargo install --locked cargo-audit
+    @bun scripts/ensure-cargo-tool.ts cargo-audit
 
 # ─── clean ────────────────────────────────────────────────────────────────────
 

@@ -116,8 +116,8 @@ pub fn collapse_bridged_repeats(tokens: &[Token]) -> Vec<Token> {
                     continue;
                 }
                 if ngram_equal(tokens, i, j, n, &keep) {
-                    for k in j..(j + n) {
-                        keep[k] = false;
+                    for slot in keep.iter_mut().skip(j).take(n) {
+                        *slot = false;
                     }
                     crate::logfile::info(&format!(
                         "dedup: collapsed bridged repeat n={n} gap={gap} at token {i} (\"{}\")",
@@ -136,7 +136,8 @@ pub fn collapse_bridged_repeats(tokens: &[Token]) -> Vec<Token> {
     tokens
         .iter()
         .enumerate()
-        .filter_map(|(k, t)| keep[k].then(|| t.clone()))
+        .filter(|&(k, _)| keep[k])
+        .map(|(_, t)| t.clone())
         .collect()
 }
 

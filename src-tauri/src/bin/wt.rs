@@ -236,10 +236,10 @@ struct CliSinkState {
 
 impl CliSink {
     fn new(input: PathBuf) -> Self {
-        let label = input
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| input.display().to_string());
+        let label = input.file_name().map_or_else(
+            || input.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
         Self {
             label,
             state: Mutex::new(CliSinkState {
@@ -250,7 +250,7 @@ impl CliSink {
         }
     }
 
-    fn phase_label(phase: Phase) -> &'static str {
+    const fn phase_label(phase: Phase) -> &'static str {
         match phase {
             Phase::CacheCheck => "cache",
             Phase::LoadingAudio => "load",
@@ -266,7 +266,8 @@ impl CliSink {
             return;
         };
         let new_phase = s.last_phase != Some(phase);
-        let pct_int = pct.clamp(0.0, 100.0) as i32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let pct_int = pct.clamp(0.0, 100.0).round() as i32;
         if !new_phase && pct_int == s.last_shown_pct && !matches!(phase, Phase::Done) {
             return;
         }
