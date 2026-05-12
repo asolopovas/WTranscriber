@@ -159,18 +159,11 @@ fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
     if !need_build {
         return Ok(());
     }
-    println!("[docker] building image {image} from docker/Dockerfile.builder");
+    println!("[docker] building image {image} from Dockerfile.builder");
     let rc = run_streamed(
         "docker",
         "docker",
-        &[
-            "build",
-            "-f",
-            "docker/Dockerfile.builder",
-            "-t",
-            image,
-            "docker/",
-        ],
+        &["build", "-f", "Dockerfile.builder", "-t", image, "."],
         &[],
         lock,
     )?;
