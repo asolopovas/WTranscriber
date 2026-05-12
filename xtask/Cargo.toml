@@ -23,4 +23,3 @@ incremental = true
 [profile.release]
 codegen-units = 16
 lto = false
-incremental = true

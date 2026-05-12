@@ -6,29 +6,16 @@ use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
-fn sccache_active() -> bool {
-    let probe = |k: &str| {
-        std::env::var(k)
-            .ok()
-            .map(|v| v.contains("sccache"))
-            .unwrap_or(false)
-    };
-    probe("RUSTC_WRAPPER")
-        || probe("CMAKE_C_COMPILER_LAUNCHER")
-        || probe("CMAKE_CXX_COMPILER_LAUNCHER")
-}
-
 fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
-    // sccache refuses to run if CARGO_INCREMENTAL is set to *any* value.
-    // Subprocesses inherit our env, so also clear any inherited value here.
-    if sccache_active() {
-        // SAFETY: builders.rs is single-threaded entry; spawned threads have
-        // not yet captured env. Removing before spawn is observed by children.
-        unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
-        Vec::new()
-    } else {
-        vec![("CARGO_INCREMENTAL", "1")]
-    }
+    // sccache wraps cmake-launched cl.exe (CMAKE_{C,CXX}_COMPILER_LAUNCHER is
+    // baked into whisper-rs-sys's CMake build files at first configure) and
+    // refuses to run if CARGO_INCREMENTAL=1. Release builds don't meaningfully
+    // benefit from cargo's incremental compilation, so always disable it for
+    // host release builds and clear any inherited value before spawn.
+    // SAFETY: builders.rs is single-threaded at entry; spawned build threads
+    // have not yet captured env, so removal is observed by their children.
+    unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
+    Vec::new()
 }
 
 // Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
