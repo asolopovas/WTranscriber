@@ -486,11 +486,15 @@ fn run_diarize_streaming(
 fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
         if seg.tokens.len() >= 2 {
+            let before = seg.tokens.len();
             let collapsed = dedup::collapse_repeats(&seg.tokens);
-            if collapsed.len() != seg.tokens.len() {
-                seg.tokens = collapsed;
+            let after_adj = collapsed.len();
+            let bridged = dedup::collapse_bridged_repeats(&collapsed);
+            if bridged.len() != before {
+                seg.tokens = bridged;
                 rebuild_from_tokens(seg);
             }
+            let _ = after_adj;
         } else if !seg.text.trim().is_empty() {
             seg.text = dedup::collapse_in_text(seg.text.trim());
         }
