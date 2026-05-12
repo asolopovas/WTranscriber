@@ -21,7 +21,8 @@ export ANDROID_NDK := _android_ndk
 export ANDROID_NDK_ROOT := _android_ndk
 export ANDROID_NDK_HOME := _android_ndk
 _libclang_default := if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else if os() == 'linux' { '/usr/lib/x86_64-linux-gnu' } else { '/Library/Developer/CommandLineTools/usr/lib' }
-export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', _libclang_default)
+_libclang_env := env_var_or_default('LIBCLANG_PATH', '')
+export LIBCLANG_PATH := if _libclang_env == '' { _libclang_default } else { _libclang_env }
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 
 _run := "bun scripts/run.ts"

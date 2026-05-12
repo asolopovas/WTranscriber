@@ -46,17 +46,46 @@ if [[ "${SKIP_APT}" -eq 0 ]]; then
             missing+=("$p")
         fi
     done
+    apt_install_ok=1
     if (( ${#missing[@]} )); then
         log "installing: ${missing[*]}"
+        sudo_pfx=()
         if [[ $EUID -ne 0 ]]; then
-            sudo apt-get update
-            sudo apt-get install -y "${missing[@]}"
+            sudo_pfx=(sudo -n)
+        fi
+        if "${sudo_pfx[@]}" apt-get update >/dev/null 2>&1 && "${sudo_pfx[@]}" apt-get install -y "${missing[@]}" >/dev/null 2>&1; then
+            log "apt install succeeded"
         else
-            apt-get update
-            apt-get install -y "${missing[@]}"
+            warn "apt install needs sudo or password; falling back to local-extract for libclang"
+            apt_install_ok=0
         fi
     else
         log "system packages already present"
+    fi
+
+    if [[ $apt_install_ok -eq 0 ]] || ! ls /usr/lib/x86_64-linux-gnu/libclang*.so* >/dev/null 2>&1; then
+        if ! ls /usr/lib/x86_64-linux-gnu/libclang*.so* >/dev/null 2>&1; then
+            cache="$ROOT/.bootstrap-cache/libclang"
+            if ! ls "$cache"/usr/lib/x86_64-linux-gnu/libclang*.so* >/dev/null 2>&1; then
+                log "downloading libclang-dev .deb to $cache (no sudo)"
+                mkdir -p "$cache"
+                (cd "$cache" && apt-get download libclang-dev libclang1 libclang-cpp-dev 2>/dev/null || true)
+                shopt -s nullglob
+                debs=("$cache"/*.deb)
+                shopt -u nullglob
+                if (( ${#debs[@]} == 0 )); then
+                    err "apt-get download failed; cannot fetch libclang-dev without network or sources"
+                    exit 1
+                fi
+                for d in "${debs[@]}"; do
+                    dpkg-deb -x "$d" "$cache" >/dev/null
+                done
+            fi
+            export LIBCLANG_PATH="$cache/usr/lib/x86_64-linux-gnu"
+            mkdir -p "$ROOT/.bootstrap-cache"
+            printf 'LIBCLANG_PATH=%s\n' "$LIBCLANG_PATH" > "$ROOT/.bootstrap-cache/env"
+            log "libclang ready at $LIBCLANG_PATH"
+        fi
     fi
 fi
 
