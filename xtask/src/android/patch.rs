@@ -284,6 +284,8 @@ const TRANSCRIPTION_SERVICE_KT: &str = include_str!(
     "../../../src-tauri/android-overlay/java/com/asolopovas/wtranscriber/TranscriptionService.kt"
 );
 const STRINGS_XML: &str = include_str!("../../../src-tauri/android-overlay/res/values/strings.xml");
+const FILE_PATHS_XML: &str =
+    include_str!("../../../src-tauri/android-overlay/res/xml/file_paths.xml");
 
 fn apply_android_overlay() -> Result<()> {
     let main = gen_android().join("app").join("src").join("main");
@@ -296,12 +298,14 @@ fn apply_android_overlay() -> Result<()> {
         .join("asolopovas")
         .join("wtranscriber");
     let res_dir = main.join("res").join("values");
+    let xml_dir = main.join("res").join("xml");
     write_if_changed(&java_dir.join("MainActivity.kt"), MAIN_ACTIVITY_KT)?;
     write_if_changed(
         &java_dir.join("TranscriptionService.kt"),
         TRANSCRIPTION_SERVICE_KT,
     )?;
     write_if_changed(&res_dir.join("strings.xml"), STRINGS_XML)?;
+    write_if_changed(&xml_dir.join("file_paths.xml"), FILE_PATHS_XML)?;
     apply_android_icons(&main.join("res"))?;
     Ok(())
 }

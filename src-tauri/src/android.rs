@@ -136,6 +136,28 @@ pub const fn android_share_text(_title: &str, _text: &str) -> bool {
 }
 
 #[cfg(target_os = "android")]
+pub fn android_reveal_path(path: &str) -> bool {
+    android_jni::with_activity(false, |env, activity| {
+        let p = env.new_string(path)?;
+        let res = env
+            .call_method(
+                activity,
+                android_jni::jni_str!("revealPath"),
+                android_jni::jni_sig!((arg0: JString) -> bool),
+                &[(&p).into()],
+            )?
+            .z()?;
+        Ok(res)
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+#[must_use]
+pub const fn android_reveal_path(_path: &str) -> bool {
+    false
+}
+
+#[cfg(target_os = "android")]
 pub fn android_notify_transcription_done(title: &str, text: &str, success: bool) {
     android_jni::with_activity((), |env, activity| {
         let t = env.new_string(title)?;

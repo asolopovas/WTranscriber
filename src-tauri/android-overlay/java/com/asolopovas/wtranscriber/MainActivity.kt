@@ -70,6 +70,37 @@ class MainActivity : TauriActivity() {
   }
 
   @Keep
+  fun revealPath(path: String): Boolean {
+    val file = java.io.File(path)
+    if (!file.exists()) return false
+    return runCatching {
+      val uri = androidx.core.content.FileProvider.getUriForFile(
+        this,
+        "$packageName.fileprovider",
+        file,
+      )
+      val mime = if (file.isDirectory) {
+        "resource/folder"
+      } else {
+        contentResolver.getType(uri) ?: "*/*"
+      }
+      val view = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, mime)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      val chooser = Intent.createChooser(view, null).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      startActivity(chooser)
+      true
+    }.getOrElse {
+      android.util.Log.w("WTranscriber", "revealPath failed for $path: $it")
+      false
+    }
+  }
+
+  @Keep
   fun shareText(title: String, text: String) {
     val send = Intent(Intent.ACTION_SEND).apply {
       type = "text/plain"

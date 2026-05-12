@@ -135,7 +135,11 @@ pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
     }
     #[cfg(target_os = "android")]
     {
-        Err(Error::Config("reveal not supported on android".into()))
+        if crate::android_reveal_path(&path.to_string_lossy()) {
+            Ok(())
+        } else {
+            Err(Error::Config("could not open path on android".into()))
+        }
     }
 }
 
