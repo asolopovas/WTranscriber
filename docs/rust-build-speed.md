@@ -13,7 +13,11 @@
   `CMAKE_{C,CXX}_COMPILER_LAUNCHER`. Survives `cargo clean` and shares
   artefacts between host + Android targets where deps overlap. Biggest single
   win on warm rebuilds and after toolchain bumps. `sccache --show-stats`
-  shows hit rate.
+  shows hit rate. sccache refuses to cache incremental rustc output
+  ([upstream](https://github.com/mozilla/sccache#known-caveats)), so Android
+  dev/build sets `CARGO_INCREMENTAL=0` in `xtask::android::build::build_env`
+  to keep the Rust hit rate high on cross-target rebuilds; desktop `just dev`
+  keeps incremental on (the per-target debug tree is warm there).
 - **LLVM `lld-link`** is selected via
   `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=lld-link.exe`, set as a User env
   var by the bootstrap script once LLVM is on PATH. Materially faster than

@@ -32,6 +32,7 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
     let clang_target = abi.clang.trim_end_matches("-clang");
     let bindgen_args = format!("--target={} --sysroot={}", clang_target, sysroot.display());
     let mut e: Vec<(String, String)> = vec![
+        ("CARGO_INCREMENTAL".into(), "0".into()),
         ("ANDROID_HOME".into(), sdk.display().to_string()),
         ("NDK_HOME".into(), ndk.display().to_string()),
         ("SHERPA_ONNX_LIB_DIR".into(), pdir.display().to_string()),
