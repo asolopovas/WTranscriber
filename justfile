@@ -20,7 +20,8 @@ export NDK_HOME := _android_ndk
 export ANDROID_NDK := _android_ndk
 export ANDROID_NDK_ROOT := _android_ndk
 export ANDROID_NDK_HOME := _android_ndk
-export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else { '' })
+_libclang_default := if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else if os() == 'linux' { '/usr/lib/x86_64-linux-gnu' } else { '/Library/Developer/CommandLineTools/usr/lib' }
+export LIBCLANG_PATH := env_var_or_default('LIBCLANG_PATH', _libclang_default)
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 
 _run := "bun scripts/run.ts"
@@ -116,13 +117,22 @@ diagnose-crash:
 # ─── build ────────────────────────────────────────────────────────────────────
 
 # Full release matrix: host GUI installer + wt CLI + Android APK; auto-detects host.
-[group('build')]
-build:
+[unix, group('build')]
+build: bootstrap
+    {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
+
+[windows, group('build')]
+build: bootstrap
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
 # Current host only: GUI installer (NSIS .exe / .deb / .app) + wt CLI binary.
-[group('build')]
-build-host:
+[unix, group('build')]
+build-host: bootstrap
+    {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
+    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
+
+[windows, group('build')]
+build-host: bootstrap
     {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
     {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
 

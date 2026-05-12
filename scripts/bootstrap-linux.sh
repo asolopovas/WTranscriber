@@ -37,6 +37,8 @@ if [[ "${SKIP_APT}" -eq 0 ]]; then
         libsoup-3.0-dev
         libayatana-appindicator3-dev
         librsvg2-dev
+        clang
+        libclang-dev
     )
     missing=()
     for p in "${pkgs[@]}"; do
