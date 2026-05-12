@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "deb", "app"],
+    "targets": ["nsis", "deb"],
     "resources": [
       "../scripts/diarize.py",
       "../scripts/install-nemo-deps.sh",

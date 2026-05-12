@@ -1,60 +1,63 @@
 use std::fs;
 use std::path::Path;
+use std::thread;
 
 use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
+// Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
+//
+// Both invocations share `src-tauri/target/release`. Cargo's per-crate file
+// locks serialise overlapping compile units, so concurrent invocations are
+// safe — the second build sees most crates already compiled and only links
+// the binary it needs. SHERPA_ONNX_LIB_DIR from install-sherpa-cuda.ps1 is
+// inherited so build.rs links the CUDA runtime instead of the CPU
+// auto-download.
 pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
         println!("[host] --skip-rebuild, reusing existing bundle");
         return Ok(0);
     }
-    if cfg!(target_os = "linux") {
-        // The deb-in-docker build has its own pinned sherpa SDK paths; any
-        // host-side overrides would point at host-arch libs unusable inside
-        // the container.
-        unsafe {
-            std::env::remove_var("SHERPA_ONNX_LIB_DIR");
-            std::env::remove_var("SHERPA_ONNX_LIB");
-            std::env::remove_var("SHERPA_ONNX_INCLUDE_DIR");
-        }
-        println!("[host] building .deb inside debian:12 container (linux host)");
-        return build_deb_in_docker(lock);
+    let lock_cli = lock.clone();
+    let lock_gui = lock.clone();
+    let h_cli = thread::spawn(move || {
+        run_streamed(
+            "host-cli",
+            "cargo",
+            &[
+                "build",
+                "--manifest-path",
+                "src-tauri/Cargo.toml",
+                "--release",
+                "--bin",
+                "wt",
+            ],
+            &[("CARGO_INCREMENTAL", "1")],
+            &lock_cli,
+        )
+    });
+    let h_gui = thread::spawn(move || {
+        run_streamed(
+            "host-gui",
+            "bun",
+            &[
+                "run",
+                "tauri",
+                "build",
+                "-c",
+                "{\"build\":{\"beforeBuildCommand\":\"\"}}",
+            ],
+            &[("CARGO_INCREMENTAL", "1")],
+            &lock_gui,
+        )
+    });
+    let rc_cli = h_cli.join().unwrap_or(Ok(101))?;
+    let rc_gui = h_gui.join().unwrap_or(Ok(101))?;
+    if rc_cli != 0 {
+        return Ok(rc_cli);
     }
-    // Windows host: honour SHERPA_ONNX_LIB_DIR from install-sherpa-cuda.ps1
-    // so build.rs links against the CUDA runtime instead of the CPU-only
-    // auto-download.
-    let rc = run_streamed(
-        "host",
-        "cargo",
-        &[
-            "build",
-            "--manifest-path",
-            "src-tauri/Cargo.toml",
-            "--release",
-            "--bin",
-            "wt",
-        ],
-        &[("CARGO_INCREMENTAL", "1")],
-        lock,
-    )?;
-    if rc != 0 {
-        return Ok(rc);
-    }
-    run_streamed(
-        "host",
-        "bun",
-        &[
-            "run",
-            "tauri",
-            "build",
-            "-c",
-            "{\"build\":{\"beforeBuildCommand\":\"\"}}",
-        ],
-        &[("CARGO_INCREMENTAL", "1")],
-        lock,
-    )
+    Ok(rc_gui)
 }
 
 pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i32> {

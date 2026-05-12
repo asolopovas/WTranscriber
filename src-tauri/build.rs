@@ -234,12 +234,6 @@ fn cuda_runtime_root() -> Option<PathBuf> {
             .join(".local")
             .join("share")
             .join(ident::APP_NAME)
-    } else if cfg!(target_os = "macos") {
-        let home = std::env::var_os("HOME")?;
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join(ident::APP_ID)
     } else {
         return None;
     };

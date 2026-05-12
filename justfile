@@ -5,8 +5,6 @@ _sep := if os() == 'windows' { ';' } else { ':' }
 _home := if os() == 'windows' { env_var('USERPROFILE') } else { env_var('HOME') }
 _android_sdk_default := if os() == 'windows' {
     _home / 'AppData' / 'Local' / 'Android' / 'Sdk'
-} else if os() == 'macos' {
-    _home / 'Library' / 'Android' / 'sdk'
 } else {
     _home / 'Android' / 'Sdk'
 }
@@ -20,7 +18,7 @@ export NDK_HOME := _android_ndk
 export ANDROID_NDK := _android_ndk
 export ANDROID_NDK_ROOT := _android_ndk
 export ANDROID_NDK_HOME := _android_ndk
-_libclang_default := if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else if os() == 'linux' { '/usr/lib/x86_64-linux-gnu' } else { '/Library/Developer/CommandLineTools/usr/lib' }
+_libclang_default := if os() == 'windows' { 'C:\Program Files\LLVM\bin' } else { '/usr/lib/x86_64-linux-gnu' }
 _libclang_env := env_var_or_default('LIBCLANG_PATH', '')
 export LIBCLANG_PATH := if _libclang_env == '' { _libclang_default } else { _libclang_env }
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
@@ -43,37 +41,24 @@ install-hooks:
     git config core.hooksPath .githooks
     @echo "git hooks path → .githooks"
 
-[unix, group('setup')]
-bootstrap:
-    {{_run}} --tag bootstrap --idle 120 --max 1800 -- bash scripts/bootstrap-linux.sh
-
 [windows, group('setup')]
 bootstrap:
     {{_run}} --tag bootstrap --idle 120 --max 1800 -- powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-windows.ps1
+    @bun -e "import {mkdirSync,writeFileSync} from 'node:fs'; mkdirSync('tmp',{recursive:true}); writeFileSync('tmp/.bootstrap.stamp', new Date().toISOString())"
+
+# Run full bootstrap only if scripts/bootstrap-windows.ps1 is newer than tmp/.bootstrap.stamp.
+[windows, private]
+bootstrap-if-stale:
+    @bun -e "import {statSync,existsSync} from 'node:fs'; const s='tmp/.bootstrap.stamp'; const src='scripts/bootstrap-windows.ps1'; const stale=!existsSync(s)||statSync(src).mtimeMs>statSync(s).mtimeMs; process.exit(stale?1:0)" || just bootstrap
 
 # ─── develop ──────────────────────────────────────────────────────────────────
 
-# Desktop HMR (Linux/Windows). Vite + tauri dev.
-# Diagnostic env vars are baked in so any renderer crash leaves a real trail:
-#   ulimit -c unlimited → WebKitWebProcess crashes drop a coredump
-#   RUST_BACKTRACE=1    → Rust panics include the backtrace
-#   GST_DEBUG=2         → GStreamer warnings/errors (covers media playback)
-# Renderer JS errors are bridged into the same log via src/utils/error-bridge.ts.
-[unix, group('develop')]
-dev:
-    ulimit -c unlimited; RUST_BACKTRACE=1 GST_DEBUG=2 \
-        {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
-
+# Desktop HMR (Windows). Vite + tauri dev.
 [windows, group('develop')]
 dev:
     $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev
 
 # Desktop HMR with sherpa-static (CPU-only, no CUDA runtime).
-[unix, group('develop')]
-dev-cpu:
-    ulimit -c unlimited; RUST_BACKTRACE=1 GST_DEBUG=2 \
-        {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
-
 [windows, group('develop')]
 dev-cpu:
     $env:RUST_BACKTRACE='1'; {{_run}} --tag dev-cpu --idle 0 --max 0 -- bun run tauri dev -- --no-default-features --features sherpa-static
@@ -96,25 +81,6 @@ preview:
 typecheck:
     {{_run}} --tag typecheck --idle 60 --max 180 -- bun run typecheck
 
-# Pull the latest renderer/main-process crash backtrace plus the dev tail.
-# Reads coredumpctl for wtranscriber + WebKitWebProcess and tails tmp/desktop-app.log.
-[unix, group('develop')]
-diagnose-crash:
-    @echo "─── latest wtranscriber + WebKit coredumps (last 1h) ───"
-    @sudo -n coredumpctl list --since '1h ago' 2>/dev/null \
-        | grep -E 'wtranscriber|WebKitWebProces' | tail -10 \
-        || echo '(no recent coredumps; ensure ulimit -c unlimited — just dev sets it)'
-    @echo
-    @echo "─── stack trace (most recent) ───"
-    @sudo -n coredumpctl info 2>/dev/null | sed -n '1,80p' || echo '(needs sudo)'
-    @echo
-    @echo "─── last 80 lines of tmp/desktop-app.log ───"
-    @tail -80 tmp/desktop-app.log 2>/dev/null || echo '(no dev log)'
-    @echo
-    @echo "─── last 60 lines of wt.log (renderer bridge writes here too) ───"
-    @tail -60 "$(find ~/.local/share/wtranscriber ~/.config/wtranscriber -name wt.log 2>/dev/null | head -1)" 2>/dev/null \
-        || echo '(no wt.log yet)'
-
 # ─── build ────────────────────────────────────────────────────────────────────
 
 # Wipe per-tag build logs (logs/). Runs before every build recipe.
@@ -122,25 +88,15 @@ diagnose-crash:
 clean-logs:
     @bun -e "import {rmSync,mkdirSync} from 'node:fs'; rmSync('logs',{recursive:true,force:true}); mkdirSync('logs',{recursive:true})"
 
-# Full release matrix: host GUI installer + wt CLI + Android APK; auto-detects host.
-[unix, group('build')]
-build: bootstrap clean-logs
+# Full release matrix: Windows host (GUI + CLI) + Linux .deb (Docker) + Android APK (Docker).
+[windows, group('build')]
+build: bootstrap-if-stale clean-logs
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
+# Windows host only: NSIS .exe + wt CLI binary, built in parallel via xtask.
 [windows, group('build')]
-build: bootstrap clean-logs
-    {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
-
-# Current host only: GUI installer (NSIS .exe / .deb / .app) + wt CLI binary.
-[unix, group('build')]
-build-host: bootstrap clean-logs
-    {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
-    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
-
-[windows, group('build')]
-build-host: bootstrap clean-logs
-    {{_run}} --tag build-cli --idle 180 --max 900 -- cargo build --manifest-path src-tauri/Cargo.toml --release --bin wt
-    {{_run}} --tag build-host --idle 600 --max 3600 -- bun run tauri build
+build-host: bootstrap-if-stale clean-logs
+    {{_run}} --tag build-host --idle 600 --max 3600 -- cargo xtask release --dev --no-android --no-deb --no-windows-vm
 
 # Linux .deb built inside the unified debian:12 builder container (glibc 2.36 floor).
 [group('build')]
@@ -319,7 +275,7 @@ clean:
 icons source="src-tauri/icons/icon.png":
     {{_run}} --tag icons --idle 60 --max 300 -- bun run tauri icon {{source}}
 
-# ─── runtime deps (Windows-only: CUDA / cuDNN / NeMo) ─────────────────────────
+# ─── runtime deps (Windows) ───────────────────────────────────────────────────
 
 [windows, group('runtime-deps')]
 cudnn version="9.21.1.3":
@@ -332,14 +288,6 @@ sherpa-cuda version="v1.13.0":
 [windows, group('runtime-deps')]
 nemo-deps:
     {{_run}} --tag nemo-deps --idle 120 --max 1800 -- pwsh.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install-nemo-deps.ps1
-
-# Linux/macOS: provision the NeMo Sortformer Python runtime under
-# ~/.local/share/wtranscriber/python (uv + python-build-standalone +
-# nemo_toolkit[asr]). The desktop app runs this in the background on first
-# launch; this recipe is for manual/CI runs.
-[unix, group('runtime-deps')]
-nemo-deps:
-    {{_run}} --tag nemo-deps --idle 300 --max 3600 -- bash scripts/install-nemo-deps.sh
 
 # ─── release ──────────────────────────────────────────────────────────────────
 

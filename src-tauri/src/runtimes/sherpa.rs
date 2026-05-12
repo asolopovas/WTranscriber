@@ -45,12 +45,6 @@ impl Variant {
                 Self::Cpu => format!("sherpa-onnx-{v}-linux-x64-shared.tar.bz2"),
                 Self::Cuda => format!("sherpa-onnx-{v}-cuda-12.x-cudnn-9.x-linux-x64-gpu.tar.bz2"),
             }
-        } else if cfg!(target_os = "macos") {
-            if cfg!(target_arch = "aarch64") {
-                format!("sherpa-onnx-{v}-osx-arm64-shared.tar.bz2")
-            } else {
-                format!("sherpa-onnx-{v}-osx-x64-shared.tar.bz2")
-            }
         } else {
             return None;
         };

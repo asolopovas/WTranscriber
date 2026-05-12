@@ -92,10 +92,6 @@ fn asset_name() -> Option<String> {
         format!("llama-{b}-bin-ubuntu-x64.tar.gz")
     } else if cfg!(target_os = "linux") && cfg!(target_arch = "aarch64") {
         format!("llama-{b}-bin-ubuntu-arm64.tar.gz")
-    } else if cfg!(target_os = "macos") && cfg!(target_arch = "aarch64") {
-        format!("llama-{b}-bin-macos-arm64.tar.gz")
-    } else if cfg!(target_os = "macos") {
-        format!("llama-{b}-bin-macos-x64.tar.gz")
     } else {
         return None;
     };
