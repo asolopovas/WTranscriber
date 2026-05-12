@@ -33,6 +33,8 @@ export const api = {
     invoke<Transcript>("redo_diarization", { input, oldCacheKey, config }),
   cancelAllTranscribes: () => invoke<number>("cancel_all_transcribes"),
   historyLoad: (key: string) => invoke<Transcript | null>("history_load", { key }),
+  renameSpeaker: (key: string, old: string, name: string) =>
+    invoke<Transcript>("rename_speaker", { key, old, new: name }),
   suggestFilename: (transcript: Transcript) =>
     invoke<Suggestion>("suggest_filename", { transcript }),
   logTail: (maxBytes?: number) => invoke<string>("log_tail", { maxBytes }),

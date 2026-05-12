@@ -283,6 +283,16 @@ async function onRecordingSaved(path: string) {
   error.value = null;
 }
 
+async function onRenameSpeaker(payload: { old: string; name: string }) {
+  const key = selectedEntry.value?.cache_key;
+  if (!key || !transcript.value) return;
+  try {
+    transcript.value = await api.renameSpeaker(key, payload.old, payload.name);
+  } catch (e) {
+    error.value = `rename speaker failed: ${String(e)}`;
+  }
+}
+
 function closeTranscript() {
   transcript.value = null;
   selectedPath.value = "";
@@ -895,7 +905,13 @@ const selectedProgress = computed(() =>
             </div>
           </div>
 
-          <TranscriptPanel v-if="transcript" :transcript="transcript" @close="closeTranscript" />
+          <TranscriptPanel
+            v-if="transcript"
+            :transcript="transcript"
+            :cache-key="selectedEntry?.cache_key ?? null"
+            @close="closeTranscript"
+            @rename-speaker="onRenameSpeaker"
+          />
         </section>
 
         <ConfigPanel

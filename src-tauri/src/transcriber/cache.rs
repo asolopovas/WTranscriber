@@ -126,6 +126,34 @@ pub fn load(key: &str) -> Result<Option<Transcript>> {
     Ok(Some(serde_json::from_str(&raw)?))
 }
 
+pub fn overwrite_transcript(key: &str, transcript: &Transcript) -> Result<()> {
+    let path = transcript_path(key)?;
+    if !path.exists() {
+        return Err(crate::error::Error::Config(format!(
+            "no cached transcript for key {key}"
+        )));
+    }
+    let raw = serde_json::to_vec_pretty(transcript)?;
+    let size_bytes = raw.len() as u64;
+    std::fs::write(&path, &raw)?;
+
+    let _g = INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut entries = load_index();
+    let mut changed = false;
+    for e in &mut entries {
+        if e.key == key {
+            e.size_bytes = size_bytes;
+            changed = true;
+        }
+    }
+    if changed {
+        save_index(&entries)?;
+    }
+    Ok(())
+}
+
 pub fn store(mut entry: Entry, transcript: &Transcript) -> Result<PathBuf> {
     let path = transcript_path(&entry.key)?;
     let raw = serde_json::to_vec_pretty(transcript)?;

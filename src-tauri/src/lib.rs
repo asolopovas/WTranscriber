@@ -156,6 +156,7 @@ pub fn run() {
             commands::audio_files::save_recording,
             commands::audio_files::read_audio_bytes,
             commands::diagnostics::history_load,
+            commands::diagnostics::rename_speaker,
             commands::llm::suggest_filename,
             commands::diagnostics::log_tail,
             commands::diagnostics::log_clear,

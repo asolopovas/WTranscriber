@@ -1,12 +1,44 @@
 <script setup lang="ts">
+import { computed, nextTick, ref } from "vue";
 import type { Transcript } from "@/types";
 import { fmtMs as fmt } from "@utils/format";
 import SlidingPanel from "@components/SlidingPanel.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 
-defineProps<{ transcript: Transcript }>();
-const emit = defineEmits<{ (e: "close"): void }>();
+const props = defineProps<{ transcript: Transcript; cacheKey?: string | null }>();
+const emit = defineEmits<{
+  (e: "close"): void;
+  (e: "rename-speaker", payload: { old: string; name: string }): void;
+}>();
+
+const editing = ref<string | null>(null);
+const draft = ref("");
+const inputRef = ref<HTMLInputElement | null>(null);
+
+const canRename = computed(() => !!props.cacheKey);
+
+async function startEdit(speaker: string) {
+  if (!canRename.value) return;
+  editing.value = speaker;
+  draft.value = speaker;
+  await nextTick();
+  inputRef.value?.focus();
+  inputRef.value?.select();
+}
+
+function commit() {
+  const old = editing.value;
+  editing.value = null;
+  if (!old) return;
+  const name = draft.value.trim();
+  if (!name || name === old) return;
+  emit("rename-speaker", { old, name });
+}
+
+function cancel() {
+  editing.value = null;
+}
 </script>
 
 <template>
@@ -38,8 +70,26 @@ const emit = defineEmits<{ (e: "close"): void }>();
         {{ fmt(u.start_ms) }}
       </span>
       <div class="flex-1 min-w-0">
-        <div v-if="u.speaker" class="font-mono text-labelSmall text-primary mb-unit">
-          {{ u.speaker }}
+        <div v-if="u.speaker" class="mb-unit">
+          <input
+            v-if="editing === u.speaker"
+            ref="inputRef"
+            v-model="draft"
+            class="font-mono text-labelSmall text-primary bg-surface-container-high border border-outline-variant rounded px-unit py-0 outline-none focus:border-primary"
+            @keydown.enter.prevent="commit"
+            @keydown.escape.prevent="cancel"
+            @blur="commit"
+          />
+          <button
+            v-else
+            type="button"
+            class="font-mono text-labelSmall text-primary hover:underline cursor-pointer"
+            :title="canRename ? 'Rename speaker' : ''"
+            :disabled="!canRename"
+            @click="startEdit(u.speaker)"
+          >
+            {{ u.speaker }}
+          </button>
         </div>
         <p
           class="text-bodyMedium text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed"
