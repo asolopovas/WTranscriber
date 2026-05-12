@@ -6,6 +6,22 @@ use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
+fn cargo_incremental_value() -> &'static str {
+    let sccache_active = std::env::var("RUSTC_WRAPPER")
+        .ok()
+        .map(|v| v.contains("sccache"))
+        .unwrap_or(false)
+        || std::env::var("CMAKE_C_COMPILER_LAUNCHER")
+            .ok()
+            .map(|v| v.contains("sccache"))
+            .unwrap_or(false)
+        || std::env::var("CMAKE_CXX_COMPILER_LAUNCHER")
+            .ok()
+            .map(|v| v.contains("sccache"))
+            .unwrap_or(false);
+    if sccache_active { "0" } else { "1" }
+}
+
 // Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
 //
 // Both invocations share `src-tauri/target/release`. Cargo's per-crate file
@@ -21,6 +37,7 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     }
     let lock_cli = lock.clone();
     let lock_gui = lock.clone();
+    let incr = cargo_incremental_value();
     let h_cli = thread::spawn(move || {
         run_streamed(
             "host-cli",
@@ -33,7 +50,7 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
                 "--bin",
                 "wt",
             ],
-            &[("CARGO_INCREMENTAL", "1")],
+            &[("CARGO_INCREMENTAL", incr)],
             &lock_cli,
         )
     });
@@ -48,7 +65,7 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
                 "-c",
                 "{\"build\":{\"beforeBuildCommand\":\"\"}}",
             ],
-            &[("CARGO_INCREMENTAL", "1")],
+            &[("CARGO_INCREMENTAL", incr)],
             &lock_gui,
         )
     });
@@ -71,8 +88,10 @@ pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i
             return Ok(rc);
         }
         ensure_dev_keystore_properties(dev)?;
-        let mut env_vars: Vec<(&str, &str)> =
-            vec![("CARGO_INCREMENTAL", "1"), ("WT_SKIP_FRONTEND", "1")];
+        let mut env_vars: Vec<(&str, &str)> = vec![
+            ("CARGO_INCREMENTAL", cargo_incremental_value()),
+            ("WT_SKIP_FRONTEND", "1"),
+        ];
         if dev {
             env_vars.push(("WT_DEV_APK", "1"));
         }
