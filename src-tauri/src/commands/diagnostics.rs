@@ -69,18 +69,7 @@ pub fn rename_speaker(key: String, old: String, new: String) -> Result<Transcrip
     let mut transcript = transcriber::cache::load(&key)?.ok_or_else(|| {
         crate::error::Error::Config(format!("no cached transcript for key {key}"))
     })?;
-    let mut hits = 0_usize;
-    for u in &mut transcript.utterances {
-        if u.speaker.as_deref() == Some(old.as_str()) {
-            u.speaker = Some(new.clone());
-            hits += 1;
-        }
-    }
-    for w in &mut transcript.words {
-        if w.speaker.as_deref() == Some(old.as_str()) {
-            w.speaker = Some(new.clone());
-        }
-    }
+    let hits = transcript.rename_speaker(&old, &new);
     transcriber::cache::overwrite_transcript(&key, &transcript)?;
     logfile::info(&format!(
         "rename_speaker '{old}' -> '{new}' ({hits} utterances) [{key}]"

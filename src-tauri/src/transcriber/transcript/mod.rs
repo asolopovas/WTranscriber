@@ -78,6 +78,24 @@ pub struct Segment {
 
 pub use diarizer::Segment as DiarSegment;
 
+impl Transcript {
+    pub fn rename_speaker(&mut self, old: &str, new: &str) -> usize {
+        let mut hits = 0_usize;
+        for u in &mut self.utterances {
+            if u.speaker.as_deref() == Some(old) {
+                u.speaker = Some(new.to_owned());
+                hits += 1;
+            }
+        }
+        for w in &mut self.words {
+            if w.speaker.as_deref() == Some(old) {
+                w.speaker = Some(new.to_owned());
+            }
+        }
+        hits
+    }
+}
+
 pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Transcript {
     let mut hint: Option<u32> = None;
     let mut labels: HashMap<u32, String> = HashMap::new();
@@ -441,5 +459,79 @@ mod tests {
         assert_eq!(t.speakers_detected, 2);
         assert_eq!(t.words[0].speaker.as_deref(), Some("SPEAKER_01"));
         assert_eq!(t.words[1].speaker.as_deref(), Some("SPEAKER_02"));
+    }
+
+    fn utt(speaker: Option<&str>, text: &str) -> Utterance {
+        Utterance {
+            start_ms: 0,
+            end_ms: 0,
+            speaker: speaker.map(str::to_owned),
+            text: text.into(),
+            language: None,
+        }
+    }
+
+    fn wrd(speaker: Option<&str>, text: &str) -> Word {
+        Word {
+            text: text.into(),
+            start_ms: 0,
+            end_ms: 0,
+            speaker: speaker.map(str::to_owned),
+            confidence: 1.0,
+        }
+    }
+
+    fn transcript_with(utterances: Vec<Utterance>, words: Vec<Word>) -> Transcript {
+        Transcript {
+            model: "m".into(),
+            language: "en".into(),
+            duration_ms: 0,
+            diarizer: None,
+            device: None,
+            speakers_detected: 0,
+            utterances,
+            words,
+        }
+    }
+
+    #[test]
+    fn rename_speaker_relabels_utterances_and_words() {
+        let mut t = transcript_with(
+            vec![
+                utt(Some("SPEAKER_01"), "hi"),
+                utt(Some("SPEAKER_02"), "hello"),
+                utt(Some("SPEAKER_01"), "again"),
+            ],
+            vec![
+                wrd(Some("SPEAKER_01"), "hi"),
+                wrd(Some("SPEAKER_02"), "hello"),
+            ],
+        );
+        let hits = t.rename_speaker("SPEAKER_01", "Alice");
+        assert_eq!(hits, 2);
+        assert_eq!(t.utterances[0].speaker.as_deref(), Some("Alice"));
+        assert_eq!(t.utterances[1].speaker.as_deref(), Some("SPEAKER_02"));
+        assert_eq!(t.utterances[2].speaker.as_deref(), Some("Alice"));
+        assert_eq!(t.words[0].speaker.as_deref(), Some("Alice"));
+        assert_eq!(t.words[1].speaker.as_deref(), Some("SPEAKER_02"));
+    }
+
+    #[test]
+    fn rename_speaker_no_match_returns_zero() {
+        let mut t = transcript_with(vec![utt(Some("A"), "x")], vec![wrd(Some("A"), "x")]);
+        assert_eq!(t.rename_speaker("missing", "B"), 0);
+        assert_eq!(t.utterances[0].speaker.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn rename_speaker_ignores_none_speaker() {
+        let mut t = transcript_with(
+            vec![utt(None, "x"), utt(Some("A"), "y")],
+            vec![wrd(None, "x")],
+        );
+        assert_eq!(t.rename_speaker("A", "B"), 1);
+        assert!(t.utterances[0].speaker.is_none());
+        assert_eq!(t.utterances[1].speaker.as_deref(), Some("B"));
+        assert!(t.words[0].speaker.is_none());
     }
 }

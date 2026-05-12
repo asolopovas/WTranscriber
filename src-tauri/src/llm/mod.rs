@@ -7,8 +7,8 @@ use crate::{
     config::Config,
     error::{Error, Result},
     models::{Family, by_family, by_id, paths_for},
-    paths,
     process::{find_executable, quiet_command},
+    runtimes::ensure_cache_subdir,
 };
 
 #[derive(Debug, Clone)]
@@ -175,8 +175,7 @@ impl Runner {
 }
 
 fn write_temp(prefix: &str, suffix: &str, content: &str) -> Result<PathBuf> {
-    let dir = paths::cache_dir()?.join("llm");
-    std::fs::create_dir_all(&dir)?;
+    let dir = ensure_cache_subdir("llm")?;
     let path = dir.join(format!(
         "{prefix}{}-{}{suffix}",
         std::process::id(),

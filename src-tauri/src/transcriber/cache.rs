@@ -11,6 +11,16 @@ use crate::{error::Result, paths, transcriber::Transcript};
 
 static INDEX_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+fn lock_index() -> std::sync::MutexGuard<'static, ()> {
+    INDEX_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn absolute_or_clone(p: &Path) -> PathBuf {
+    std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     pub key: String,
@@ -137,9 +147,7 @@ pub fn overwrite_transcript(key: &str, transcript: &Transcript) -> Result<()> {
     let size_bytes = raw.len() as u64;
     std::fs::write(&path, &raw)?;
 
-    let _g = INDEX_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _g = lock_index();
     let mut entries = load_index();
     let mut changed = false;
     for e in &mut entries {
@@ -160,9 +168,7 @@ pub fn store(mut entry: Entry, transcript: &Transcript) -> Result<PathBuf> {
     entry.size_bytes = raw.len() as u64;
     std::fs::write(&path, &raw)?;
 
-    let _g = INDEX_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _g = lock_index();
     let mut entries: Vec<Entry> = load_index()
         .into_iter()
         .filter(|e| e.key != entry.key)
@@ -180,15 +186,13 @@ pub fn list() -> Vec<Entry> {
 }
 
 pub fn rename_source(old_path: &Path, new_path: &Path) -> Result<()> {
-    let old_abs = std::path::absolute(old_path).unwrap_or_else(|_| old_path.to_path_buf());
-    let new_abs = std::path::absolute(new_path).unwrap_or_else(|_| new_path.to_path_buf());
+    let old_abs = absolute_or_clone(old_path);
+    let new_abs = absolute_or_clone(new_path);
     let new_name = new_path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let _g = INDEX_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _g = lock_index();
     let mut entries = load_index();
     let mut changed = false;
     for e in &mut entries {
@@ -211,19 +215,15 @@ pub fn invalidate(key: &str) -> Result<()> {
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
-    let _g = INDEX_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _g = lock_index();
     let entries: Vec<Entry> = load_index().into_iter().filter(|e| e.key != key).collect();
     save_index(&entries)?;
     Ok(())
 }
 
 pub fn invalidate_for_source(source: &Path) -> Result<usize> {
-    let abs = std::path::absolute(source).unwrap_or_else(|_| source.to_path_buf());
-    let _g = INDEX_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let abs = absolute_or_clone(source);
+    let _g = lock_index();
     let mut removed = 0_usize;
     let mut keep: Vec<Entry> = Vec::new();
     for e in load_index() {

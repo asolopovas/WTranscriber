@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
-    runtimes::extract,
+    runtimes::{ensure_cache_subdir, extract},
 };
 
 pub const VERSION: &str = "9.21.1.3";
@@ -116,8 +116,7 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
     let url = url().ok_or_else(|| Error::Config("cuDNN url unavailable".into()))?;
     let asset = asset_name().expect("asset_name is Some when url() is Some");
 
-    let cache = paths::cache_dir()?.join("cudnn");
-    std::fs::create_dir_all(&cache)?;
+    let cache = ensure_cache_subdir("cudnn")?;
     let archive = cache.join(&asset);
 
     if !archive.exists() {
