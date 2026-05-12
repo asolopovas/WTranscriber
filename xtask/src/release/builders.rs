@@ -263,6 +263,16 @@ fn build_android_in_docker(dev: bool, lock: &SharedOut) -> Result<i32> {
         r#"
 set -euo pipefail
 unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR || true
+KS=/work/src-tauri/gen/android/debug.keystore
+KP=/work/src-tauri/gen/android/keystore.properties
+if [[ ! -f "$KS" ]]; then
+  keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
+    -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+    -dname 'CN=Android Debug, O=Android, C=US' >/dev/null
+fi
+if [[ ! -f "$KP" ]]; then
+  printf 'storeFile=%s\nstorePassword=android\nkeyAlias=androiddebugkey\nkeyPassword=android\n' "$KS" > "$KP"
+fi
 bun install --frozen-lockfile --no-progress 2>&1 | tail -5
 {dev_env} WT_SKIP_FRONTEND=1 cargo run --manifest-path xtask/Cargo.toml --quiet -- android build --target aarch64
 "#
