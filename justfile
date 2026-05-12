@@ -49,7 +49,7 @@ bootstrap:
 # Run full bootstrap only if scripts/bootstrap-windows.ps1 is newer than tmp/.bootstrap.stamp.
 [windows, private]
 bootstrap-if-stale:
-    @bun -e "import {statSync,existsSync} from 'node:fs'; const s='tmp/.bootstrap.stamp'; const src='scripts/bootstrap-windows.ps1'; const stale=!existsSync(s)||statSync(src).mtimeMs>statSync(s).mtimeMs; process.exit(stale?1:0)" || just bootstrap
+    @bun -e "import {statSync,existsSync} from 'node:fs'; const s='tmp/.bootstrap.stamp'; const src='scripts/bootstrap-windows.ps1'; const stale=!existsSync(s)||statSync(src).mtimeMs>statSync(s).mtimeMs; process.exit(stale?1:0)"; if ($LASTEXITCODE -ne 0) { just bootstrap }
 
 # ─── develop ──────────────────────────────────────────────────────────────────
 
