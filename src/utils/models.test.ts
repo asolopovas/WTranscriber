@@ -84,6 +84,7 @@ describe("model helpers", () => {
   });
 
   it("maps diarizer choices to model ids", () => {
+    expect(modelIdForDiarizer("sortformer-onnx")).toBe("sortformer-v2-onnx-4spk");
     expect(modelIdForDiarizer("nemo")).toBe("nemo-sortformer-v2");
     expect(modelIdForDiarizer("titanet")).toBe("sherpa-pyannote-titanet");
   });

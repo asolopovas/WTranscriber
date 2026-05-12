@@ -3,6 +3,7 @@ import type { Config, DiarizerChoice, Engine, Family, ModelInfo, SystemInfo } fr
 const ENGINES = new Set<string>(["whisper-onnx", "zipformer", "parakeet", "canary", "nemo-ctc"]);
 
 export const DIARIZER_BY_MODEL_ID: Record<string, DiarizerChoice> = {
+  "sortformer-v2-onnx-4spk": "sortformer-onnx",
   "nemo-sortformer-v2": "nemo",
   "sherpa-pyannote-titanet": "titanet",
 };
