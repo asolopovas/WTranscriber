@@ -316,5 +316,73 @@ fn prewarm() -> Result<()> {
     if rc != 0 {
         bail!("cargo fetch failed (exit {rc})");
     }
+    patch_whisper_rs_sys()?;
     Ok(())
+}
+
+/// Patch whisper-rs-sys 0.15.0 in the cargo registry so its build.rs gates
+/// `/utf-8` on the *target* being Windows MSVC, not the *host*. Upstream
+/// hardcodes `cfg!(target_os = "windows")`, which injects `/utf-8` into
+/// CXXFLAGS for any build run on a Windows host — breaking the Android
+/// cross-build because NDK clang treats `/utf-8` as a path.
+///
+/// Idempotent: detects already-patched files and skips.
+fn patch_whisper_rs_sys() -> Result<()> {
+    let home = dirs_home();
+    let Some(home) = home else { return Ok(()) };
+    let src_root = home.join(".cargo").join("registry").join("src");
+    let Ok(entries) = fs::read_dir(&src_root) else {
+        return Ok(());
+    };
+    let needle = "if cfg!(target_os = \"windows\") {\n        config.cxxflag(\"/utf-8\");";
+    let patched_marker = "// wtranscriber-patched: target-aware /utf-8";
+    let replacement = "{\n        let target = std::env::var(\"TARGET\").unwrap_or_default();\n        if target.contains(\"windows\") && target.contains(\"msvc\") {\n            config.cxxflag(\"/utf-8\");\n        }\n        if target.contains(\"windows\") {\n            println!(\"cargo:rustc-link-lib=advapi32\");\n        }\n    } // wtranscriber-patched: target-aware /utf-8\n    if false {\n        config.cxxflag(\"/utf-8\");";
+    let mut patched_any = false;
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let build_rs = p.join("whisper-rs-sys-0.15.0").join("build.rs");
+        if !build_rs.exists() {
+            continue;
+        }
+        let body = fs::read_to_string(&build_rs)?;
+        if body.contains(patched_marker) {
+            continue;
+        }
+        let Some(idx) = body.find(needle) else {
+            continue;
+        };
+        let mut new_body = String::with_capacity(body.len() + replacement.len());
+        new_body.push_str(&body[..idx]);
+        new_body.push_str("if cfg!(target_os = \"windows\") ");
+        new_body.push_str(replacement);
+        new_body.push_str(&body[idx + needle.len()..]);
+        fs::write(&build_rs, new_body)?;
+        println!(
+            "→ patched {} (gating /utf-8 on target, not host)",
+            build_rs.display()
+        );
+        patched_any = true;
+    }
+    if !patched_any {
+        // Either already patched on every checkout, or the crate isn't in
+        // registry yet (cargo fetch didn't extract). Either way: not fatal.
+    }
+    Ok(())
+}
+
+fn dirs_home() -> Option<PathBuf> {
+    if let Ok(v) = std::env::var("HOME") {
+        if !v.is_empty() {
+            return Some(PathBuf::from(v));
+        }
+    }
+    if let Ok(v) = std::env::var("USERPROFILE") {
+        if !v.is_empty() {
+            return Some(PathBuf::from(v));
+        }
+    }
+    None
 }
