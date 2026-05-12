@@ -457,6 +457,10 @@ async function runTranscribe(entry?: DirEntry) {
     transcript.value = await api.transcribeFile(target.path, config.value);
     status.value = "idle";
     await refreshListing();
+    if (config.value.auto_rename) {
+      const renamed = audioEntries.value.find((e) => e.path === target.path) ?? target;
+      await autoRename(renamed, { silent: true });
+    }
   } catch (e) {
     const msg = String(e);
     if (msg.includes("cancelled")) {
@@ -543,7 +547,7 @@ async function bulkTranscribe() {
 }
 
 const autoRenamingPath = ref<string | null>(null);
-async function autoRename(entry?: DirEntry) {
+async function autoRename(entry?: DirEntry, opts?: { silent?: boolean }) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio || autoRenamingPath.value) return;
   autoRenamingPath.value = target.path;
@@ -551,10 +555,12 @@ async function autoRename(entry?: DirEntry) {
     let t = transcript.value;
     if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
     if (!t) {
-      await message("Transcribe first to enable auto-rename.", {
-        title: "Auto-rename",
-        kind: "info",
-      });
+      if (!opts?.silent) {
+        await message("Transcribe first to enable auto-rename.", {
+          title: "Auto-rename",
+          kind: "info",
+        });
+      }
       return;
     }
     status.value = "renaming";
@@ -562,10 +568,12 @@ async function autoRename(entry?: DirEntry) {
       const s = await api.suggestFilename(t);
       const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
       const suggestion = `${s.topic}_${s.stamp}${ext ? "." + ext : ""}`;
-      const ok = await withDialog(() =>
-        confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
-      );
-      if (!ok) return;
+      if (!opts?.silent) {
+        const ok = await withDialog(() =>
+          confirm(`Rename to:\n\n${suggestion}`, { title: "Auto-rename", okLabel: "Rename" }),
+        );
+        if (!ok) return;
+      }
       const newPath = await api.renameFile(target.path, suggestion);
       selectedPath.value = newPath;
       await refreshListing();
@@ -668,6 +676,10 @@ async function commitRedoDiarize() {
     transcript.value = await api.redoDiarization(target.path, target.cache_key, overrideConfig);
     status.value = "idle";
     await refreshListing();
+    if (config.value.auto_rename) {
+      const renamed = audioEntries.value.find((e) => e.path === target.path) ?? target;
+      await autoRename(renamed, { silent: true });
+    }
   } catch (e) {
     error.value = `Re-diarize failed: ${String(e)}`;
     status.value = "error";
