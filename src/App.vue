@@ -614,6 +614,16 @@ async function commitRename() {
   }
 }
 
+async function revealEntry(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  try {
+    await api.revealInFolder(target.path);
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 async function deleteEntry(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
@@ -910,6 +920,7 @@ const selectedProgress = computed(() =>
                   @share="onShare"
                   @export="openExport"
                   @redo-diarize="openRedoDiarize"
+                  @reveal="revealEntry"
                   @delete="deleteEntry"
                   :selected-paths="selectedPaths"
                   @toggle-select="toggleSelect"

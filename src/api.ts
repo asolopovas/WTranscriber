@@ -48,6 +48,7 @@ export const api = {
   renameFile: (source: string, newName: string) =>
     invoke<string>("rename_file", { source, newName }),
   deleteFile: (path: string) => invoke<void>("delete_file", { path }),
+  revealInFolder: (path: string) => invoke<void>("reveal_in_folder", { path }),
   formatTranscript: (transcript: Transcript, format: ExportFormat) =>
     invoke<string>("format_transcript", { transcript, format }),
   shareTranscript: (title: string, text: string) =>

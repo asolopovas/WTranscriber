@@ -55,19 +55,25 @@ describe("prettyName", () => {
   it("extracts a 4-digit ISO timestamp suffix", () => {
     const out = prettyName("meeting_2025-04-12T09-30-00.wav");
     expect(out.display).toBe("meeting");
-    expect(out.timestamp).toBe("25-Apr-12 09:30");
+    expect(out.timestamp).toBe("250412_093000");
   });
 
   it("extracts a compact 4-digit timestamp suffix", () => {
     const out = prettyName("call_20250101_153045.flac");
     expect(out.display).toBe("call");
-    expect(out.timestamp).toBe("25-Jan-01 15:30");
+    expect(out.timestamp).toBe("250101_153045");
   });
 
   it("extracts a 2-digit timestamp suffix", () => {
     const out = prettyName("memo_250607_142233.mp3");
     expect(out.display).toBe("memo");
-    expect(out.timestamp).toBe("25-Jun-07 14:22");
+    expect(out.timestamp).toBe("250607_142233");
+  });
+
+  it("extracts a timestamp embedded mid-name and preserves surrounding text", () => {
+    const out = prettyName("260501_094242_team_sync.mp3");
+    expect(out.display).toBe("team_sync");
+    expect(out.timestamp).toBe("260501_094242");
   });
 
   it("returns null timestamp when no pattern matches", () => {

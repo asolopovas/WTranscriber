@@ -148,6 +148,7 @@ pub fn run() {
             commands::transcribe::cancel_all_transcribes,
             commands::files::rename_file,
             commands::files::delete_file,
+            commands::files::reveal_in_folder,
             commands::files::format_transcript,
             commands::files::share_transcript,
             commands::audio_files::probe_duration,

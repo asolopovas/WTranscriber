@@ -98,6 +98,48 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
 }
 
 #[tauri::command]
+pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
+    if !path.exists() {
+        return Err(Error::Config(format!(
+            "path does not exist: {}",
+            path.display()
+        )));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .spawn()
+            .map_err(|e| Error::Config(format!("explorer failed: {e}")))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| Error::Config(format!("open -R failed: {e}")))?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    {
+        let parent = path
+            .parent()
+            .ok_or_else(|| Error::Config("no parent directory".into()))?;
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| Error::Config(format!("xdg-open failed: {e}")))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "android")]
+    {
+        Err(Error::Config("reveal not supported on android".into()))
+    }
+}
+
+#[tauri::command]
 pub fn delete_file(path: PathBuf) -> Result<()> {
     if !path.exists() {
         return Ok(());

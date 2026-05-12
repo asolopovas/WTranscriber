@@ -43,6 +43,7 @@ const emit = defineEmits<{
   (e: "share", entry: DirEntry): void;
   (e: "export", entry: DirEntry): void;
   (e: "redo-diarize", entry: DirEntry): void;
+  (e: "reveal", entry: DirEntry): void;
   (e: "delete", entry: DirEntry): void;
   (e: "toggle-select", path: string): void;
   (e: "range-select", path: string): void;
@@ -237,6 +238,15 @@ defineExpose({
                 "
               >
                 Rename
+              </MenuItem>
+              <MenuItem
+                icon="folder_open"
+                @click="
+                  openMenuPath = null;
+                  emit('reveal', entry);
+                "
+              >
+                Open containing folder
               </MenuItem>
               <MenuItem
                 icon="delete"

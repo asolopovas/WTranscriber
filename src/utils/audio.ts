@@ -87,12 +87,10 @@ export function decodeName(name: string): string {
   }
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 const NAME_PATTERNS: { re: RegExp; full4: boolean }[] = [
-  { re: /[-_](\d{4})-(\d{2})-(\d{2})[-_T](\d{2})-(\d{2})-(\d{2})$/, full4: true },
-  { re: /[-_](\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: true },
-  { re: /[-_](\d{2})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})$/, full4: false },
+  { re: /(?:^|[-_\s])(\d{4})-(\d{2})-(\d{2})[-_T\s](\d{2})-(\d{2})-(\d{2})/, full4: true },
+  { re: /(?:^|[-_\s])(\d{4})(\d{2})(\d{2})[-_\s](\d{2})(\d{2})(\d{2})/, full4: true },
+  { re: /(?:^|[-_\s])(\d{2})(\d{2})(\d{2})[-_\s](\d{2})(\d{2})(\d{2})/, full4: false },
 ];
 
 export function prettyName(name: string): { display: string; timestamp: string | null } {
@@ -101,12 +99,12 @@ export function prettyName(name: string): { display: string; timestamp: string |
   for (const { re, full4 } of NAME_PATTERNS) {
     const m = noExt.match(re);
     if (m && m.index !== undefined) {
-      const display = noExt.slice(0, m.index);
-      const [, a, b, c, d, e] = m;
+      const before = noExt.slice(0, m.index).replace(/[-_\s]+$/, "");
+      const after = noExt.slice(m.index + m[0].length).replace(/^[-_\s]+/, "");
+      const display = [before, after].filter(Boolean).join(" ") || noExt;
+      const [, a, b, c, d, e, f] = m;
       const yy = full4 ? a.slice(2) : a;
-      const mi = parseInt(b, 10) - 1;
-      const mon = mi >= 0 && mi < 12 ? MONTHS[mi] : b;
-      return { display: display || noExt, timestamp: `${yy}-${mon}-${c} ${d}:${e}` };
+      return { display, timestamp: `${yy}${b}${c}_${d}${e}${f}` };
     }
   }
   return { display: noExt, timestamp: null };
