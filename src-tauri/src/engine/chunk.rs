@@ -11,14 +11,14 @@ use std::path::Path;
 
 use crate::{
     audio::{WHISPER_SAMPLE_RATE, write_pcm16_wav},
+    constants::{
+        CHUNK_BOUNDARY_MIN_ADVANCE_SEC as BOUNDARY_MIN_ADVANCE_SEC,
+        CHUNK_BOUNDARY_SEARCH_SEC as BOUNDARY_SEARCH_SEC,
+        CHUNK_BOUNDARY_WINDOW_SEC as BOUNDARY_WINDOW_SEC, CHUNK_DEFAULT_SEC as DEFAULT_CHUNK_SEC,
+    },
     error::Result,
     transcriber::{Segment, Token},
 };
-
-const DEFAULT_CHUNK_SEC: f64 = 600.0;
-const BOUNDARY_SEARCH_SEC: f64 = 2.0;
-const BOUNDARY_WINDOW_SEC: f64 = 0.2;
-const BOUNDARY_MIN_ADVANCE_SEC: f64 = 0.5;
 
 #[derive(Debug, Clone)]
 pub struct Chunk<'a> {

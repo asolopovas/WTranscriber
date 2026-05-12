@@ -29,7 +29,25 @@ pub const ANDROID_SDCARD_FALLBACK: &str = "/sdcard";
 
 pub const DEFAULT_SAMPLE_RATE: u32 = 16_000;
 
+pub const DEFAULT_THREADS: u32 = 4;
+
 pub const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 pub const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 pub const DOWNLOAD_MAX_READ_RETRIES: u32 = 8;
 pub const DOWNLOAD_MAX_DIAL_RETRIES: u32 = 30;
+pub const DOWNLOAD_BACKOFF_MAX: Duration = Duration::from_secs(15);
+
+pub const LOG_FILE_MAX_BYTES: u64 = 5 * 1024 * 1024;
+pub const LOG_TAIL_DEFAULT_BYTES: u64 = 256 * 1024;
+
+pub const CHUNK_DEFAULT_SEC: f64 = 600.0;
+pub const CHUNK_BOUNDARY_SEARCH_SEC: f64 = 2.0;
+pub const CHUNK_BOUNDARY_WINDOW_SEC: f64 = 0.2;
+pub const CHUNK_BOUNDARY_MIN_ADVANCE_SEC: f64 = 0.5;
+
+pub const DIARIZER_CLUSTER_THRESHOLD: f32 = 0.5;
+pub const DIARIZER_MIN_SPEECH_SEC: f32 = 0.2;
+pub const DIARIZER_MIN_SILENCE_SEC: f32 = 0.2;
+
+pub const LANG_ID_PROBE_SECONDS: usize = 3;
+pub const LANG_ID_VAD_SCAN_SECONDS: usize = 60;

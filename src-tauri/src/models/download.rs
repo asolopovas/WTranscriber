@@ -152,7 +152,8 @@ pub async fn download_file(
 }
 
 fn backoff(attempt: u32) -> Duration {
-    Duration::from_secs(u64::from(attempt.saturating_mul(2))).min(Duration::from_secs(15))
+    Duration::from_secs(u64::from(attempt.saturating_mul(2)))
+        .min(crate::constants::DOWNLOAD_BACKOFF_MAX)
 }
 
 async fn verify_sha256(path: &Path, expected: &str) -> Result<()> {

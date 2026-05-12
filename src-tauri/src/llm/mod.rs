@@ -81,10 +81,13 @@ fn preferred_llm() -> Option<PathBuf> {
 fn default_threads() -> u32 {
     u32::try_from(
         std::thread::available_parallelism()
-            .map_or(4, std::num::NonZero::get)
+            .map_or(
+                crate::constants::DEFAULT_THREADS as usize,
+                std::num::NonZero::get,
+            )
             .min(6),
     )
-    .unwrap_or(4)
+    .unwrap_or(crate::constants::DEFAULT_THREADS)
 }
 
 impl Runner {

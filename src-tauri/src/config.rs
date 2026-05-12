@@ -240,8 +240,11 @@ impl Config {
 }
 
 fn num_threads() -> u32 {
-    u32::try_from(std::thread::available_parallelism().map_or(4, std::num::NonZero::get))
-        .unwrap_or(4)
+    u32::try_from(
+        std::thread::available_parallelism()
+            .map_or(constants::DEFAULT_THREADS as usize, std::num::NonZero::get),
+    )
+    .unwrap_or(constants::DEFAULT_THREADS)
 }
 
 const fn default_device() -> Device {

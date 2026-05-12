@@ -170,5 +170,8 @@ pub fn run() {
             android::disable_persistent_storage,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            logfile::error(&format!("tauri run failed: {e}"));
+            std::process::exit(1);
+        });
 }

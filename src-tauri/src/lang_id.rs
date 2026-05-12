@@ -20,11 +20,9 @@ use crate::{
 
 const MODEL_ID: &str = "silero-lang95-onnx";
 const SAMPLE_RATE: u32 = 16_000;
-/// Use ~3 s of voiced audio for the probe; Silero needs at least ~1.5 s.
-const PROBE_SECONDS: usize = 3;
-/// Cap the audio we ever scan when looking for voiced frames so a long
-/// silent intro never makes us load megabytes of samples for nothing.
-const VAD_SCAN_SECONDS: usize = 60;
+use crate::constants::{
+    LANG_ID_PROBE_SECONDS as PROBE_SECONDS, LANG_ID_VAD_SCAN_SECONDS as VAD_SCAN_SECONDS,
+};
 
 static SESSION: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
 

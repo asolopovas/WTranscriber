@@ -35,7 +35,7 @@ pub fn log_renderer(
 
 #[tauri::command]
 pub fn log_tail(max_bytes: Option<u64>) -> String {
-    logfile::read_tail(max_bytes.unwrap_or(256 * 1024))
+    logfile::read_tail(max_bytes.unwrap_or(crate::constants::LOG_TAIL_DEFAULT_BYTES))
 }
 
 #[tauri::command]

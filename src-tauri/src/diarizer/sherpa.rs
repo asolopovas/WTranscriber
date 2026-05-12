@@ -44,8 +44,13 @@ fn resolve_models(emb_rel: &str) -> Result<(PathBuf, PathBuf)> {
 }
 
 fn diarizer_threads() -> i32 {
-    let n = std::thread::available_parallelism().map_or(4, std::num::NonZero::get) / 2;
-    i32::try_from(n).unwrap_or(4).clamp(2, 8)
+    let n = std::thread::available_parallelism().map_or(
+        crate::constants::DEFAULT_THREADS as usize,
+        std::num::NonZero::get,
+    ) / 2;
+    i32::try_from(n)
+        .unwrap_or_else(|_| i32::try_from(crate::constants::DEFAULT_THREADS).unwrap_or(4))
+        .clamp(2, 8)
 }
 
 impl SherpaDiarizer {
@@ -102,10 +107,10 @@ impl Backend for SherpaDiarizer {
             },
             clustering: FastClusteringConfig {
                 num_clusters: n_clusters,
-                threshold: 0.5,
+                threshold: crate::constants::DIARIZER_CLUSTER_THRESHOLD,
             },
-            min_duration_on: 0.2,
-            min_duration_off: 0.2,
+            min_duration_on: crate::constants::DIARIZER_MIN_SPEECH_SEC,
+            min_duration_off: crate::constants::DIARIZER_MIN_SILENCE_SEC,
         };
 
         let sd = OfflineSpeakerDiarization::create(&config)

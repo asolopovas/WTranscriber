@@ -7,9 +7,9 @@ use std::{
 
 use chrono::Local;
 
-use crate::{error::Result, fs_utils, paths};
+use crate::{constants, error::Result, fs_utils, paths};
 
-const MAX_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_BYTES: u64 = constants::LOG_FILE_MAX_BYTES;
 const MAX_BACKUPS: usize = 48;
 
 static LOG: Mutex<Option<File>> = Mutex::new(None);
