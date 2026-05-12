@@ -7,15 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     error::{Error, Result},
-    paths,
     process::quiet_command,
 };
-
-pub fn ensure_cache_subdir(name: &str) -> Result<PathBuf> {
-    let dir = paths::cache_dir()?.join(name);
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
-}
 
 pub use cudnn::{
     ensure as ensure_cudnn, is_installed as cudnn_installed, supported as cudnn_supported,

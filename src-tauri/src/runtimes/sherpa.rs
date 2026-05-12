@@ -5,7 +5,7 @@ use crate::{
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
-    runtimes::{ensure_cache_subdir, extract, locate_bin_dir, move_or_copy_dir},
+    runtimes::{extract, locate_bin_dir, move_or_copy_dir},
 };
 
 pub const VERSION: &str = include_str!("../../sherpa-version.txt").trim_ascii_end();
@@ -122,7 +122,7 @@ pub async fn ensure(
         .asset_name()
         .expect("asset_name is Some when url() is Some");
 
-    let cache = ensure_cache_subdir("sherpa-onnx")?;
+    let cache = paths::cache_subdir("sherpa-onnx")?;
     let tarball = cache.join(&asset);
 
     if !tarball.exists() {

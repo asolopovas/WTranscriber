@@ -4,7 +4,7 @@ use crate::{
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
-    runtimes::{ensure_cache_subdir, extract, locate_bin_dir, move_or_copy_dir},
+    runtimes::{extract, locate_bin_dir, move_or_copy_dir},
 };
 
 pub const BUILD: &str = "b9045";
@@ -117,7 +117,7 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
     let url = url().ok_or_else(|| Error::Config("no llama.cpp asset for this platform".into()))?;
     let asset = asset_name().expect("asset_name is Some when url() is Some");
 
-    let cache = ensure_cache_subdir("llama.cpp")?;
+    let cache = paths::cache_subdir("llama.cpp")?;
     let archive = cache.join(&asset);
 
     if !archive.exists() {

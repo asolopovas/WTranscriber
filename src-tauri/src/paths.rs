@@ -141,6 +141,12 @@ pub fn cache_dir() -> Result<PathBuf> {
     Ok(d)
 }
 
+pub fn cache_subdir(name: &str) -> Result<PathBuf> {
+    let d = cache_dir()?.join(name);
+    std::fs::create_dir_all(&d)?;
+    Ok(d)
+}
+
 pub fn config_file() -> Result<PathBuf> {
     if let Ok(g) = CONFIG_FILE_OVERRIDE.read()
         && let Some(p) = g.as_ref()
