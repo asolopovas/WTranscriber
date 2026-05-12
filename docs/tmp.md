@@ -14,17 +14,20 @@ Two separate scratch directories:
 
 ## Inventory
 
-| Path                      | Writer                          | Reader                            | Lifetime                    |
-| ------------------------- | ------------------------------- | --------------------------------- | --------------------------- |
-| `tmp/_pids.json`          | `cargo xtask android bootstrap` | `android-status`, agents, humans  | Live Android session        |
-| `tmp/_platform`           | `android bootstrap`             | `android-status`, `wt-diagnose`   | Live Android session        |
-| `tmp/logcat.log`          | `adb logcat` (detached)         | `wt-diagnose`, dev loop           | Live Android session        |
-| `tmp/android-dev.log`     | `tauri android dev --no-watch`  | HMR liveness probe, `wt-diagnose` | Live Android session        |
-| `tmp/android-dev.err.log` | same                            | `wt-diagnose` on failure          | Live Android session        |
-| `tmp/dev*.log`            | `just dev` (when redirected)    | `wt-diagnose` desktop path        | Per dev session             |
-| `tmp/diagnose-<slug>.md`  | `wt-diagnose` agent             | Humans, follow-up agents          | Persistent (manual cleanup) |
-| `tmp/install-report.json` | `wt-runner` (`install` mode)    | Caller of `wt-runner`             | Overwritten per run         |
-| `tmp/test-report.json`    | `wt-runner` (`test` mode)       | Caller of `wt-runner`             | Overwritten per run         |
+| Path                          | Writer                                        | Reader                            | Lifetime                     |
+| ----------------------------- | --------------------------------------------- | --------------------------------- | ---------------------------- |
+| `tmp/_pids.json`              | `cargo xtask android bootstrap`               | `android-status`, agents, humans  | Live Android session         |
+| `tmp/_platform`               | `android bootstrap`                           | `android-status`, `wt-diagnose`   | Live Android session         |
+| `tmp/logcat.log`              | `adb logcat` (detached)                       | `wt-diagnose`, dev loop           | Live Android session         |
+| `tmp/android-dev.log`         | `tauri android dev --no-watch`                | HMR liveness probe, `wt-diagnose` | Live Android session         |
+| `tmp/android-dev.err.log`     | same                                          | `wt-diagnose` on failure          | Live Android session         |
+| `tmp/logcat.err.log`          | `adb logcat` (detached)                       | `wt-diagnose` on failure          | Live Android session         |
+| `tmp/dev-vital.{out,err}.log` | `scripts/dev-vital.ts` (spawned by bootstrap) | dev-loop heartbeat                | Live Android session         |
+| `tmp/.bootstrap.stamp`        | `just bootstrap`                              | `just bootstrap-if-stale`         | Persistent until rebootstrap |
+| `tmp/dev*.log`                | `just dev` (when redirected)                  | `wt-diagnose` desktop path        | Per dev session              |
+| `tmp/diagnose-<slug>.md`      | `wt-diagnose` agent                           | Humans, follow-up agents          | Persistent (manual cleanup)  |
+| `tmp/install-report.json`     | `wt-runner` (`install` mode)                  | Caller of `wt-runner`             | Overwritten per run          |
+| `tmp/test-report.json`        | `wt-runner` (`test` mode)                     | Caller of `wt-runner`             | Overwritten per run          |
 
 ## Rules
 

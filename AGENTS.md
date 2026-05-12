@@ -32,11 +32,12 @@ just android           Android USB/emu HMR session (idempotent)
 just android-stop      stop the session
 just android-emu       headless x86_64 emulator (cross-platform)
 just check             parallel pre-release gate
-just release           rolling dev release (host + Android + Windows-VM → gh `dev` prerelease)
-just release-stable    check + bump + tag + build + publish
+just build             dev release build (host + Android + Linux .deb in parallel) → `releases/dev/`
+just release           publish `releases/dev/` artifacts to the rolling gh `dev` prerelease
+just release-stable    check + bump + build + publish (stable)
 ```
 
-`just release` builds host + Android + the Windows NSIS installer (via the `windowsVm` entry in `release.config.json`) in parallel, then publishes to the rolling `dev` prerelease. Self-healing on transient Windows failures uses the configured VM start/restart commands + 1 retry. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
+`just build` runs `cargo xtask release --dev`: builds the Windows NSIS installer (host or via the `windowsVm` entry in `release.config.json`), the Android APK, and the Linux `.deb` (Docker) in parallel into `releases/dev/`. Self-healing on transient Windows-VM failures uses the configured VM start/restart commands + 1 retry. `just release` is publish-only (`cargo xtask publish dev`); it never builds. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
 `just check` runs **11 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. Sequential variants exist for targeted runs (`just lint`, `just test`, …). The same recipe runs in CI (`.github/workflows/check.yml`).
 
@@ -60,7 +61,7 @@ just release-stable    check + bump + tag + build + publish
 
 In-tree workarounds for upstream issues until Tauri 2.12 lands:
 
-- `src-tauri/gen/android/app/src/main/java/com/asolopovas/wtranscriber/generated/{Tauri,Wry}Activity.kt` carry a `@file:Suppress("DEPRECATION")` so the Activity `onDestroy`/`onRestart` overrides don't fail `-Werror` Kotlin builds.
+- `src-tauri/gen/android/app/src/main/java/com/asolopovas/wtranscriber/generated/WryActivity.kt` carries inline `@Suppress("DEPRECATION")` annotations on the `onDestroy`/`onRestart` overrides so they don't fail `-Werror` Kotlin builds.
 - `xtask/src/android/patch.rs::patch_plugin_consumer_rules` touches an empty `consumer-rules.pro` inside each plugin's `android/` dir referenced by `gen/android/tauri.settings.gradle` (covers `tauri-plugin-dialog`, `tauri-plugin-fs`). Wired into `prepare()` before every Android build.
 - `src-tauri/build.rs::stub_windows_bundle_resources` touches zero-byte placeholders for the Windows bundle DLLs declared in `tauri.windows.conf.json`, so `tauri_build`'s resource validation passes during `just check` / dev builds on a fresh checkout. `install_cuda_dlls` then overwrites them with real binaries from `%APPDATA%` during release builds. Pre-bundle: verify file sizes before shipping a release.
 - `src-tauri/build.rs::invalidate_stale_cmake_caches` wipes `target/{debug,release}/build/{whisper-rs-sys-*,sherpa-onnx-sys-*}` when `CMAKE_GENERATOR` changes vs the `target/.cmake-generator` sentinel.
@@ -109,7 +110,7 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 | Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities                                      |
 | Edit project files            | Main thread (pre-commit hook is the gate)                                                                  |
 | Install + smoke-test          | `just android-install` + `just android-smoke` (or host installer build)                                    |
-| Dev release                   | `just release` (rolling `dev` prerelease, self-healing Windows-VM)                                         |
+| Dev release                   | `just build` then `just release` (build → `releases/dev/`, publish rolling `dev` prerelease)               |
 | Stable release                | `just release-stable`                                                                                      |
 
 ## Skills

@@ -2,13 +2,13 @@
 
 ## Commands
 
-| Command                       | What it does                                   |
-| ----------------------------- | ---------------------------------------------- |
-| `just release`                | Dev release; updates rolling `dev` prerelease  |
-| `just release-stable [level]` | `check` + bump + tag + build + publish stable  |
-| `just release-bump [level]`   | Bump version, commit, tag                      |
-| `just release-build [--dev]`  | Build artifacts only into `releases/[dev/]`    |
-| `just release-publish <ch>`   | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z` |
+| Command                       | What it does                                             |
+| ----------------------------- | -------------------------------------------------------- |
+| `just release`                | Dev release; updates rolling `dev` prerelease            |
+| `just release-stable [level]` | `check` + bump (commits + tags) + build + publish stable |
+| `just release-bump [level]`   | Bump version, commit, tag                                |
+| `just release-build [--dev]`  | Build artifacts only into `releases/[dev/]`              |
+| `just release-publish <ch>`   | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`           |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
 `release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
@@ -62,12 +62,10 @@ Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via
 
 ## Artifacts
 
-Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb", "app"]`):
+Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb"]`):
 
 - Windows host: `wtranscriber-setup-*.exe` (NSIS)
-- Linux host: `wtranscriber_*_amd64.deb`
-- macOS host (manual): `WTranscriber.app` bundle (not in the release matrix)
-- Windows host (Docker): `.deb` produced inside `debian:12-slim` container, written to `src-tauri/target/release/bundle/deb/`
+- Linux `.deb` (Docker, cross-platform): produced inside `debian:12-slim` via `just build-deb-docker`, written to `src-tauri/target/release/bundle/deb/`
 - Android: `wtranscriber-*.apk` (signed if `keystore.properties` present)
 - `SHA256SUMS[-<ver>]` and `release-manifest-<ver>.json`
 - `<artifact>.sig` per binary if `TAURI_SIGNING_PRIVATE_KEY` is exported

@@ -16,7 +16,7 @@ Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max
 
 ## Desktop
 
-Linux and Windows are the supported hosts. macOS works via Tauri (`bundle.targets` includes `app`) but is not part of the release matrix.
+Windows is the primary release host; Linux is supported for dev (`just dev`) and the `.deb` build (`just build-deb-docker`). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
 
 ```bash
 just dev          # HMR

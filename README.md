@@ -9,9 +9,10 @@ Audio transcription desktop app. [Tauri 2](https://tauri.app) · Vue 3 + TS · R
 - [`just`](https://github.com/casey/just)
 - Tauri platform toolchain ([docs](https://tauri.app/start/prerequisites/))
 
-Desktop dev (`just dev`, `just build`) is exercised on Linux and Windows.
-macOS builds via `tauri build` (bundle target `app`) but is not part of the
-release matrix; expect rough edges. Android dev from a macOS host works.
+Desktop dev (`just dev`) runs on Linux and Windows. Release builds
+(`just build`) are Windows-only — they orchestrate the Windows NSIS host
+build, the Linux `.deb` (Docker), and the Android APK from a Windows host.
+`bundle.targets = ["nsis", "deb"]`; macOS is not in the release matrix.
 
 ## Quick start
 
