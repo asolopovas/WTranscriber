@@ -23,13 +23,18 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "deb"],
+    "targets": [
+      "nsis",
+      "deb"
+    ],
     "resources": [
       "../scripts/diarize.py",
       "../scripts/install-nemo-deps.sh",
@@ -50,7 +55,9 @@
           "bzip2",
           "tar"
         ],
-        "recommends": ["ffmpeg"]
+        "recommends": [
+          "ffmpeg"
+        ]
       }
     },
     "icon": [
