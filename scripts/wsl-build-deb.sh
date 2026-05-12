@@ -38,8 +38,10 @@ unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR
 LOG=$(mktemp -t wt-wsl-build.XXXXXX.log)
 trap 'rm -f "$LOG"' EXIT
 
+echo "[wsl] bun install"
 {
   bun install --no-progress 2>&1 | tail -5
+  echo "[wsl] tauri build --bundles deb (this is the long phase: cargo release + link)"
   bun run tauri build --bundles deb -- --no-default-features --features sherpa-static
   echo "WT-RC=$?"
 } >"$LOG" 2>&1 &
@@ -48,6 +50,13 @@ BUILD=$!
 tail -F -n +1 "$LOG" 2>/dev/null &
 TAIL=$!
 
+PING_ELAPSED=0
+while kill -0 "$BUILD" 2>/dev/null; do
+  sleep 30
+  PING_ELAPSED=$((PING_ELAPSED + 30))
+  LAST=$(tail -n 1 "$LOG" 2>/dev/null | tr -d '\r' | cut -c1-100)
+  echo "[wsl] still building, ${PING_ELAPSED}s elapsed (log tail: ${LAST:-<empty>})"
+done
 wait "$BUILD"
 RC=$?
 

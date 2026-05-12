@@ -1,6 +1,13 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
+import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { detachedSpawnOptions, killProcessTree } from "./process-tree";
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const ansiRe = /\x1b\[[0-9;]*m/g;
+const stripAnsi = (s: string): string => s.replace(ansiRe, "");
 
 interface Options {
   tag: string;
@@ -11,7 +18,7 @@ interface Options {
 }
 
 const parseArgs = (argv: string[]): Options => {
-  const o: Options = { tag: "task", idle: 90, max: 600, heartbeat: 10, cmd: [] };
+  const o: Options = { tag: "task", idle: 90, max: 600, heartbeat: 5, cmd: [] };
   let i = 0;
   while (i < argv.length) {
     const a = argv[i]!;
@@ -47,6 +54,31 @@ const start = Date.now();
 const prefix = `${C.cyan}[${tag}]${C.reset}`;
 const stamp = (): string => ((Date.now() - start) / 1000).toFixed(1) + "s";
 
+const tmpDir = join(repoRoot, "tmp");
+mkdirSync(tmpDir, { recursive: true });
+const logPath = join(tmpDir, `${tag}.log`);
+const logFd = openSync(logPath, "w");
+const logLine = (line: string): void => {
+  try {
+    writeSync(logFd, stripAnsi(line));
+  } catch {
+    /* swallow log write errors */
+  }
+};
+logLine(`# ${new Date().toISOString()} ${opts.cmd.join(" ")}\n`);
+
+const emitStdout = (line: string): void => {
+  process.stdout.write(line);
+  logLine(line);
+};
+const emitStderr = (line: string): void => {
+  process.stderr.write(line);
+  logLine(line);
+};
+
+emitStdout(`${prefix} ${C.green}starting${C.reset} ${opts.cmd.join(" ")}\n`);
+emitStdout(`${prefix} log: ${logPath}\n`);
+
 let lastOutput = Date.now();
 let lastLine = "";
 let killReason: string | null = null;
@@ -57,7 +89,9 @@ const child = spawn(opts.cmd[0]!, opts.cmd.slice(1), {
   env: { ...process.env, FORCE_COLOR: process.env.FORCE_COLOR ?? "1" },
 });
 
-const pipe = (stream: NodeJS.ReadableStream, sink: NodeJS.WritableStream): void => {
+emitStdout(`${prefix} spawned pid=${child.pid ?? "?"} idle=${opts.idle}s max=${opts.max}s\n`);
+
+const pipe = (stream: NodeJS.ReadableStream, emit: (line: string) => void): void => {
   let buf = "";
   stream.on("data", (chunk: Buffer | string) => {
     buf += chunk.toString();
@@ -66,26 +100,26 @@ const pipe = (stream: NodeJS.ReadableStream, sink: NodeJS.WritableStream): void 
     for (const ln of lines) {
       lastOutput = Date.now();
       lastLine = ln;
-      sink.write(`${prefix} ${ln}\n`);
+      emit(`${prefix} ${ln}\n`);
     }
   });
   stream.on("end", () => {
     if (buf.length) {
       lastOutput = Date.now();
       lastLine = buf;
-      sink.write(`${prefix} ${buf}\n`);
+      emit(`${prefix} ${buf}\n`);
     }
   });
 };
-pipe(child.stdout!, process.stdout);
-pipe(child.stderr!, process.stderr);
+pipe(child.stdout!, emitStdout);
+pipe(child.stderr!, emitStderr);
 
 const heartbeat = setInterval(
   () => {
     const idleMs = Date.now() - lastOutput;
     if (idleMs >= opts.heartbeat * 1000) {
       const tail = lastLine ? ` (last: ${lastLine.slice(0, 80)})` : "";
-      process.stderr.write(
+      emitStderr(
         `${prefix} ${C.yellow}… still running, ${stamp()} elapsed, ${(idleMs / 1000).toFixed(0)}s without output${tail}${C.reset}\n`,
       );
     }
@@ -97,7 +131,7 @@ const idleTimer = setInterval(() => {
   if (opts.idle <= 0) return;
   if (Date.now() - lastOutput > opts.idle * 1000) {
     killReason = `IDLE_TIMEOUT (${opts.idle}s without output)`;
-    process.stderr.write(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
+    emitStderr(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
     killProcessTree(child, "SIGKILL");
   }
 }, 1000);
@@ -106,7 +140,7 @@ const hardTimer =
   opts.max > 0
     ? setTimeout(() => {
         killReason = killReason ?? `MAX_TIMEOUT (${opts.max}s)`;
-        process.stderr.write(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
+        emitStderr(`${prefix} ${C.red}FAIL ${killReason} — killing${C.reset}\n`);
         killProcessTree(child, "SIGKILL");
       }, opts.max * 1000)
     : null;
@@ -115,6 +149,11 @@ const cleanup = (): void => {
   clearInterval(heartbeat);
   clearInterval(idleTimer);
   if (hardTimer) clearTimeout(hardTimer);
+  try {
+    closeSync(logFd);
+  } catch {
+    /* fd may already be closed */
+  }
 };
 
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
@@ -124,23 +163,23 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 }
 
 child.on("error", (err: Error) => {
+  emitStderr(`${prefix} ${C.red}FAIL spawn: ${err.message}${C.reset}\n`);
   cleanup();
-  process.stderr.write(`${prefix} ${C.red}FAIL spawn: ${err.message}${C.reset}\n`);
   process.exit(127);
 });
 
 child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
-  cleanup();
   if (killReason) {
-    process.stderr.write(`${prefix} ${C.red}FAIL ${killReason} after ${stamp()}${C.reset}\n`);
+    emitStderr(`${prefix} ${C.red}FAIL ${killReason} after ${stamp()}${C.reset}\n`);
+    cleanup();
     process.exit(124);
   }
   if (code === 0) {
-    process.stdout.write(`${prefix} ${C.green}OK in ${stamp()}${C.reset}\n`);
+    emitStdout(`${prefix} ${C.green}OK in ${stamp()}${C.reset}\n`);
+    cleanup();
     process.exit(0);
   }
-  process.stderr.write(
-    `${prefix} ${C.red}FAIL exit=${code ?? `signal:${signal}`} in ${stamp()}${C.reset}\n`,
-  );
+  emitStderr(`${prefix} ${C.red}FAIL exit=${code ?? `signal:${signal}`} in ${stamp()}${C.reset}\n`);
+  cleanup();
   process.exit(code ?? 1);
 });

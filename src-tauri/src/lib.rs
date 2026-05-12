@@ -27,8 +27,6 @@ mod transcriber;
 
 pub mod api;
 
-#[cfg(target_os = "android")]
-use tauri::Emitter;
 use tracing_subscriber::EnvFilter;
 
 pub use android::{
