@@ -8,6 +8,7 @@ use directories::ProjectDirs;
 use crate::{
     constants,
     error::{Error, Result},
+    fs_utils,
 };
 
 #[derive(Clone, Debug)]
@@ -158,9 +159,7 @@ pub fn config_file() -> Result<PathBuf> {
     if let Ok(g) = CONFIG_FILE_OVERRIDE.read()
         && let Some(p) = g.as_ref()
     {
-        if let Some(parent) = p.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        fs_utils::ensure_parent_dir(p)?;
         return Ok(p.clone());
     }
     Ok(config_dir()?.join(constants::CONFIG_FILENAME))

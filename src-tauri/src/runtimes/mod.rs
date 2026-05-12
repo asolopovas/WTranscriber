@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     error::{Error, Result},
+    fs_utils,
     process::quiet_command,
 };
 
@@ -84,12 +85,8 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> Result<()> {
 }
 
 pub fn move_or_copy_dir(src: &Path, dst: &Path) -> Result<()> {
-    if dst.exists() {
-        let _ = std::fs::remove_dir_all(dst);
-    }
-    if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let _ = std::fs::remove_dir_all(dst);
+    fs_utils::ensure_parent_dir(dst)?;
     if std::fs::rename(src, dst).is_err() {
         copy_dir_all(src, dst)?;
     }

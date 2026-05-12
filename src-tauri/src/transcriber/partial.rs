@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::Result,
+    fs_utils,
     transcriber::{cache::transcript_path, transcript::Segment},
 };
 
@@ -32,9 +33,7 @@ pub fn load(key: &str) -> Option<Partial> {
 
 pub fn save(p: &Partial) -> Result<()> {
     let path = partial_path(&p.key)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    fs_utils::ensure_parent_dir(&path)?;
     let raw = serde_json::to_string(p)?;
     let mut tmp = path.clone().into_os_string();
     tmp.push(".tmp");

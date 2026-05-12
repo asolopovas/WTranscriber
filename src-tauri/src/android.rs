@@ -4,7 +4,7 @@ use tauri::Emitter;
 
 use crate::config;
 #[cfg(target_os = "android")]
-use crate::{logfile, paths};
+use crate::{fs_utils, logfile, paths};
 
 #[cfg(target_os = "android")]
 #[allow(unsafe_code)]
@@ -175,7 +175,7 @@ pub(crate) fn restore_models_from_persistent(internal: &std::path::Path) {
             continue;
         };
         let dst = internal.join(name);
-        match copy_recursive_merge(&src, &dst) {
+        match fs_utils::copy_recursive(&src, &dst, true) {
             Ok(b) => restored = restored.saturating_add(b),
             Err(e) => logfile::error(&format!(
                 "android: persistent restore {} failed: {e}",
@@ -188,37 +188,6 @@ pub(crate) fn restore_models_from_persistent(internal: &std::path::Path) {
             "android: restored {restored} bytes from persistent storage"
         ));
     }
-}
-
-#[cfg(target_os = "android")]
-fn copy_recursive_merge(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<u64> {
-    let meta = std::fs::metadata(src)?;
-    if meta.is_file() {
-        if let Some(p) = dst.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        if dst.exists() {
-            let dst_meta = std::fs::metadata(dst)?;
-            if dst_meta.is_file() && dst_meta.len() == meta.len() {
-                return Ok(0);
-            }
-        }
-        return std::fs::copy(src, dst);
-    }
-    if !meta.is_dir() {
-        return Ok(0);
-    }
-    std::fs::create_dir_all(dst)?;
-    let mut total: u64 = 0;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let Some(name) = from.file_name() else {
-            continue;
-        };
-        total = total.saturating_add(copy_recursive_merge(&from, &dst.join(name))?);
-    }
-    Ok(total)
 }
 
 #[cfg(target_os = "android")]
@@ -240,10 +209,10 @@ fn backup_models_to_persistent(internal: &std::path::Path) {
         if dst.exists() {
             continue;
         }
-        match copy_recursive(&src, &dst) {
+        match fs_utils::copy_recursive(&src, &dst, false) {
             Ok(b) if b > 0 => backed = backed.saturating_add(b),
             Ok(_) => {
-                let _ = remove_recursive(&dst);
+                let _ = fs_utils::remove_recursive(&dst);
             }
             Err(e) => logfile::error(&format!(
                 "android: persistent backup {} failed: {e}",
@@ -324,9 +293,7 @@ pub(crate) fn restore_config_from_persistent(internal_config: &std::path::Path) 
     if !public.exists() {
         return;
     }
-    if let Some(parent) = internal_config.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let _ = fs_utils::ensure_parent_dir(internal_config);
     match std::fs::copy(public, internal_config) {
         Ok(_) => logfile::info("android: restored config.yml from persistent storage"),
         Err(e) => logfile::error(&format!("android: restore config.yml failed: {e}")),
@@ -391,7 +358,7 @@ fn backup_single_model(model_id: &str) {
         return;
     }
     let dst = public_root.join(model_id);
-    match copy_recursive_merge(&src, &dst) {
+    match fs_utils::copy_recursive(&src, &dst, true) {
         Ok(bytes) if bytes > 0 => logfile::info(&format!(
             "android: backed up {model_id} ({bytes} bytes) to persistent storage"
         )),
@@ -424,7 +391,7 @@ pub fn android_remove_from_persistent(model_id: &str) {
         }
         let public = paths::android_persistent_models_dir().join(model_id);
         if public.exists() {
-            let _ = remove_recursive(&public);
+            let _ = fs_utils::remove_recursive(&public);
         }
     }
     #[cfg(not(target_os = "android"))]
@@ -468,58 +435,21 @@ pub(crate) fn migrate_legacy_android_data(
             continue;
         };
         let dst = new_models.join(name);
-        match copy_recursive(&src, &dst) {
+        match fs_utils::copy_recursive(&src, &dst, false) {
             Ok(bytes) if bytes > 0 => {
-                let _ = remove_recursive(&src);
+                let _ = fs_utils::remove_recursive(&src);
                 logfile::info(&format!(
                     "android: migrated {} ({bytes} bytes)",
                     name.to_string_lossy()
                 ));
             }
             Ok(_) => {
-                let _ = remove_recursive(&dst);
+                let _ = fs_utils::remove_recursive(&dst);
             }
             Err(e) => {
-                let _ = remove_recursive(&dst);
+                let _ = fs_utils::remove_recursive(&dst);
                 logfile::error(&format!("android: migrate {} failed: {e}", src.display()));
             }
         }
-    }
-}
-
-#[cfg(target_os = "android")]
-fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<u64> {
-    let meta = std::fs::metadata(src)?;
-    if meta.is_file() {
-        if let Some(p) = dst.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        return std::fs::copy(src, dst);
-    }
-    if !meta.is_dir() {
-        return Ok(0);
-    }
-    std::fs::create_dir_all(dst)?;
-    let mut total: u64 = 0;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let Some(name) = from.file_name() else {
-            continue;
-        };
-        total = total.saturating_add(copy_recursive(&from, &dst.join(name))?);
-    }
-    Ok(total)
-}
-
-#[cfg(target_os = "android")]
-fn remove_recursive(p: &std::path::Path) -> std::io::Result<()> {
-    let Ok(meta) = std::fs::metadata(p) else {
-        return Ok(());
-    };
-    if meta.is_dir() {
-        std::fs::remove_dir_all(p)
-    } else {
-        std::fs::remove_file(p)
     }
 }

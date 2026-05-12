@@ -6,7 +6,10 @@ use std::{
     path::Path,
 };
 
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    fs_utils,
+};
 
 pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
 
@@ -125,9 +128,7 @@ const CHANNELS: u16 = 1;
 const BITS: u16 = 16;
 
 pub fn write_pcm16_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    fs_utils::ensure_parent_dir(path)?;
     let mut w = BufWriter::with_capacity(256 * 1024, File::create(path)?);
 
     let byte_rate = sample_rate * u32::from(CHANNELS) * u32::from(BITS) / 8;

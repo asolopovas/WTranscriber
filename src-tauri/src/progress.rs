@@ -448,9 +448,7 @@ fn save_rtf_value(key: &str, observed: f64) {
         _ => observed,
     };
     map.insert(key.to_owned(), blended);
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+    let _ = crate::fs_utils::ensure_parent_dir(&path);
     if let Ok(data) = serde_json::to_string_pretty(&map) {
         let _ = std::fs::write(&path, data);
     }

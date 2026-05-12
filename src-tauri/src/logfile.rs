@@ -7,7 +7,7 @@ use std::{
 
 use chrono::Local;
 
-use crate::{error::Result, paths};
+use crate::{error::Result, fs_utils, paths};
 
 const MAX_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_BACKUPS: usize = 48;
@@ -20,9 +20,7 @@ pub fn log_path() -> Result<PathBuf> {
 
 fn open() -> Result<File> {
     let path = log_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    fs_utils::ensure_parent_dir(&path)?;
     Ok(OpenOptions::new().create(true).append(true).open(path)?)
 }
 

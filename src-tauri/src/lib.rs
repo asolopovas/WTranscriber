@@ -9,6 +9,7 @@ mod diarizer;
 mod engine;
 mod error;
 mod essentials;
+mod fs_utils;
 mod llm;
 pub mod logfile;
 mod models;

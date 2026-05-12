@@ -59,9 +59,7 @@ fn ensure_decoded_wav(path: &Path, allow_temp_fallback: bool) -> Result<std::pat
     if target.exists() {
         return Ok(target);
     }
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    crate::fs_utils::ensure_parent_dir(&target)?;
     if let Err(err) = run_decoder(path, &target) {
         let _ = std::fs::remove_file(&target);
         return Err(err);

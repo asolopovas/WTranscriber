@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     error::{Error, Result},
+    fs_utils,
     models::download::{Progress, download_file},
     paths,
     runtimes::extract,
@@ -139,12 +140,8 @@ pub async fn ensure(on_progress: &mut (dyn FnMut(Progress) + Send)) -> Result<Pa
         ))
     })?;
 
-    if target_root.exists() {
-        let _ = std::fs::remove_dir_all(&target_root);
-    }
-    if let Some(parent) = target_root.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+    let _ = std::fs::remove_dir_all(&target_root);
+    fs_utils::ensure_parent_dir(&target_root)?;
     if std::fs::rename(&src_root, &target_root).is_err() {
         crate::runtimes::copy_dir_all(&src_root, &target_root)?;
     }
