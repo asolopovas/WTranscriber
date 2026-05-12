@@ -24,6 +24,12 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
     let cc = bin.join(format!("{}{}", abi.clang, clang_ext()));
     let cxx = bin.join(format!("{}++{}", abi.clang, clang_ext()));
     let ar = bin.join(exe("llvm-ar"));
+    let sysroot = bin
+        .parent()
+        .map(|p| p.join("sysroot"))
+        .unwrap_or_else(|| ndk.join("sysroot"));
+    let clang_target = abi.clang.trim_end_matches("-clang");
+    let bindgen_args = format!("--target={} --sysroot={}", clang_target, sysroot.display());
     let mut e: Vec<(String, String)> = vec![
         ("ANDROID_HOME".into(), sdk.display().to_string()),
         ("NDK_HOME".into(), ndk.display().to_string()),
@@ -34,6 +40,10 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
         (
             format!("CARGO_TARGET_{}_LINKER", abi.rust.to_uppercase()),
             cc.display().to_string(),
+        ),
+        (
+            format!("BINDGEN_EXTRA_CLANG_ARGS_{}", abi.rust),
+            bindgen_args,
         ),
     ];
     e.sort();
