@@ -134,11 +134,13 @@ const start = async (): Promise<void> => {
   } else {
     emuArgs.push("-no-window", "-no-audio", "-gpu", "swiftshader_indirect");
   }
-  const child = spawn(emulator, emuArgs, {
-    stdio: ["ignore", out, out],
-    detached: true,
-    windowsHide: true,
-  });
+  const child = isWin
+    ? spawn("cmd.exe", ["/c", "start", "", "/B", emulator, ...emuArgs], {
+        stdio: ["ignore", out, out],
+        detached: true,
+        windowsHide: true,
+      })
+    : spawn(emulator, emuArgs, { stdio: ["ignore", out, out], detached: true });
   child.unref();
   await Bun.write(pidFile, String(child.pid));
 
