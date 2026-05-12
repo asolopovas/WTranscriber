@@ -45,7 +45,11 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     detect_device_target(device)?;
     fs::write(tmp.join("_platform"), "android")?;
 
-    let _ = adb_run(device, &["logcat", "-c"], Duration::from_secs(5));
+    let _ = adb_run(
+        device,
+        &["logcat", "-b", "main,events", "-c"],
+        Duration::from_secs(5),
+    );
     let logcat_args: Vec<String> = with_device(
         device,
         &[
