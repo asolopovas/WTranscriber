@@ -18,15 +18,15 @@
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
-      "label": "android: bootstrap (USB)",
+      "label": "dev: android (USB)",
       "type": "shell",
-      "command": "just android",
+      "command": "just android usb",
       "isBackground": true,
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "android: bootstrap (LAN host)",
+      "label": "dev: android (LAN host)",
       "type": "shell",
       "command": "just android host",
       "isBackground": true,
