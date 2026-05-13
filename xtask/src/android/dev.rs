@@ -15,7 +15,7 @@ use super::logs::{
     wait_for_log_line_with_guard,
 };
 use super::proc::{
-    kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_detached, spawn_with_env,
+    kill_pid, pid_alive, port_owner, reap_tauri_logcat_orphans, spawn_persistent, spawn_with_env,
     tcp_open,
 };
 use super::{ANDROID_PACKAGE, BootstrapMode};
@@ -60,14 +60,14 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     .collect();
     let logcat_arg_refs: Vec<&str> = logcat_args.iter().map(String::as_str).collect();
     eprintln!("[stage 2/6] starting logcat capture");
-    let logcat_pid = spawn_detached(
+    let logcat_pid = spawn_persistent(
         "adb",
         &logcat_arg_refs,
         &[],
         &tmp.join("logcat.log"),
         &tmp.join("logcat.err.log"),
     )?;
-    let vital_pid = spawn_detached(
+    let vital_pid = spawn_persistent(
         "bun",
         &["scripts/dev-vital.ts"],
         &[],
@@ -75,38 +75,60 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         &tmp.join("dev-vital.err.log"),
     )?;
 
+    let mut vite_env = Vec::<(String, String)>::new();
+    let host_ip = detect_dev_host(device);
+    if let Some(ip) = host_ip.clone() {
+        vite_env.push(("TAURI_DEV_HOST".into(), ip));
+    }
+    let vite_log = tmp.join("android-dev.log");
+    let vite_err = tmp.join("android-dev.err.log");
+    eprintln!("[stage 3a/6] spawning Vite HMR server (logs: tmp/android-dev.{{log,err.log}})");
+    let vite_pid = spawn_persistent("bun", &["run", "dev"], &vite_env, &vite_log, &vite_err)?;
+
     let env = Vec::<(String, String)>::new();
     let mut args = vec![
         "xtask".to_string(),
         "android".to_string(),
         "dev".to_string(),
+        "--watch".to_string(),
+        "--external-vite".to_string(),
     ];
     match mode {
         BootstrapMode::Usb => {
             adb_reverse(device, "1420")?;
+            adb_reverse(device, "1421")?;
         }
-        BootstrapMode::Host => args.push("--host".into()),
+        BootstrapMode::Host => {
+            args.push("--host".into());
+            if let Some(ip) = host_ip {
+                args.push(ip);
+            }
+        }
     }
     if let Some(d) = device {
         args.push(d.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    eprintln!("[stage 3/6] spawning tauri android dev (logs: tmp/android-dev.{{log,err.log}})");
-    let dev_pid = spawn_detached(
+    eprintln!("[stage 3b/6] spawning tauri android dev (logs: tmp/android-tauri.{{log,err.log}})");
+    let dev_pid = spawn_persistent(
         "cargo",
         &arg_refs,
         &env,
-        &tmp.join("android-dev.log"),
-        &tmp.join("android-dev.err.log"),
+        &tmp.join("android-tauri.log"),
+        &tmp.join("android-tauri.err.log"),
     )?;
 
-    let dev_log = tmp.join("android-dev.log");
-    let dev_err = tmp.join("android-dev.err.log");
+    let dev_log = tmp.join("android-tauri.log");
+    let dev_err = tmp.join("android-tauri.err.log");
     let logcat_log = tmp.join("logcat.log");
-    let streamer = LogStreamer::start(vec![dev_log.clone(), dev_err.clone()]);
-    let alive = || pid_alive(dev_pid);
+    let streamer = LogStreamer::start(vec![
+        vite_log.clone(),
+        vite_err.clone(),
+        dev_log.clone(),
+        dev_err.clone(),
+    ]);
     let healthy = || {
-        if !pid_alive(dev_pid) {
+        if !pid_alive(dev_pid) || !pid_alive(vite_pid) {
             return false;
         }
         if install_signature_mismatch(&[&dev_log, &dev_err]) {
@@ -116,12 +138,12 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     };
     let bring_up = || -> Result<Option<lldb::LldbInfo>> {
         eprintln!(
-            "[stage 4/7] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)"
+            "[stage 4/7] waiting for vite :1420 (event: \"ready in\"/\"Local:\"/\"Network:\" in tmp/android-dev.log, ≤90s)"
         );
         wait_for_log_line_with_guard(
-            &[&dev_log, &dev_err],
+            &[&vite_log, &vite_err],
             "vite ready on :1420",
-            |s| s.contains("Local:") && s.contains(":1420"),
+            |s| (s.contains("Local:") || s.contains("Network:")) && s.contains(":1420"),
             Duration::from_secs(90),
             healthy,
         )?;
@@ -181,7 +203,6 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     };
     let bring_up_result = bring_up();
     streamer.stop();
-    let _ = alive;
     let info = match bring_up_result {
         Ok(info) => info,
         Err(err) => {
@@ -190,6 +211,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
                     "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
                 );
                 kill_pid(dev_pid);
+                kill_pid(vite_pid);
                 kill_pid(logcat_pid);
                 kill_pid(vital_pid);
                 reap_tauri_logcat_orphans();
@@ -209,6 +231,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
                 }
             }
             kill_pid(dev_pid);
+            kill_pid(vite_pid);
             kill_pid(logcat_pid);
             kill_pid(vital_pid);
             lldb::cleanup(device, None);
@@ -235,6 +258,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     let pids = json!({
         "device": device,
         "dev_wrapper": dev_pid,
+        "vite": vite_pid,
         "dev_port_owner": port_owner(1420),
         "logcat": logcat_pid,
         "vital": vital_pid,
@@ -266,11 +290,18 @@ pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
         "lldb_server",
         "logcat",
         "dev_wrapper",
+        "vite",
         "dev_port_owner",
     ] {
         if let Some(pid) = pids.get(key) {
             kill_pid(*pid);
             println!("stopped {key} pid={pid}");
+        }
+    }
+    for port in [1420, 1421] {
+        if let Some(pid) = port_owner(port).filter(|pid| !pids.values().any(|p| p == pid)) {
+            kill_pid(pid);
+            println!("stopped stale port {port} owner pid={pid}");
         }
     }
     lldb::cleanup(device.as_deref(), pids.get("app_pid").copied());
@@ -288,7 +319,13 @@ pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
     Ok(())
 }
 
-pub(super) fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>) -> Result<()> {
+pub(super) fn cmd_dev(
+    open: bool,
+    host: bool,
+    watch: bool,
+    external_vite: bool,
+    device: Option<&str>,
+) -> Result<()> {
     let target = detect_device_target(device)?;
     println!("android dev: detected ABI → target={target}");
     let mut env = prepare(&target, false)?;
@@ -300,22 +337,41 @@ pub(super) fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>)
         env.push(("TAURI_DEV_HOST".into(), ip));
     }
     let dev_host_arg = if host {
-        std::env::var("TAURI_DEV_HOST").ok()
+        env.iter()
+            .rev()
+            .find(|(key, _)| key == "TAURI_DEV_HOST")
+            .map(|(_, value)| value.clone())
+            .or_else(|| std::env::var("TAURI_DEV_HOST").ok())
     } else {
         None
     };
-    let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev"];
-    if open {
-        tauri_args.push("--open");
+    let mut tauri_args = vec![
+        "run".to_string(),
+        "tauri".to_string(),
+        "android".to_string(),
+        "dev".to_string(),
+    ];
+    if external_vite {
+        let config_path = root().join("tmp").join("tauri-android-external-vite.json");
+        fs::write(
+            &config_path,
+            r#"{"build":{"beforeDevCommand":"echo external vite already running"}}"#,
+        )?;
+        tauri_args.push("--config".into());
+        tauri_args.push(config_path.to_string_lossy().to_string());
+        tauri_args.push("--no-dev-server-wait".into());
     }
-    if host {
-        tauri_args.push("--host");
-    } else if let Some(ref value) = dev_host_arg {
-        tauri_args.push("--host");
+    if open {
+        tauri_args.push("--open".into());
+    }
+    if let Some(value) = dev_host_arg {
+        tauri_args.push("--host".into());
         tauri_args.push(value);
+    } else if host {
+        tauri_args.push("--host".into());
     }
     if !watch {
-        tauri_args.push("--no-watch");
+        tauri_args.push("--no-watch".into());
     }
     let tauri_device_name = device.map(|d| {
         if let Some(rest) = d.strip_prefix("emulator-") {
@@ -333,11 +389,17 @@ pub(super) fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>)
         }
     });
     if let Some(ref name) = tauri_device_name {
-        tauri_args.push(name);
+        tauri_args.push(name.clone());
     }
-    tauri_args.extend_from_slice(&["--", "--no-default-features", "--features", "android"]);
+    tauri_args.extend([
+        "--".to_string(),
+        "--no-default-features".to_string(),
+        "--features".to_string(),
+        "android".to_string(),
+    ]);
     if let Some(d) = device {
         env.push(("ANDROID_SERIAL".into(), d.to_string()));
     }
-    spawn_with_env("bun", &tauri_args, &env)
+    let tauri_arg_refs: Vec<&str> = tauri_args.iter().map(String::as_str).collect();
+    spawn_with_env("bun", &tauri_arg_refs, &env)
 }

@@ -57,6 +57,64 @@ pub(super) fn capture_timeout(prog: &str, args: &[&str], timeout: Duration) -> O
         .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+pub(super) fn spawn_persistent(
+    prog: &str,
+    args: &[&str],
+    env: &[(String, String)],
+    stdout_path: &Path,
+    stderr_path: &Path,
+) -> Result<u32> {
+    if cfg!(windows) {
+        if let Some(parent) = stdout_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let cmd_quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+        let batch_path = stdout_path.with_extension("cmd");
+        let mut batch = String::from("@echo off\r\n");
+        for (k, v) in env {
+            batch.push_str(&format!("set \"{k}={v}\"\r\n"));
+        }
+        batch.push_str(&format!(
+            "cd /d {}\r\n",
+            cmd_quote(&root().to_string_lossy())
+        ));
+        batch.push_str(&cmd_quote(prog));
+        for arg in args {
+            batch.push(' ');
+            batch.push_str(&cmd_quote(arg));
+        }
+        batch.push_str(&format!(
+            " > {} 2> {}\r\n",
+            cmd_quote(&stdout_path.to_string_lossy()),
+            cmd_quote(&stderr_path.to_string_lossy())
+        ));
+        fs::write(&batch_path, batch)?;
+        let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
+        let command_line = format!("cmd /C {}", cmd_quote(&batch_path.to_string_lossy()));
+        let script = format!(
+            "$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{CommandLine={};CurrentDirectory={}}}; if($r.ReturnValue -ne 0){{throw \"Win32_Process.Create failed $($r.ReturnValue)\"}}; $r.ProcessId",
+            quote(&command_line),
+            quote(&root().to_string_lossy())
+        );
+        let out = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .current_dir(root())
+            .output()
+            .context("spawn persistent process failed")?;
+        if !out.status.success() {
+            bail!(
+                "spawn persistent process failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        return String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find_map(|line| line.trim().parse::<u32>().ok())
+            .context("spawn persistent process did not return a pid");
+    }
+    spawn_detached(prog, args, env, stdout_path, stderr_path)
+}
+
 pub(super) fn spawn_detached(
     prog: &str,
     args: &[&str],

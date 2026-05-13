@@ -89,7 +89,7 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 ## Live dev invariant
 
 - Desktop: Vite owns `http://localhost:1420/`. The live `[dev]` stream from `just dev` is the source of truth; a `:1421 failed` / `EADDRINUSE` line there means HMR is dead.
-- Android: liveness = fresh `connecting to 127.0.0.1:1420` in `tmp/logcat.log` (`RustStdoutStderr`). `location.href` is **not** a signal — Tauri reports `http://tauri.localhost/` even when HMR is stale.
+- Android: liveness = fresh WebView `connecting to …:1420` in `tmp/logcat.log` (`RustStdoutStderr`). USB/emulator localhost flows show `127.0.0.1`; Tauri 2.11 on Windows physical devices rewrites to the host LAN IP. `location.href` is **not** a signal — Tauri reports `http://tauri.localhost/` even when HMR is stale.
 - While `tmp/_pids.json` exists and Vite owns `:1420`, do **not** run `cargo xtask android build`, `bun scripts/android-install.ts`, `cargo tauri build`, or any release build — each replaces the debug-dev APK and strands HMR.
 
 ## Per-turn during a live dev session

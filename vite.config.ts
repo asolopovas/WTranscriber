@@ -8,6 +8,7 @@ import { DEV_PORT, HMR_PORT } from "./dev.config";
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 const host = process.env.TAURI_DEV_HOST;
+const androidDev = process.env.TAURI_ENV_PLATFORM === "android" || Boolean(host);
 
 export default defineConfig(() => ({
   plugins: [tailwindcss(), vue()],
@@ -44,6 +45,8 @@ export default defineConfig(() => ({
       : undefined,
     watch: {
       ignored: ["**/src-tauri/**"],
+      usePolling: androidDev,
+      interval: androidDev ? 250 : undefined,
     },
   },
 }));

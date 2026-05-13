@@ -18,8 +18,10 @@ Two separate scratch directories:
 | `tmp/_platform`               | `cargo xtask android bootstrap`               | dev loop                  | Live Android session         |
 | `tmp/logcat.log`              | `adb logcat` (detached)                       | HMR liveness, dev loop    | Live Android session         |
 | `tmp/logcat.err.log`          | `adb logcat` (detached)                       | dev loop on failure       | Live Android session         |
-| `tmp/android-dev.log`         | `tauri android dev --no-watch`                | HMR liveness probe        | Live Android session         |
+| `tmp/android-dev.log`         | detached Vite dev server                      | HMR liveness probe        | Live Android session         |
 | `tmp/android-dev.err.log`     | same                                          | dev loop on failure       | Live Android session         |
+| `tmp/android-tauri.log`       | `tauri android dev`                           | APK launch/build probe    | Live Android session         |
+| `tmp/android-tauri.err.log`   | same                                          | dev loop on failure       | Live Android session         |
 | `tmp/dev-vital.{out,err}.log` | `scripts/dev-vital.ts` (spawned by bootstrap) | dev-loop heartbeat        | Live Android session         |
 | `tmp/.bootstrap.stamp`        | `just bootstrap`                              | `just bootstrap-if-stale` | Persistent until rebootstrap |
 | `tmp/dev*.log`                | `just dev` (when redirected)                  | dev-loop desktop path     | Per dev session              |
@@ -37,7 +39,9 @@ Two separate scratch directories:
   removes it.
 - **`location.href` is not a liveness signal on Android.** Tauri reports
   `http://tauri.localhost/` even when HMR is dead. Always cross-check
-  `tmp/logcat.log` for fresh `connecting to 127.0.0.1:1420`.
+  `tmp/logcat.log` for a fresh WebView connection to `:1420` (`127.0.0.1`
+  for localhost/emulator flows, or the host LAN IP chosen by Tauri on
+  physical devices).
 
 ## Cleanup
 

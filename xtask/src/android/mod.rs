@@ -36,6 +36,8 @@ pub struct DevArgs {
     pub host: bool,
     #[arg(long)]
     pub watch: bool,
+    #[arg(long)]
+    pub external_vite: bool,
     pub device: Option<String>,
 }
 
@@ -55,7 +57,13 @@ pub struct BootstrapArgs {
 pub fn run(c: Cmd) -> Result<()> {
     match c {
         Cmd::Build(a) => build::cmd_build(&a.target),
-        Cmd::Dev(a) => dev::cmd_dev(a.open, a.host, a.watch, a.device.as_deref()),
+        Cmd::Dev(a) => dev::cmd_dev(
+            a.open,
+            a.host,
+            a.watch,
+            a.external_vite,
+            a.device.as_deref(),
+        ),
         Cmd::Bootstrap(a) => dev::cmd_bootstrap(a.mode, a.device.as_deref()),
     }
 }

@@ -43,6 +43,7 @@ The `.vscode/tasks.json` entries "android: build + install APK" and "android: bu
 ## Live-session signals
 
 - HMR proof after JS/CSS edit: `[vite] hmr update /src/...` in `tmp/android-dev.log`.
+- USB physical devices still follow Tauri 2.11 mobile behaviour: on Windows, `tauri android dev` rewrites `localhost` to the host LAN IP and sets `TAURI_DEV_HOST`; Vite serves HMR on `1421` from that host. `adb reverse` is kept for localhost/emulator fallback.
 - Crash/OOM proof: `am_kill` / `am_proc_died` / `am_crash` in `tmp/logcat.log` for the app.
 - `location.href` is not a health signal on Android.
 

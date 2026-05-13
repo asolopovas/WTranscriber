@@ -19,12 +19,14 @@ const pkg = "com.asolopovas.wtranscriber";
 const sources: { src: string; path: string; offset: number; carry: string }[] = [
   { src: "dev", path: join(tmp, "android-dev.log"), offset: 0, carry: "" },
   { src: "devErr", path: join(tmp, "android-dev.err.log"), offset: 0, carry: "" },
+  { src: "tauri", path: join(tmp, "android-tauri.log"), offset: 0, carry: "" },
+  { src: "tauriErr", path: join(tmp, "android-tauri.err.log"), offset: 0, carry: "" },
   { src: "logcat", path: join(tmp, "logcat.log"), offset: 0, carry: "" },
 ];
 
 writeFileSync(outPath, "");
 
-const viteRe = /\[vite\] (hmr update|error|page reload)|panic| ERROR | WARN /;
+const viteRe = /\[vite\] (hmr update|error|page reload)|panic| ERROR | WARN |failed|error/i;
 const rustRe = /RustStdoutStderr/;
 const rustContentRe = /panic|error|warn/i;
 const chromiumRe = /chromium/;
