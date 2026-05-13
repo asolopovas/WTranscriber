@@ -31,6 +31,7 @@ export CL := env_var_or_default('CL', _cl_default)
 
 _run := "bun scripts/run.ts"
 _par := "bun scripts/parallel.ts"
+_xtask_dev_stop := "cargo run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-dev-stop-target -- dev stop"
 
 default:
     @just --list --unsorted
@@ -60,11 +61,11 @@ bootstrap-if-stale:
 # Desktop HMR (Vite + tauri dev). `just dev stop` stops any running dev session.
 [windows]
 dev action="":
-    if ("{{action}}" -eq "stop") { {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop } else { {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev }
+    if ("{{action}}" -eq "stop") { {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}} } else { {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev }
 
 [unix]
 dev action="":
-    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; else {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev; fi
+    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; else {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev; fi
 
 # Android HMR session. mode = usb (default) or host. Always force-restarts.
 android mode="usb" device="":
