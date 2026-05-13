@@ -164,26 +164,26 @@ defineExpose({
             >
           </div>
         </div>
-        <div class="flex items-center gap-unit shrink-0" @click.stop>
+        <div v-if="!selectionActive" class="flex items-center gap-unit shrink-0" @click.stop>
           <Button
             v-if="busy[entry.path]"
-            variant="error"
+            variant="ghost-error"
             shape="circle"
             size="md"
             icon="stop"
-            :icon-size="20"
+            :icon-size="24"
             title="Stop"
             @click="emit('stop', entry)"
           />
           <Button
             v-else
-            variant="primary"
+            variant="ghost-primary"
             shape="circle"
             size="md"
             title="Transcribe"
             @click="emit('transcribe', entry)"
           >
-            <TranscribeIcon :size="20" />
+            <TranscribeIcon :size="24" />
           </Button>
           <Button
             v-if="!isAndroid"
