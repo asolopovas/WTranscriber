@@ -75,7 +75,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         &tmp.join("dev-vital.err.log"),
     )?;
 
-    let mut env = Vec::<(String, String)>::new();
+    let env = Vec::<(String, String)>::new();
     let mut args = vec![
         "xtask".to_string(),
         "android".to_string(),
@@ -83,9 +83,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     ];
     match mode {
         BootstrapMode::Usb => {
-            env.push(("TAURI_DEV_HOST".into(), "127.0.0.1".into()));
             adb_reverse(device, "1420")?;
-            adb_reverse(device, "1421")?;
         }
         BootstrapMode::Host => args.push("--host".into()),
     }
@@ -294,13 +292,18 @@ pub(super) fn cmd_dev(open: bool, host: bool, watch: bool, device: Option<&str>)
     let target = detect_device_target(device)?;
     println!("android dev: detected ABI → target={target}");
     let mut env = prepare(&target, false)?;
-    if std::env::var_os("TAURI_DEV_HOST").is_none()
+    if host
+        && std::env::var_os("TAURI_DEV_HOST").is_none()
         && let Some(ip) = detect_dev_host(device)
     {
         println!("android dev: auto-detected TAURI_DEV_HOST={ip}");
         env.push(("TAURI_DEV_HOST".into(), ip));
     }
-    let dev_host_arg = std::env::var("TAURI_DEV_HOST").ok();
+    let dev_host_arg = if host {
+        std::env::var("TAURI_DEV_HOST").ok()
+    } else {
+        None
+    };
     let mut tauri_args: Vec<&str> = vec!["run", "tauri", "android", "dev"];
     if open {
         tauri_args.push("--open");
