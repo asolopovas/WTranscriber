@@ -53,6 +53,20 @@
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
+      "label": "android: build + install APK",
+      "type": "shell",
+      "command": "bun scripts/android-install.ts",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "android: build + reinstall APK (wipe data)",
+      "type": "shell",
+      "command": "bun scripts/android-install.ts --force",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
       "label": "android: logcat (chromium + Rust)",
       "type": "shell",
       "command": "adb logcat -v time chromium:V Console:V RustStdoutStderr:V *:S",
