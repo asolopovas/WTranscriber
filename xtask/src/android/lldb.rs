@@ -34,6 +34,11 @@ pub(super) fn attach(device: Option<&str>) -> Result<LldbInfo> {
 
     let server = locate_lldb_server(arch)?;
 
+    let kill_stale = format!("run-as {ANDROID_PACKAGE} killall lldb-server 2>/dev/null; true");
+    let _ = adb_run(device, &["shell", &kill_stale], Duration::from_secs(5));
+    let rm_stale = format!("run-as {ANDROID_PACKAGE} rm -f ./lldb-server 2>/dev/null; true");
+    let _ = adb_run(device, &["shell", &rm_stale], Duration::from_secs(5));
+
     let app_pid_raw = adb_capture(
         device,
         &["shell", "pidof", ANDROID_PACKAGE],
@@ -110,19 +115,23 @@ pub(super) fn cleanup(device: Option<&str>, _app_pid_hint: Option<u32>) {
     let _ = adb_run(device, &["shell", &kill_cmd], Duration::from_secs(5));
 }
 
-pub(super) fn write_vscode_launch(app_pid: u32, port: u16) -> Result<()> {
+pub(super) fn write_vscode_launch(_app_pid: u32, port: u16) -> Result<()> {
     let dir = root().join(".vscode");
     fs::create_dir_all(&dir)?;
     let path = dir.join("launch.json");
     let name = "Android: Attach Tauri (lldb)";
+    let symbol_path =
+        "${workspaceFolder}/src-tauri/target/aarch64-linux-android/debug/libwtranscriber_lib.so";
     let new_cfg = json!({
         "name": name,
         "type": "lldb",
-        "request": "attach",
-        "pid": app_pid,
-        "initCommands": [
+        "request": "custom",
+        "program": symbol_path,
+        "targetCreateCommands": [format!("target create {symbol_path}")],
+        "processCreateCommands": [
             "platform select remote-android",
-            format!("platform connect connect://localhost:{port}")
+            format!("platform connect connect://localhost:{port}"),
+            format!("process attach --name {ANDROID_PACKAGE}")
         ]
     });
 
@@ -147,6 +156,9 @@ pub(super) fn write_vscode_launch(app_pid: u32, port: u16) -> Result<()> {
     let mut replaced = false;
     for c in arr.iter_mut() {
         if c.get("name").and_then(Value::as_str) == Some(name) {
+            if c == &new_cfg {
+                return Ok(());
+            }
             *c = new_cfg.clone();
             replaced = true;
             break;

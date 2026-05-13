@@ -6,8 +6,7 @@ use std::time::Duration;
 use crate::util::root;
 
 use super::adb::{
-    adb_capture, adb_reverse, adb_run, attach_webview, detect_dev_host, detect_device_target,
-    wait_for_attach, with_device,
+    adb_reverse, adb_run, detect_dev_host, detect_device_target, wait_for_attach, with_device,
 };
 use super::build::{preflight_node_modules, prepare};
 use super::lldb;
@@ -25,15 +24,8 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     let tmp = root().join("tmp");
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
-    if session_already_healthy(device) {
-        eprintln!("BOOTSTRAP OK (already running) — use `just dev stop` first to force restart");
-        return Ok(());
-    }
-    if pids_path.exists() {
-        eprintln!("[stage 0/6] previous session unhealthy — stopping");
-        cmd_stop(false, device)?;
-    } else if tcp_open(1420) {
-        eprintln!("[stage 0/6] zombie vite on :1420 — stopping");
+    if pids_path.exists() || tcp_open(1420) {
+        eprintln!("[stage 0/6] previous session detected — stopping for clean restart");
         cmd_stop(false, device)?;
     }
     reap_tauri_logcat_orphans();
@@ -124,7 +116,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         }
         true
     };
-    let bring_up = || -> Result<lldb::LldbInfo> {
+    let bring_up = || -> Result<Option<lldb::LldbInfo>> {
         eprintln!(
             "[stage 4/7] waiting for vite :1420 (event: \"ready in\"/\"Local:\" in tmp/android-dev.log, ≤90s)"
         );
@@ -171,14 +163,23 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
                 "warning: Tauri IPC probe did not return within 20s; session is up (WebView connected to :1420), continuing"
             ),
         }
-        eprintln!("[stage 7/7] attaching lldb (blocking)");
-        let info = lldb::attach(device)?;
-        lldb::write_vscode_launch(info.app_pid, info.host_port)?;
-        eprintln!(
-            "  ✓ lldb attached app_pid={} server_pid={} port={}",
-            info.app_pid, info.server_pid, info.host_port
-        );
-        Ok(info)
+        eprintln!("[stage 7/7] attaching lldb (best-effort)");
+        match lldb::attach(device) {
+            Ok(info) => {
+                let _ = lldb::write_vscode_launch(info.app_pid, info.host_port);
+                eprintln!(
+                    "  ✓ lldb attached app_pid={} server_pid={} port={}",
+                    info.app_pid, info.server_pid, info.host_port
+                );
+                Ok(Some(info))
+            }
+            Err(err) => {
+                eprintln!(
+                    "warning: lldb attach failed ({err:#}); dev session is up — continuing without debugger"
+                );
+                Ok(None)
+            }
+        }
     };
     let bring_up_result = bring_up();
     streamer.stop();
@@ -239,9 +240,9 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         "dev_port_owner": port_owner(1420),
         "logcat": logcat_pid,
         "vital": vital_pid,
-        "lldb_server": info.server_pid,
-        "lldb_port": info.host_port,
-        "app_pid": info.app_pid
+        "lldb_server": info.as_ref().map(|i| i.server_pid),
+        "lldb_port": info.as_ref().map(|i| i.host_port),
+        "app_pid": info.as_ref().map(|i| i.app_pid)
     });
     fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
     println!(
@@ -253,24 +254,6 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         pids
     );
     Ok(())
-}
-
-fn session_already_healthy(device_arg: Option<&str>) -> bool {
-    if !tcp_open(1420) {
-        return false;
-    }
-    let reverse =
-        adb_capture(device_arg, &["reverse", "--list"], Duration::from_secs(2)).unwrap_or_default();
-    if !reverse.contains("tcp:1420") {
-        return false;
-    }
-    if !tcp_open(9222) {
-        let _ = attach_webview(device_arg, true);
-        if !tcp_open(9222) {
-            return false;
-        }
-    }
-    api_probe(Duration::from_secs(5)).is_some()
 }
 
 pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<()> {

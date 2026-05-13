@@ -2,10 +2,23 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "dev: clear logs",
+      "type": "shell",
+      "command": "bun scripts/clear-dev-logs.ts",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "close": true,
+        "showReuseMessage": false
+      }
+    },
+    {
       "label": "dev: desktop (HMR)",
       "type": "shell",
       "command": "just dev",
       "isBackground": true,
+      "dependsOn": ["dev: clear logs"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
       "group": { "kind": "build", "isDefault": true }
@@ -15,12 +28,19 @@
       "type": "shell",
       "command": "just dev stop",
       "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true,
+        "close": true,
+        "showReuseMessage": false
+      }
     },
     {
       "label": "dev: android (USB)",
       "type": "shell",
       "command": "just android usb",
+      "dependsOn": ["dev: clear logs"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
@@ -28,6 +48,7 @@
       "label": "dev: android (LAN host)",
       "type": "shell",
       "command": "just android host",
+      "dependsOn": ["dev: clear logs"],
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },

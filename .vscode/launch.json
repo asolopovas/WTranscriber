@@ -4,11 +4,15 @@
     {
       "name": "Android: Attach Tauri (lldb)",
       "type": "lldb",
-      "request": "attach",
-      "pid": 24609,
-      "initCommands": [
+      "request": "custom",
+      "program": "${workspaceFolder}/src-tauri/target/aarch64-linux-android/debug/libwtranscriber_lib.so",
+      "targetCreateCommands": [
+        "target create ${workspaceFolder}/src-tauri/target/aarch64-linux-android/debug/libwtranscriber_lib.so"
+      ],
+      "processCreateCommands": [
         "platform select remote-android",
-        "platform connect connect://localhost:5039"
+        "platform connect connect://localhost:5039",
+        "process attach --name com.asolopovas.wtranscriber"
       ]
     }
   ]

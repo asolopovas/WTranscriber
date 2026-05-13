@@ -60,13 +60,13 @@ bootstrap-if-stale:
 # Desktop HMR (Vite + tauri dev). `just dev stop` stops any running dev session.
 [windows]
 dev action="":
-    if ("{{action}}" -eq "stop") { {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop } else { $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev }
+    if ("{{action}}" -eq "stop") { {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop } else { {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev }
 
 [unix]
 dev action="":
-    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; else RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev; fi
+    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; else {{_run}} --tag dev-stop --idle 30 --max 60 -- cargo xtask dev stop; RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev; fi
 
-# Android HMR session. mode = usb (default) or host. Idempotent.
+# Android HMR session. mode = usb (default) or host. Always force-restarts.
 android mode="usb" device="":
     {{_run}} --tag android --idle 120 --max 2100 -- cargo xtask android bootstrap {{mode}} {{device}}
 
