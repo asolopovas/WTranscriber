@@ -4,6 +4,10 @@
     {
       "fileMatch": ["src-tauri/tauri.conf.json", "src-tauri/tauri.*.conf.json"],
       "url": "https://schema.tauri.app/config/2"
+    },
+    {
+      "fileMatch": [".vscode/launch.json"],
+      "schema": {}
     }
   ]
 }
