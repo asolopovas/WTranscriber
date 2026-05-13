@@ -125,7 +125,13 @@ defineExpose({
       v-for="{ entry, pretty, title } in rows"
       :key="entry.path"
       class="group border-b border-outline-variant/20 pl-margin pr-unit py-xs cursor-pointer transition-colors select-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] [-webkit-user-select:none]"
-      :class="selectedPath === entry.path ? 'bg-primary/25' : ''"
+      :class="
+        selectedPaths.has(entry.path)
+          ? 'bg-primary/10'
+          : selectedPath === entry.path
+            ? 'bg-primary/[0.06]'
+            : ''
+      "
       @click="onRowClick(entry)"
       @dblclick="emit('transcribe', entry)"
       @pointerdown="onRowPointerDown($event, entry.path)"
@@ -161,53 +167,55 @@ defineExpose({
         <div class="flex items-center gap-unit shrink-0" @click.stop>
           <Button
             v-if="busy[entry.path]"
-            variant="ghost-error"
-            shape="icon"
+            variant="error"
+            shape="circle"
+            size="md"
             icon="stop"
-            :icon-size="24"
-            class="w-11 h-11"
+            :icon-size="20"
             title="Stop"
             @click="emit('stop', entry)"
           />
           <Button
             v-else
-            variant="ghost-primary"
-            shape="icon"
-            class="w-11 h-11"
+            variant="primary"
+            shape="circle"
+            size="md"
             title="Transcribe"
             @click="emit('transcribe', entry)"
           >
-            <TranscribeIcon :size="24" />
+            <TranscribeIcon :size="20" />
           </Button>
           <Button
             v-if="!isAndroid"
-            class="hidden md:inline-flex w-11 h-11"
+            class="hidden md:inline-flex"
             variant="ghost"
-            shape="icon"
+            shape="circle"
+            size="md"
             :title="autoRenamingPath === entry.path ? 'Renaming…' : 'Auto-rename (AI)'"
             :disabled="autoRenamingPath === entry.path"
             @click="emit('auto-rename', entry)"
           >
-            <Spinner v-if="autoRenamingPath === entry.path" :size="24" />
-            <Icon v-else name="auto_awesome" :size="24" />
+            <Spinner v-if="autoRenamingPath === entry.path" :size="20" />
+            <Icon v-else name="auto_awesome" :size="20" />
           </Button>
           <Button
             v-if="entry.cache_key"
-            class="hidden md:inline-flex w-11 h-11"
+            class="hidden md:inline-flex"
             variant="ghost"
-            shape="icon"
+            shape="circle"
+            size="md"
             icon="visibility"
-            :icon-size="24"
+            :icon-size="20"
             title="Transcript ready — view"
             @click="emit('view', entry)"
           />
           <div class="relative">
             <Button
               variant="ghost"
-              shape="icon"
+              shape="circle"
+              size="md"
               icon="more_vert"
-              :icon-size="24"
-              class="w-11 h-11"
+              :icon-size="20"
               title="More"
               @click="toggleMenu(entry.path)"
             />
