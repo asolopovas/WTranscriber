@@ -218,9 +218,11 @@ fn cuda_runtime_lib_dir() -> Option<PathBuf> {
 
 fn cuda_runtime_root() -> Option<PathBuf> {
     let version = include_str!("sherpa-version.txt").trim_end();
-    #[allow(dead_code, clippy::items_after_statements)]
-    #[path = "../shared/identity.rs"]
-    mod ident;
+    #[allow(clippy::items_after_statements)]
+    mod ident {
+        pub const APP_ORG: &str = "asolopovas";
+        pub const APP_NAME: &str = "wtranscriber";
+    }
     let base = if cfg!(target_os = "windows") {
         let appdata = std::env::var_os("APPDATA")?;
         PathBuf::from(appdata)

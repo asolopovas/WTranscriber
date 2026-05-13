@@ -12,10 +12,7 @@ pub(crate) mod proc;
 
 pub use patch::sign_patch_inline;
 
-#[allow(dead_code)]
-#[path = "../../../shared/identity.rs"]
-mod ident;
-const ANDROID_PACKAGE: &str = ident::APP_ID;
+const ANDROID_PACKAGE: &str = "com.asolopovas.wtranscriber";
 
 #[derive(Subcommand)]
 #[command(about = "Android build / dev / bootstrap")]

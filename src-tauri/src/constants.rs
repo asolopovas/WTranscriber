@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-#[path = "../../shared/identity.rs"]
-mod identity;
-pub use identity::*;
+pub const APP_QUALIFIER: &str = "com";
+pub const APP_ORG: &str = "asolopovas";
+pub const APP_NAME: &str = "wtranscriber";
+pub const APP_ID: &str = "com.asolopovas.wtranscriber";
 
 pub const CONFIG_FILENAME: &str = "config.yml";
 pub const MODELS_DIRNAME: &str = "models";
