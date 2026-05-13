@@ -540,14 +540,6 @@ pub(crate) fn migrate_private_cache_into(
     }
 }
 
-#[cfg(not(target_os = "android"))]
-#[allow(dead_code)]
-pub const fn migrate_private_cache_into(
-    _private_cache: &std::path::Path,
-    _persistent_cache: &std::path::Path,
-) {
-}
-
 #[cfg(target_os = "android")]
 pub(crate) fn migrate_legacy_android_data(
     new_data_dir: &std::path::Path,

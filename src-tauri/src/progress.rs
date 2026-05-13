@@ -1,5 +1,4 @@
 #![allow(
-    dead_code,
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -198,11 +197,6 @@ impl Smoother {
     }
 
     #[must_use]
-    pub const fn observed_rtf(&self) -> f64 {
-        self.rtf
-    }
-
-    #[must_use]
     pub fn total_wall_sec(&self) -> f64 {
         self.audio_dur_sec / effective_rtf(self.rtf, self.prior_rtf)
     }
@@ -359,11 +353,6 @@ impl DiarizeSmoother {
             self.eta_shown = 0.0;
         }
         (display, self.eta_shown)
-    }
-
-    #[must_use]
-    pub fn elapsed(&self) -> Duration {
-        Instant::now().duration_since(self.start)
     }
 }
 

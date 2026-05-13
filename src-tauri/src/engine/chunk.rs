@@ -3,8 +3,7 @@
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::cast_possible_wrap,
-    clippy::float_cmp,
-    dead_code
+    clippy::float_cmp
 )]
 
 use std::path::Path;
@@ -80,20 +79,6 @@ pub fn split_chunks(samples: &[f32], sec: f64) -> Vec<Chunk<'_>> {
         off = end;
     }
     out
-}
-
-fn shift(segs: &mut [Segment], start_sec: f64, end_sec: f64) {
-    let off_ms = ms(start_sec);
-    let limit_ms = ms(end_sec);
-    let clamp = |t: u64| (t + off_ms).clamp(off_ms, limit_ms);
-    for s in segs.iter_mut() {
-        s.start_ms = clamp(s.start_ms);
-        s.end_ms = clamp(s.end_ms);
-        for tok in &mut s.tokens {
-            tok.start_ms = clamp(tok.start_ms);
-            tok.end_ms = clamp(tok.end_ms);
-        }
-    }
 }
 
 pub fn segments_from_sherpa(r: &super::sherpa::SherpaResult, chunk_dur_sec: f64) -> Vec<Segment> {
@@ -180,56 +165,6 @@ pub trait ChunkProcessor {
     fn is_cancelled(&self) -> bool {
         false
     }
-}
-
-pub fn run_chunked<P: ChunkProcessor>(
-    samples: &[f32],
-    audio_dur_sec: f64,
-    mut processor: P,
-    on_progress: &mut dyn FnMut(f64),
-) -> Result<(Vec<Segment>, f64)> {
-    let chunks = split_chunks(samples, DEFAULT_CHUNK_SEC);
-    if chunks.is_empty() {
-        return Ok((Vec::new(), 0.0));
-    }
-
-    let mut merged = Vec::new();
-    let mut total_audio = 0.0;
-    let mut total_elapsed = 0.0;
-
-    for (i, ch) in chunks.iter().enumerate() {
-        if processor.is_cancelled() {
-            return Err(crate::error::Error::Cancelled);
-        }
-        let dir = tempfile::tempdir()?;
-        let wav = dir.path().join("input.wav");
-        write_pcm16_wav(&wav, ch.samples, WHISPER_SAMPLE_RATE)?;
-
-        let chunk_dur = ch.end_sec - ch.start_sec;
-        let start = std::time::Instant::now();
-        let mut segs = processor.process(&wav, chunk_dur)?;
-        if processor.is_cancelled() {
-            return Err(crate::error::Error::Cancelled);
-        }
-        let elapsed = start.elapsed().as_secs_f64();
-
-        shift(&mut segs, ch.start_sec, ch.end_sec);
-        merged.extend(segs);
-
-        total_audio += chunk_dur;
-        total_elapsed += elapsed;
-
-        let pct = ((ch.end_sec / audio_dur_sec) * 100.0).min(100.0);
-        on_progress(pct);
-        let _ = i;
-    }
-
-    let rtf = if total_elapsed > 0.0 {
-        total_audio / total_elapsed
-    } else {
-        0.0
-    };
-    Ok((merged, rtf))
 }
 
 pub fn run_single<P: ChunkProcessor>(
