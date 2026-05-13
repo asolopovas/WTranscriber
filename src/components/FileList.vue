@@ -96,24 +96,20 @@ defineExpose({
           />
         </div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-baseline gap-xs min-w-0">
-            <div class="flex-1 min-w-0 text-bodyMedium text-on-surface truncate" :title="title">
-              {{ pretty.display }}
-            </div>
-            <span v-if="pretty.timestamp" class="font-mono text-labelSmall text-secondary shrink-0">
-              {{ pretty.timestamp }}
-            </span>
+          <div class="text-bodyMedium text-on-surface truncate" :title="title">
+            {{ pretty.display }}
           </div>
           <div
-            class="flex flex-wrap items-center gap-x-xs gap-y-unit font-mono text-labelSmall text-on-surface-variant leading-tight"
+            class="mt-[2px] flex flex-wrap items-center gap-x-md gap-y-unit font-mono text-labelSmall text-on-surface-variant leading-tight"
           >
             <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
-            <span class="text-outline-variant">·</span>
             <span>{{ fmtBytes(entry.size_bytes) }}</span>
-            <template v-if="entry.trim_start_ms || entry.trim_end_ms">
-              <span class="text-outline-variant">·</span>
-              <span class="text-primary inline-flex items-center gap-unit">trimmed</span>
-            </template>
+            <span v-if="pretty.timestampPretty" class="text-secondary">
+              {{ pretty.timestampPretty }}
+            </span>
+            <span v-if="entry.trim_start_ms || entry.trim_end_ms" class="text-primary"
+              >trimmed</span
+            >
           </div>
         </div>
         <div class="flex items-center gap-unit shrink-0" @click.stop>
