@@ -72,6 +72,7 @@ pub(super) fn prepare(target: &str, with_sign: bool) -> Result<Vec<(String, Stri
     purge_other_jni_abis(target)?;
     copy_jni_prebuilts(target)?;
     patch_manifest()?;
+    crate::release::ensure_dev_keystore_properties(true)?;
     build_env(target)
 }
 

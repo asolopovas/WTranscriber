@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::thread;
 
 use self::artifacts::{copy_into_channel, find_apk, find_deb, find_host_bundle, write_sha256sums};
+pub use self::builders::ensure_dev_keystore_properties;
 use self::builders::{build_android, build_deb_docker, build_host};
 use self::config::ReleaseConfig;
 use self::windows_vm::{build_windows_vm, fetch_windows_vm_exe};

@@ -7,3 +7,7 @@ export function uint8ToBase64(bytes: Uint8Array): string {
   }
   return btoa(chunks.join(""));
 }
+
+export function utf8ToBase64(s: string): string {
+  return uint8ToBase64(new TextEncoder().encode(s));
+}

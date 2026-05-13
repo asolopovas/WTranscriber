@@ -125,26 +125,27 @@ async function reload() {
   }
 }
 
+function trackedProbe(stub: DirEntry, path: string) {
+  probingTotal.value += 1;
+  void api
+    .probeDuration(path)
+    .then((ms) => {
+      if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
+    })
+    .catch(() => {})
+    .finally(() => {
+      probingDone.value += 1;
+      if (probingDone.value >= probingTotal.value) {
+        probingTotal.value = 0;
+        probingDone.value = 0;
+      }
+    });
+}
+
 function probeMissingDurations() {
   if (!listing.value) return;
   const targets = listing.value.entries.filter((e) => e.is_audio && e.duration_ms == null);
-  if (!targets.length) return;
-  probingTotal.value += targets.length;
-  for (const target of targets) {
-    void api
-      .probeDuration(target.path)
-      .then((ms) => {
-        if (ms != null && target.duration_ms == null) target.duration_ms = ms;
-      })
-      .catch(() => {})
-      .finally(() => {
-        probingDone.value += 1;
-        if (probingDone.value >= probingTotal.value) {
-          probingTotal.value = 0;
-          probingDone.value = 0;
-        }
-      });
-  }
+  for (const target of targets) trackedProbe(target, target.path);
 }
 
 function mergePrevDurations(prev: DirEntry[], next: DirEntry[]) {
@@ -226,13 +227,8 @@ function addPathsToWorkdir(paths: string[]) {
   });
   selectedPath.value = stubs[stubs.length - 1].path;
 
-  for (const stub of stubs) {
-    void api
-      .probeDuration(stub.path)
-      .then((ms) => {
-        if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
-      })
-      .catch(() => {});
+  if (!sys.value?.is_mobile) {
+    for (const stub of stubs) trackedProbe(stub, stub.path);
   }
 
   const copyOne = async (stub: Stub): Promise<string> => {
@@ -260,8 +256,9 @@ function addPathsToWorkdir(paths: string[]) {
 
   void (async () => {
     let lastDest: string | null = null;
-    for (let i = 0; i < stubs.length; i += 3) {
-      const batch = stubs.slice(i, i + 3);
+    const concurrency = sys.value?.is_mobile ? 1 : 3;
+    for (let i = 0; i < stubs.length; i += concurrency) {
+      const batch = stubs.slice(i, i + concurrency);
       await yieldToUI();
       await Promise.allSettled(
         batch.map(async (stub) => {
@@ -271,14 +268,7 @@ function addPathsToWorkdir(paths: string[]) {
             stub.name = basenameOf(destPath);
             stub.path = destPath;
             lastDest = destPath;
-            if (stub.duration_ms == null) {
-              void api
-                .probeDuration(destPath)
-                .then((ms) => {
-                  if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
-                })
-                .catch(() => {});
-            }
+            if (stub.duration_ms == null) trackedProbe(stub, destPath);
           } catch (e) {
             error.value = String(e);
             const idx = entries.findIndex((en) => en.path === source);

@@ -90,23 +90,46 @@ fn safe_filename(filename: &str) -> String {
         .collect()
 }
 
-#[tauri::command]
-pub fn save_recording(workdir: PathBuf, filename: String, bytes: String) -> Result<PathBuf> {
-    let raw = STANDARD
-        .decode(bytes.as_bytes())
-        .map_err(|e| Error::Config(format!("invalid base64 payload: {e}")))?;
-    std::fs::create_dir_all(&workdir)?;
-    let safe = safe_filename(&filename);
+fn header_b64_utf8(request: &tauri::ipc::Request<'_>, key: &str) -> Result<String> {
+    let raw = request
+        .headers()
+        .get(key)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| Error::Config(format!("missing {key} header")))?;
+    let bytes = STANDARD
+        .decode(raw.as_bytes())
+        .map_err(|e| Error::Config(format!("invalid {key} header: {e}")))?;
+    String::from_utf8(bytes).map_err(|e| Error::Config(format!("invalid {key} utf8: {e}")))
+}
+
+fn write_recording(workdir: &PathBuf, filename: &str, bytes: &[u8]) -> Result<PathBuf> {
+    std::fs::create_dir_all(workdir)?;
+    let safe = safe_filename(filename);
     let safe_name = OsString::from(&safe);
-    let dst = unique_child_path(&workdir, &safe_name, "recording")
+    let dst = unique_child_path(workdir, &safe_name, "recording")
         .ok_or_else(|| Error::Config(format!("too many copies of {safe:?} in workdir")))?;
-    std::fs::write(&dst, &raw)?;
+    std::fs::write(&dst, bytes)?;
     logfile::info(&format!(
         "save_recording {} bytes -> {}",
-        raw.len(),
+        bytes.len(),
         dst.display()
     ));
     Ok(dst)
+}
+
+#[tauri::command]
+pub fn save_recording(request: tauri::ipc::Request<'_>) -> Result<PathBuf> {
+    let workdir = PathBuf::from(header_b64_utf8(&request, "x-workdir")?);
+    let filename = header_b64_utf8(&request, "x-filename")?;
+    let bytes: &[u8] = match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => b.as_slice(),
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err(Error::Config(
+                "save_recording: expected raw body, got json".into(),
+            ));
+        }
+    };
+    write_recording(&workdir, &filename, bytes)
 }
 
 #[cfg(test)]
@@ -122,12 +145,11 @@ mod tests {
     }
 
     #[test]
-    fn save_recording_uses_unique_sanitised_destination() {
+    fn write_recording_uses_unique_sanitised_destination() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("take.wav"), []).unwrap();
 
-        let path =
-            save_recording(dir.path().to_path_buf(), "take.wav".into(), "AQID".into()).unwrap();
+        let path = write_recording(&dir.path().to_path_buf(), "take.wav", &[1, 2, 3]).unwrap();
 
         assert_eq!(path, dir.path().join("take (1).wav"));
         assert_eq!(std::fs::read(path).unwrap(), [1, 2, 3]);

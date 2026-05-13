@@ -101,13 +101,23 @@ pub(super) fn build_android(skip: bool, dev: bool, lock: &SharedOut) -> Result<i
     build_android_in_docker(dev, lock)
 }
 
-pub(super) fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
+pub fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
     let ks_props = root()
         .join("src-tauri")
         .join("gen")
         .join("android")
         .join("keystore.properties");
-    if ks_props.exists() {
+    let needs_write = if ks_props.exists() {
+        let recorded = fs::read_to_string(&ks_props)
+            .unwrap_or_default()
+            .lines()
+            .find_map(|l| l.strip_prefix("storeFile=").map(str::to_string))
+            .unwrap_or_default();
+        !recorded.is_empty() && !Path::new(&recorded).exists()
+    } else {
+        true
+    };
+    if !needs_write {
         return Ok(());
     }
     if !dev {
@@ -132,10 +142,7 @@ pub(super) fn ensure_dev_keystore_properties(dev: bool) -> Result<()> {
         "storeFile={store_path}\nstorePassword=android\nkeyAlias=androiddebugkey\nkeyPassword=android\n"
     );
     fs::write(&ks_props, body)?;
-    eprintln!(
-        "[and] generated {} pointing at debug.keystore",
-        ks_props.display()
-    );
+    eprintln!("[and] (re)wrote {} → {}", ks_props.display(), store_path);
     Ok(())
 }
 

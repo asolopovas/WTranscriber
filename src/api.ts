@@ -13,7 +13,7 @@ import type {
   TranscribeProgress,
   Transcript,
 } from "@/types";
-import { uint8ToBase64 } from "@utils/base64";
+import { utf8ToBase64 } from "@utils/base64";
 
 export const api = {
   systemInfo: () => invoke<SystemInfo>("system_info"),
@@ -56,7 +56,12 @@ export const api = {
   addToWorkdir: (source: string, workdir: string) =>
     invoke<string>("add_to_workdir", { source, workdir }),
   saveRecording: (workdir: string, filename: string, bytes: Uint8Array) =>
-    invoke<string>("save_recording", { workdir, filename, bytes: uint8ToBase64(bytes) }),
+    invoke<string>("save_recording", bytes, {
+      headers: {
+        "x-workdir": utf8ToBase64(workdir),
+        "x-filename": utf8ToBase64(filename),
+      },
+    }),
   readAudioBytes: (path: string) => invoke<ArrayBuffer>("read_audio_bytes", { path }),
   logRenderer: (payload: {
     level: "error" | "warn" | "info";
