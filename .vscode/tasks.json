@@ -1,0 +1,95 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev: desktop (HMR)",
+      "type": "shell",
+      "command": "just dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "dev: stop",
+      "type": "shell",
+      "command": "just dev stop",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "android: bootstrap (USB)",
+      "type": "shell",
+      "command": "just android",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "android: bootstrap (LAN host)",
+      "type": "shell",
+      "command": "just android host",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "android: logcat (chromium + Rust)",
+      "type": "shell",
+      "command": "adb logcat -v time chromium:V Console:V RustStdoutStderr:V *:S",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "check (pre-release gate, 11 jobs)",
+      "type": "shell",
+      "command": "just check",
+      "problemMatcher": ["$rustc", "$tsc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "build: dev release matrix",
+      "type": "shell",
+      "command": "just build",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "release: publish dev prerelease",
+      "type": "shell",
+      "command": "just release",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "release: stable (patch)",
+      "type": "shell",
+      "command": "just release-stable",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "release: stable (minor)",
+      "type": "shell",
+      "command": "just release-stable minor",
+      "problemMatcher": ["$rustc"],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "bootstrap (Windows host setup)",
+      "type": "shell",
+      "command": "just bootstrap",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
+    },
+    {
+      "label": "setup (bun install + git hooks)",
+      "type": "shell",
+      "command": "just setup",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    }
+  ]
+}

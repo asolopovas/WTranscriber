@@ -1,0 +1,9 @@
+{
+  "json.schemaDownload.enable": true,
+  "json.schemas": [
+    {
+      "fileMatch": ["src-tauri/tauri.conf.json", "src-tauri/tauri.*.conf.json"],
+      "url": "https://schema.tauri.app/config/2"
+    }
+  ]
+}
