@@ -5,7 +5,7 @@
       "name": "Android: Attach Tauri (lldb)",
       "type": "lldb",
       "request": "attach",
-      "pid": "${command:pickProcess}",
+      "pid": 24609,
       "initCommands": [
         "platform select remote-android",
         "platform connect connect://localhost:5039"

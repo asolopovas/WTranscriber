@@ -67,18 +67,29 @@ pub(super) fn spawn_detached(
     if let Some(parent) = stdout_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut cmd = Command::new(prog);
-    cmd.args(args)
-        .current_dir(root())
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(File::create(stdout_path)?))
-        .stderr(Stdio::from(File::create(stderr_path)?));
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
-    Ok(cmd.spawn().with_context(|| format!("spawn {prog}"))?.id())
+    let build = |flags: u32| -> Result<Child> {
+        let mut cmd = Command::new(prog);
+        cmd.args(args)
+            .current_dir(root())
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(File::create(stdout_path)?))
+            .stderr(Stdio::from(File::create(stderr_path)?));
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        #[cfg(windows)]
+        cmd.creation_flags(flags);
+        #[cfg(not(windows))]
+        let _ = flags;
+        cmd.spawn().with_context(|| format!("spawn {prog}"))
+    };
+    let primary = 0x0800_0000 | 0x0100_0000 | 0x0000_0008 | 0x0000_0200;
+    let fallback = 0x0800_0000;
+    let child = match build(primary) {
+        Ok(c) => c,
+        Err(_) => build(fallback)?,
+    };
+    Ok(child.id())
 }
 
 pub(super) fn spawn_with_env(prog: &str, args: &[&str], env: &[(String, String)]) -> Result<()> {

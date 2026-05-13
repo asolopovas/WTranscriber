@@ -21,7 +21,6 @@
       "label": "dev: android (USB)",
       "type": "shell",
       "command": "just android usb",
-      "isBackground": true,
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
@@ -29,7 +28,6 @@
       "label": "dev: android (LAN host)",
       "type": "shell",
       "command": "just android host",
-      "isBackground": true,
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
