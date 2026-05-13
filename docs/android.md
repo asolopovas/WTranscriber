@@ -6,25 +6,23 @@ Dev-loop commands live in [`dev-loop.md`](dev-loop.md). This file: prerequisites
 
 - Android Studio with SDK + NDK (version pinned in `justfile` `_android_ndk` — currently `27.2.12479018`)
 - JDK 21
-- `just android-targets` — Rust Android targets
-- `just android-prebuilts` — sherpa-onnx Android prebuilts
+- Rust Android targets (`rustup target add aarch64-linux-android`, etc.)
+- sherpa-onnx Android prebuilts (auto-fetched on first build into `.android-prebuilt/`; manual: `cargo xtask android prebuilts`)
 
-Run `just android-doctor` for an authoritative toolchain check; it reads the
-actual NDK path the build will use and fails loudly on drift.
+`bun scripts/doctor.ts` validates host prerequisites are reachable from the current shell.
 
-## Build / install
+## Build / install (no live session)
 
 ```bash
-just android-build              # build APK
-just android-install            # build + install
-just android-install-fresh      # uninstall + install (fixes signature mismatch)
-just android-doctor             # toolchain sanity
-just android-cli                # build wt CLI for Android
-just android-cli-push           # push to /data/local/tmp
-just android-cli-run -- --help  # run on device
+cargo xtask android build                # build the APK (aarch64 default)
+cargo xtask android build --target armv7 # other targets: armv7 | x86_64 | i686
+bun scripts/android-install.ts           # build + adb install -r
+bun scripts/android-install.ts --force   # uninstall + reinstall (fixes signature mismatch)
 ```
 
-Pass `target=<aarch64|armv7|x86_64|i686>`; default `aarch64`. Do not run install/build while a dev session is live.
+The install script derives `ANDROID_HOME`/`NDK_HOME` from the standard SDK location on Windows and Linux, then forwards to `cargo xtask android build` followed by `adb`. The `.vscode/tasks.json` entries "android: build + install APK" and "android: build + reinstall APK (wipe data)" wrap it.
+
+The keystore-properties path is regenerated per-host by `xtask/src/release/builders.rs::ensure_dev_keystore_properties` whenever the recorded `storeFile` is missing — same checkout signs APKs on Windows and Linux without manual edits.
 
 ## What `just android` guarantees
 
@@ -44,13 +42,10 @@ Pass `target=<aarch64|armv7|x86_64|i686>`; default `aarch64`. Do not run install
 
 Outer harness budget: `--idle 120 --max 2100` (cold aarch64-android cargo + first-run gradle commonly takes 10–30 min; warm builds finish in <30 s).
 
-`just android-status-json` reports: `sessionHealthy`, `viteAlive`, `reverse1420`, `reverse1421`, `cdpForward`, `apiResponsive`, log ages, last HMR update, last crash signal.
-
 ## Headless emulator
 
 ```bash
-just android-emu       # cross-platform; bounded waits
-just android-emu-stop
+bun scripts/android-emu.ts        # cross-platform; bounded waits
 ```
 
-Backed by `scripts/android-emu.ts`. Creates the AVD on first run, boots `-no-window -gpu swiftshader_indirect -accel on`. Each wait stage prints progress every 5 s.
+Creates the AVD on first run, boots `-no-window -gpu swiftshader_indirect -accel on`. Each wait stage prints progress every 5 s.

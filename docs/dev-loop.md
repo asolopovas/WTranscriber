@@ -10,38 +10,35 @@ Every `just` recipe runs through `scripts/run.ts`:
 - Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
 - Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
 
-Long-running interactive recipes (`dev`, `dev-cpu`, `watch`) use `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
+`just dev` is long-running and uses `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
 
 `just check` runs **11 gates** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all complete. The same recipe runs in CI on every push and PR.
 
 ## Desktop
 
-Windows is the primary release host; Linux is supported for dev (`just dev`) and the `.deb` build (`just build-deb-docker`). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
+Windows is the primary release host; Linux is supported for dev (`just dev`) and the `.deb` build (Docker, via `cargo xtask release`). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
 
 ```bash
-just dev          # HMR
-just dev-cpu      # HMR with sherpa-static (no CUDA)
-just build        # full release matrix (Linux + Windows + Android), CLI included; host auto-detected
-just build-host   # current host only: GUI installer + wt CLI
+just dev          # HMR (Vite + tauri dev)
+just dev stop     # stop any running dev session (desktop + android)
+just build        # full release matrix (host + Android + Linux .deb)
 just check        # parallel pre-release gate
-just e2e          # Playwright UI tests (Vite + mocked Tauri IPC)
 ```
 
 ## Android
 
 ```bash
-just android                  # bootstrap USB/emu HMR session (idempotent)
-just android-host             # bootstrap Wi-Fi/LAN session
-just android-status           # bounded health check (≤30 s)
-just android-status-json      # machine-readable health
-just android-smoke            # fail-fast end-to-end probe
-just dev stop                 # stop session and forwards (desktop + android)
-just android-debug-eval "document.title"
-just android-emu              # cross-platform headless x86_64 emulator
-just android-emu-stop
+just android                       # bootstrap USB HMR session (idempotent)
+just android host                  # bootstrap Wi-Fi/LAN session
+just android usb R5CXB2PGC2H       # pick a device when multiple are attached
+just dev stop                      # stop session and forwards
+
+bun scripts/android-install.ts          # APK-only build + install
+bun scripts/android-install.ts --force  # uninstall + reinstall (handles signature mismatch)
+bun scripts/android-emu.ts              # headless x86_64 emulator
 ```
 
-Pass a device serial when multiple are attached: `just android R5CXB2PGC2H`.
+The `.vscode/tasks.json` entries "android: build + install APK" and "android: build + reinstall APK (wipe data)" wrap the install script.
 
 ## Live-session signals
 
@@ -59,4 +56,4 @@ Full `tmp/` artefact contract: [`tmp.md`](tmp.md).
 just dev stop && just android
 ```
 
-Never run `just android-install`, `just android-build`, `cargo tauri build`, or any release build while `tmp/_pids.json` exists and Vite owns `:1420`.
+While `tmp/_pids.json` exists and Vite owns `:1420`, do not run `cargo xtask android build`, `bun scripts/android-install.ts`, `cargo tauri build`, or any release build — each replaces the debug-dev APK and strands HMR.

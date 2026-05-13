@@ -2,16 +2,17 @@
 
 ## Commands
 
-| Command                       | What it does                                             |
-| ----------------------------- | -------------------------------------------------------- |
-| `just release`                | Dev release; updates rolling `dev` prerelease            |
-| `just release-stable [level]` | `check` + bump (commits + tags) + build + publish stable |
-| `just release-bump [level]`   | Bump version, commit, tag                                |
-| `just release-build [--dev]`  | Build artifacts only into `releases/[dev/]`              |
-| `just release-publish <ch>`   | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`           |
+| Command                             | What it does                                                   |
+| ----------------------------------- | -------------------------------------------------------------- |
+| `just build`                        | Build full matrix into `releases/dev/` (`xtask release --dev`) |
+| `just release`                      | Publish `releases/dev/*` to the rolling `dev` prerelease       |
+| `just release-stable [level]`       | `check` + bump (commits + tags) + build + publish stable       |
+| `cargo xtask bump [level]`          | Bump version, commit, tag (no push, no build)                  |
+| `cargo xtask release [--dev …]`     | Build artifacts into `releases/[dev/]`                         |
+| `cargo xtask publish <dev\|stable>` | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                 |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
-`release-build` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
+`xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
 ## Windows VM preflight
 
@@ -65,19 +66,20 @@ Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via
 Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb"]`):
 
 - Windows host: `wtranscriber-setup-*.exe` (NSIS)
-- Linux `.deb` (Docker, cross-platform): produced inside `debian:12-slim` via `just build-deb-docker`, written to `src-tauri/target/release/bundle/deb/`
+- Linux `.deb` (Docker, cross-platform): produced inside `debian:12-slim` by `cargo xtask release`, written to `src-tauri/target/release/bundle/deb/`
 - Android: `wtranscriber-*.apk` (signed if `keystore.properties` present)
 - `SHA256SUMS[-<ver>]` and `release-manifest-<ver>.json`
 - `<artifact>.sig` per binary if `TAURI_SIGNING_PRIVATE_KEY` is exported
 
 ## Gates
 
-| Stage             | Gate                                                                                                                                        |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `release-bump`    | Working tree clean; tag does not exist                                                                                                      |
-| `release-stable`  | `just check` (11 parallel jobs: fmt-check, clippy, clippy-xtask, typecheck, vue-lint, knip, rust-test, xtask-test, js-test, machete, audit) |
-| `release-publish` | Stable: clean tree, local tag exists                                                                                                        |
-| `release-build`   | Stable: refuses unsigned APK; dev: warns and continues                                                                                      |
+| Stage                    | Gate                                                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `xtask bump`             | Working tree clean; tag does not exist                                                                                                      |
+| `just release-stable`    | `just check` (11 parallel jobs: fmt-check, clippy, clippy-xtask, typecheck, vue-lint, knip, rust-test, xtask-test, js-test, machete, audit) |
+| `xtask publish stable`   | Clean tree, local tag exists                                                                                                                |
+| `xtask release` (stable) | Refuses unsigned APK                                                                                                                        |
+| `xtask release --dev`    | Warns on unsigned APK and continues                                                                                                         |
 
 The bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
 

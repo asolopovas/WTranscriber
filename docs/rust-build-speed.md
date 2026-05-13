@@ -4,7 +4,7 @@
 
 - Do not re-enable LTO in `[profile.release]`. Heavy work is C++; LTO costs minutes for sub-1% gain.
 - Do not cap `CARGO_BUILD_JOBS`.
-- Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just lint` does this.
+- Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just check` runs both in parallel with the rest of the gate.
 - Profile with `cargo build --timings`; re-measure after each change.
 
 ## Toolchain wrappers (committed, installed by `just bootstrap`)
@@ -47,10 +47,10 @@ Optimises deps once; hot-path crates (`sherpa-onnx`, `tokio`, `reqwest`, `rubato
 
 Warm rebuild after one Rust source change (Windows, 16 cores):
 
-| Recipe            | Time  | Output                                                         |
-| ----------------- | ----- | -------------------------------------------------------------- |
-| `just build-host` | ~50 s | `wt` CLI + GUI installer (NSIS .exe on Windows, .deb on Linux) |
-| `just build`      | ~5 m  | Full matrix: host (GUI + CLI) + Android APK + Linux .deb       |
+| Command                                           | Time  | Output                                                   |
+| ------------------------------------------------- | ----- | -------------------------------------------------------- |
+| `cargo xtask release --dev --no-android --no-deb` | ~50 s | Host only: GUI installer + `wt` CLI                      |
+| `just build`                                      | ~5 m  | Full matrix: host (GUI + CLI) + Android APK + Linux .deb |
 
 Cold build: ~210 s. Floor is the single-threaded link of statically-bundled `sherpa-onnx`.
 
@@ -63,8 +63,8 @@ Cold build: ~210 s. Floor is the single-threaded link of statically-bundled `she
 
 `src-tauri/target` reaches 15–20 GB in normal use (debug ~6 GB, release ~11 GB).
 
-- `just clean` — full nuke: `tmp/`, `src-tauri/target`, `xtask/target`, `dist`, `node_modules`. Next build is fully cold (~210 s for release).
-- For surgical reclaim without wiping deps: `cargo clean --release --manifest-path src-tauri/Cargo.toml` reclaims ~11 GB; one cold release build to refill.
+- Full nuke (cold next build, ~210 s for release): `cargo clean --manifest-path src-tauri/Cargo.toml && cargo clean --manifest-path xtask/Cargo.toml && rm -rf tmp dist node_modules`.
+- Surgical reclaim without wiping deps: `cargo clean --release --manifest-path src-tauri/Cargo.toml` reclaims ~11 GB; one cold release build to refill.
 - `~/.cargo` registry/git caches can be trimmed with `cargo cache -a` (needs `cargo-cache`).
 
 `target/sherpa-onnx-prebuilt/` (~900 MB) is a download cache for the prebuilt sherpa-onnx binaries, **not** managed by cargo. Deleting it forces a re-download on the next build.
