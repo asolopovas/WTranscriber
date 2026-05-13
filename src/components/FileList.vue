@@ -53,6 +53,47 @@ const emit = defineEmits<{
 
 const selectionActive = computed(() => props.selectedPaths.size > 0);
 
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let longPressFired = false;
+let pressStartX = 0;
+let pressStartY = 0;
+
+function clearLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function onRowPointerDown(e: PointerEvent, path: string) {
+  if (e.pointerType !== "touch") return;
+  clearLongPress();
+  pressStartX = e.clientX;
+  pressStartY = e.clientY;
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    longPressFired = true;
+    emit("toggle-select", path);
+    if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(15);
+  }, 450);
+}
+
+function onRowPointerMove(e: PointerEvent) {
+  if (!longPressTimer) return;
+  if (Math.abs(e.clientX - pressStartX) > 8 || Math.abs(e.clientY - pressStartY) > 8) {
+    clearLongPress();
+  }
+}
+
+function onRowClick(entry: DirEntry) {
+  if (longPressFired) {
+    longPressFired = false;
+    return;
+  }
+  if (selectionActive.value) emit("toggle-select", entry.path);
+  else emit("choose", entry);
+}
+
 const openMenuPath = ref<string | null>(null);
 function toggleMenu(path: string) {
   openMenuPath.value = openMenuPath.value === path ? null : path;
@@ -83,10 +124,15 @@ defineExpose({
     <li
       v-for="{ entry, pretty, title } in rows"
       :key="entry.path"
-      class="group border-b border-outline-variant/20 pl-margin pr-unit py-xs cursor-pointer transition-colors"
+      class="group border-b border-outline-variant/20 pl-margin pr-unit py-xs cursor-pointer transition-colors select-none [-webkit-touch-callout:none] [-webkit-tap-highlight-color:transparent] [-webkit-user-select:none]"
       :class="selectedPath === entry.path ? 'bg-primary/25' : ''"
-      @click="selectionActive ? emit('toggle-select', entry.path) : emit('choose', entry)"
+      @click="onRowClick(entry)"
       @dblclick="emit('transcribe', entry)"
+      @pointerdown="onRowPointerDown($event, entry.path)"
+      @pointermove="onRowPointerMove"
+      @pointerup="clearLongPress"
+      @pointercancel="clearLongPress"
+      @contextmenu.prevent
     >
       <div class="flex items-center gap-xs">
         <div v-if="selectionActive || selectedPaths.has(entry.path)" class="shrink-0" @click.stop>
