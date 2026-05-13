@@ -431,6 +431,65 @@ pub fn disable_persistent_storage() -> std::result::Result<(), String> {
 }
 
 #[cfg(target_os = "android")]
+pub(crate) fn migrate_private_transcripts_into(
+    data_dir: &std::path::Path,
+    workdir: &std::path::Path,
+) {
+    let private_transcripts = data_dir.join(crate::constants::TRANSCRIPTS_DIRNAME);
+    if private_transcripts == workdir {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&private_transcripts) else {
+        return;
+    };
+    if let Err(e) = std::fs::create_dir_all(workdir) {
+        logfile::error(&format!(
+            "android: create workdir {} failed: {e}",
+            workdir.display()
+        ));
+        return;
+    }
+    let mut moved = 0u64;
+    for e in entries.flatten() {
+        let src = e.path();
+        let Some(name) = src.file_name() else {
+            continue;
+        };
+        let dst = workdir.join(name);
+        if dst.exists() {
+            continue;
+        }
+        match fs_utils::copy_recursive(&src, &dst, false) {
+            Ok(bytes) if bytes > 0 => {
+                let _ = fs_utils::remove_recursive(&src);
+                moved += 1;
+                logfile::info(&format!(
+                    "android: moved private transcript {} ({bytes} bytes) -> {}",
+                    name.to_string_lossy(),
+                    workdir.display()
+                ));
+            }
+            Ok(_) => {
+                let _ = fs_utils::remove_recursive(&dst);
+            }
+            Err(err) => {
+                let _ = fs_utils::remove_recursive(&dst);
+                logfile::error(&format!(
+                    "android: move private transcript {} failed: {err}",
+                    src.display()
+                ));
+            }
+        }
+    }
+    if moved > 0 {
+        logfile::info(&format!(
+            "android: migrated {moved} private transcripts into {}",
+            workdir.display()
+        ));
+    }
+}
+
+#[cfg(target_os = "android")]
 pub(crate) fn migrate_legacy_android_data(
     new_data_dir: &std::path::Path,
     _workdir: &std::path::Path,

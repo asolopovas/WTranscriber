@@ -168,6 +168,7 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
         let s = p.to_string_lossy();
         if s.starts_with(constants::ANDROID_LEGACY_ROOT)
             || s.starts_with(constants::ANDROID_LEGACY_ROOT_EMULATED)
+            || s.starts_with("/data/")
         {
             cfg.last_dir = None;
             dirty = true;

@@ -93,8 +93,13 @@ fn setup_android_paths(app: &tauri::App) {
     }
     paths::set_models_dir(models_dir);
 
+    let persistent_workdir = paths::android_persistent_transcripts_dir().to_path_buf();
     let ext_workdir = paths::android_external_transcripts_dir().to_path_buf();
-    let workdir = if std::fs::create_dir_all(&ext_workdir).is_ok() {
+    let workdir = if android::android_has_all_files_access()
+        && std::fs::create_dir_all(&persistent_workdir).is_ok()
+    {
+        persistent_workdir
+    } else if std::fs::create_dir_all(&ext_workdir).is_ok() {
         ext_workdir
     } else {
         let fallback = data_dir.join(constants::TRANSCRIPTS_DIRNAME);
@@ -103,6 +108,7 @@ fn setup_android_paths(app: &tauri::App) {
     };
     paths::set_default_workdir(workdir.clone());
     android::migrate_legacy_android_data(&data_dir, &workdir);
+    android::migrate_private_transcripts_into(&data_dir, &workdir);
     logfile::info(&format!(
         "android: data={} workdir={}",
         data_dir.display(),
