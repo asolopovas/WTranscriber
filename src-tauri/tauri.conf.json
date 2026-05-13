@@ -23,25 +23,14 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": ["**"]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "deb"
-    ],
-    "resources": [
-      "../scripts/diarize.py",
-      "../scripts/install-nemo-deps.sh",
-      "../scripts/install-nemo-deps.ps1",
-      "../scripts/install-cudnn.ps1",
-      "../scripts/install-sherpa-cuda.ps1"
-    ],
+    "targets": ["nsis", "deb"],
+    "resources": ["../scripts/install-cudnn.ps1", "../scripts/install-sherpa-cuda.ps1"],
     "linux": {
       "deb": {
         "depends": [
@@ -55,9 +44,7 @@
           "bzip2",
           "tar"
         ],
-        "recommends": [
-          "ffmpeg"
-        ]
+        "recommends": ["ffmpeg"]
       }
     },
     "icon": [

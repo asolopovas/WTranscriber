@@ -98,18 +98,14 @@ Android default essentials (Parakeet + TitaNet + Qwen3 0.6B) total **~1.1 GB**; 
 
 ### Runtime archives (host downloads, auto-installed)
 
-| Component           | Windows x64 | Linux x64 |
-| ------------------- | ----------: | --------: |
-| sherpa-onnx (CPU)   |       17 MB |     26 MB |
-| sherpa-onnx (CUDA)  |      296 MB |    191 MB |
-| cuDNN 9 (CUDA 12)   |      646 MB |    925 MB |
-| llama.cpp b9045     |       15 MB |     14 MB |
-| NeMo Python runtime |      ~5 GB¹ |    ~5 GB² |
+| Component          | Windows x64 | Linux x64 |
+| ------------------ | ----------: | --------: |
+| sherpa-onnx (CPU)  |       17 MB |     26 MB |
+| sherpa-onnx (CUDA) |      296 MB |    191 MB |
+| cuDNN 9 (CUDA 12)  |      646 MB |    925 MB |
+| llama.cpp b9045    |       15 MB |     14 MB |
 
-¹ Windows: install manually via `scripts/install-nemo-deps.ps1` (or `just nemo-deps`). Auto-install is Linux-only. <br>
-² Linux: auto-installed in the background when the NeMo diarizer is selected on a GPU host. Installs `nemo_toolkit[asr]` into an isolated `uv`-managed Python 3.12 (torch + CUDA wheels + nemo_toolkit).
-
-The desktop build links sherpa-onnx-cpu statically when configured with `sherpa-static`, so CPU-only users skip the sherpa runtime download entirely.
+Diarization runs entirely on ONNX (sortformer + titanet) — no Python runtime is required. The desktop build links sherpa-onnx-cpu statically when configured with `sherpa-static`, so CPU-only users skip the sherpa runtime download entirely.
 
 ## License
 

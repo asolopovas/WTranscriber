@@ -2,9 +2,6 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "resources": {
-      "../scripts/diarize.py": "scripts/diarize.py",
-      "../scripts/install-nemo-deps.sh": "scripts/install-nemo-deps.sh",
-      "../scripts/install-nemo-deps.ps1": "scripts/install-nemo-deps.ps1",
       "../scripts/install-cudnn.ps1": "scripts/install-cudnn.ps1",
       "../scripts/install-sherpa-cuda.ps1": "scripts/install-sherpa-cuda.ps1",
       "target/release/sherpa-onnx-c-api.dll": "sherpa-onnx-c-api.dll",
