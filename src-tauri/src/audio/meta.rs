@@ -5,17 +5,20 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct AudioMeta {
     #[serde(default)]
     pub trim_start_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trim_end_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 impl AudioMeta {
     #[must_use]
     pub const fn is_default(&self) -> bool {
-        self.trim_start_ms == 0 && self.trim_end_ms.is_none()
+        self.trim_start_ms == 0 && self.trim_end_ms.is_none() && self.duration_ms.is_none()
     }
 }
 
@@ -68,7 +71,7 @@ mod tests {
     fn nonzero_trim_is_not_default() {
         let m = AudioMeta {
             trim_start_ms: 1,
-            trim_end_ms: None,
+            ..AudioMeta::default()
         };
         assert!(!m.is_default());
     }
@@ -81,6 +84,7 @@ mod tests {
         let meta = AudioMeta {
             trim_start_ms: 250,
             trim_end_ms: Some(9_000),
+            ..AudioMeta::default()
         };
         save(&audio, &meta).unwrap();
         let loaded = load(&audio).unwrap();
@@ -97,13 +101,32 @@ mod tests {
             &audio,
             &AudioMeta {
                 trim_start_ms: 1,
-                trim_end_ms: None,
+                ..AudioMeta::default()
             },
         )
         .unwrap();
         assert!(meta_path(&audio).exists());
         save(&audio, &AudioMeta::default()).unwrap();
         assert!(!meta_path(&audio).exists());
+    }
+
+    #[test]
+    fn duration_only_meta_persists_and_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join("clip.wav");
+        std::fs::write(&audio, b"x").unwrap();
+        save(
+            &audio,
+            &AudioMeta {
+                duration_ms: Some(12_345),
+                ..AudioMeta::default()
+            },
+        )
+        .unwrap();
+        let loaded = load(&audio).unwrap();
+        assert_eq!(loaded.duration_ms, Some(12_345));
+        assert_eq!(loaded.trim_start_ms, 0);
+        assert_eq!(loaded.trim_end_ms, None);
     }
 
     #[test]

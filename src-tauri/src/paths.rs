@@ -197,6 +197,12 @@ pub fn android_persistent_transcripts_dir() -> &'static std::path::Path {
 
 #[cfg(target_os = "android")]
 #[must_use]
+pub fn android_persistent_cache_dir() -> &'static std::path::Path {
+    std::path::Path::new(constants::ANDROID_PERSISTENT_CACHE_DIR)
+}
+
+#[cfg(target_os = "android")]
+#[must_use]
 pub fn android_internal_data_root() -> &'static std::path::Path {
     std::path::Path::new(constants::ANDROID_INTERNAL_DATA_ROOT)
 }

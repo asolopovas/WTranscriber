@@ -2,13 +2,13 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "@/api";
 import Button from "@components/ui/Button.vue";
+import Icon from "@components/ui/Icon.vue";
 
 const emit = defineEmits<{
   (e: "granted"): void;
   (e: "skipped"): void;
 }>();
 
-const opening = ref(false);
 const polling = ref(false);
 const checking = ref(false);
 
@@ -45,17 +45,12 @@ function onVisibility() {
   if (document.visibilityState === "visible") void pollGrant();
 }
 
-async function openSettings() {
-  opening.value = true;
-  try {
-    await api.requestPersistentStorage();
-    startPolling();
-  } finally {
-    opening.value = false;
-  }
+async function onContinue() {
+  await api.requestPersistentStorage();
+  startPolling();
 }
 
-function skip() {
+function onSkip() {
   stopPolling();
   emit("skipped");
 }
@@ -73,40 +68,32 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-surface/95 backdrop-blur-sm overflow-y-auto px-xl py-xl"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-surface/95 backdrop-blur-sm px-margin"
   >
-    <div class="w-full max-w-112 flex flex-col gap-xl">
-      <div class="flex flex-col items-center gap-md">
-        <div class="text-6xl" aria-hidden="true">💾</div>
-        <h1 class="text-headlineSmall text-on-surface text-center">Save models permanently?</h1>
+    <div
+      class="w-full max-w-96 flex flex-col gap-lg p-lg rounded-2xl bg-surface-container-high border border-outline-variant/40 shadow-2xl"
+    >
+      <div class="flex items-center gap-md">
+        <Icon name="folder_special" :size="28" class="text-primary shrink-0" />
+        <h1 class="text-titleLarge text-on-surface">Keep your files</h1>
       </div>
 
-      <div class="flex flex-col gap-md text-bodyMedium text-on-surface-variant">
-        <p>
-          WTranscriber needs to download about <strong>1 GB</strong> of speech and language models.
-        </p>
-        <p>
-          Without permission, Android will <strong>delete them every time you reinstall</strong>
-          the app — forcing a full redownload.
-        </p>
-        <p>
-          Granting <em>All files access</em> stores models in
-          <code class="text-labelSmall font-mono">/WTranscriber/models</code> on your device, where
-          they survive uninstalls and updates.
-        </p>
-      </div>
+      <p class="text-bodyMedium text-on-surface-variant">
+        Save recordings, transcripts and edits to shared storage so they survive reinstalls.
+      </p>
 
-      <div class="flex flex-col gap-sm">
-        <Button :disabled="opening" variant="primary" size="lg" block @click="openSettings">
-          {{ polling ? "Waiting for permission…" : "Open settings" }}
+      <div class="flex flex-col gap-xs">
+        <Button variant="primary" size="lg" block @click="onContinue">
+          {{ polling ? "Waiting for permission…" : "Continue" }}
         </Button>
-        <Button variant="ghost" size="lg" block @click="skip">
-          Skip — redownload after every reinstall
-        </Button>
+        <Button variant="ghost" size="lg" block @click="onSkip">Skip</Button>
       </div>
 
-      <p v-if="polling" class="text-bodySmall text-on-surface-variant text-center font-mono">
-        Toggle “Allow access to manage all files”, then return here.
+      <p
+        v-if="polling"
+        class="text-labelSmall font-mono text-on-surface-variant text-center leading-tight"
+      >
+        Allow “Manage all files”, then return.
       </p>
     </div>
   </div>

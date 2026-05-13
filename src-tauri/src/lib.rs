@@ -73,8 +73,19 @@ fn setup_android_paths(app: &tauri::App) {
     };
     let internal_config = data_dir.join(constants::CONFIG_FILENAME);
     paths::set_config_file(internal_config.clone());
-    let cache_dir = data_dir.join(constants::CACHE_DIRNAME);
-    let _ = std::fs::create_dir_all(&cache_dir);
+    let internal_cache = data_dir.join(constants::CACHE_DIRNAME);
+    let _ = std::fs::create_dir_all(&internal_cache);
+    let cache_dir = if android::android_has_all_files_access() {
+        let persistent = paths::android_persistent_cache_dir().to_path_buf();
+        if std::fs::create_dir_all(&persistent).is_ok() {
+            android::migrate_private_cache_into(&internal_cache, &persistent);
+            persistent
+        } else {
+            internal_cache.clone()
+        }
+    } else {
+        internal_cache.clone()
+    };
     paths::init(data_dir.clone(), data_dir.clone(), cache_dir);
     let models_dir = data_dir.join(constants::MODELS_DIRNAME);
     let _ = std::fs::create_dir_all(&models_dir);

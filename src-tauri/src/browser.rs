@@ -94,6 +94,9 @@ pub fn list(path: &Path) -> Result<DirListing> {
                     trim_start_ms = Some(m.trim_start_ms);
                 }
                 trim_end_ms = m.trim_end_ms;
+                if duration_ms.is_none() {
+                    duration_ms = m.duration_ms;
+                }
             }
         }
 

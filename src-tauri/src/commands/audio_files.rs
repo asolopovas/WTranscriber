@@ -18,10 +18,20 @@ pub async fn probe_audio(path: PathBuf) -> Option<u64> {
 
 #[tauri::command]
 pub async fn probe_duration(path: PathBuf) -> Option<u64> {
-    tokio::task::spawn_blocking(move || audio::probe_duration_ms(&path))
-        .await
-        .ok()
-        .flatten()
+    tokio::task::spawn_blocking(move || {
+        let ms = audio::probe_duration_ms(&path)?;
+        if path.exists() {
+            let mut meta = audio::meta::load(&path).unwrap_or_default();
+            if meta.duration_ms != Some(ms) {
+                meta.duration_ms = Some(ms);
+                let _ = audio::meta::save(&path, &meta);
+            }
+        }
+        Some(ms)
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]

@@ -32,6 +32,7 @@ export interface Config {
   llm_model?: string | null;
   last_dir?: string | null;
   use_persistent_models: boolean;
+  has_seen_persistent_prompt: boolean;
 }
 
 export type ExportFormat = "txt" | "csv" | "json" | "srt" | "vtt";
@@ -53,6 +54,7 @@ export interface DirEntry {
 export interface AudioMeta {
   trim_start_ms: number;
   trim_end_ms: number | null;
+  duration_ms: number | null;
 }
 
 export interface DirListing {

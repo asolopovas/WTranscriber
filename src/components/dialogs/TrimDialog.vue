@@ -445,6 +445,7 @@ async function persistMeta(target: DirEntry): Promise<boolean> {
   const meta: AudioMeta = {
     trim_start_ms: s,
     trim_end_ms: e < duration.value ? e : null,
+    duration_ms: null,
   };
   try {
     await api.saveAudioMeta(target.path, meta);

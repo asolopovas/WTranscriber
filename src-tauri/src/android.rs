@@ -490,6 +490,65 @@ pub(crate) fn migrate_private_transcripts_into(
 }
 
 #[cfg(target_os = "android")]
+pub(crate) fn migrate_private_cache_into(
+    private_cache: &std::path::Path,
+    persistent_cache: &std::path::Path,
+) {
+    if private_cache == persistent_cache {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(private_cache) else {
+        return;
+    };
+    let mut moved = 0u64;
+    for e in entries.flatten() {
+        let src = e.path();
+        let Some(name) = src.file_name() else {
+            continue;
+        };
+        let dst = persistent_cache.join(name);
+        if dst.exists() {
+            continue;
+        }
+        match fs_utils::copy_recursive(&src, &dst, false) {
+            Ok(bytes) if bytes > 0 => {
+                let _ = fs_utils::remove_recursive(&src);
+                moved += 1;
+                logfile::info(&format!(
+                    "android: moved private cache {} ({bytes} bytes) -> {}",
+                    name.to_string_lossy(),
+                    persistent_cache.display()
+                ));
+            }
+            Ok(_) => {
+                let _ = fs_utils::remove_recursive(&dst);
+            }
+            Err(err) => {
+                let _ = fs_utils::remove_recursive(&dst);
+                logfile::error(&format!(
+                    "android: move private cache {} failed: {err}",
+                    src.display()
+                ));
+            }
+        }
+    }
+    if moved > 0 {
+        logfile::info(&format!(
+            "android: migrated {moved} private cache entries into {}",
+            persistent_cache.display()
+        ));
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[allow(dead_code)]
+pub const fn migrate_private_cache_into(
+    _private_cache: &std::path::Path,
+    _persistent_cache: &std::path::Path,
+) {
+}
+
+#[cfg(target_os = "android")]
 pub(crate) fn migrate_legacy_android_data(
     new_data_dir: &std::path::Path,
     _workdir: &std::path::Path,

@@ -14,6 +14,7 @@ const props = defineProps<{
   transcript: Transcript | null;
   audioCount: number;
   transcribedCount: number;
+  probing?: { active: number; total: number } | null;
 }>();
 
 const todayLabel = computed(() =>
@@ -51,6 +52,13 @@ const isLiveProgress = computed(
           {{ fmtClock(progress.totalSec) }}
         </template>
         <template v-else>{{ fmtClock(progress.elapsedSec) }}</template>
+      </span>
+    </template>
+    <template v-else-if="probing && probing.total > 0">
+      <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
+      <span class="text-on-surface-variant shrink-0">probing</span>
+      <span class="text-secondary shrink-0 ml-auto">
+        {{ probing.total - probing.active }}/{{ probing.total }}
       </span>
     </template>
     <template v-else-if="transcript">

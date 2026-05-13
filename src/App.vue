@@ -69,6 +69,15 @@ const essentialsReady = essentials.ready;
 const storageGateResolved = ref(false);
 const showStorageGate = ref(false);
 
+const probingTotal = ref(0);
+const probingDone = ref(0);
+const probingActive = computed(() => probingTotal.value > probingDone.value);
+const probingState = computed(() =>
+  probingActive.value
+    ? { active: probingTotal.value - probingDone.value, total: probingTotal.value }
+    : null,
+);
+
 const dialogOpen = ref(false);
 const queueActive = ref(false);
 const queueTotal = ref(0);
@@ -118,15 +127,23 @@ async function reload() {
 
 function probeMissingDurations() {
   if (!listing.value) return;
-  for (const entry of listing.value.entries) {
-    if (!entry.is_audio || entry.duration_ms != null) continue;
-    const target = entry;
+  const targets = listing.value.entries.filter((e) => e.is_audio && e.duration_ms == null);
+  if (!targets.length) return;
+  probingTotal.value += targets.length;
+  for (const target of targets) {
     void api
       .probeDuration(target.path)
       .then((ms) => {
         if (ms != null && target.duration_ms == null) target.duration_ms = ms;
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        probingDone.value += 1;
+        if (probingDone.value >= probingTotal.value) {
+          probingTotal.value = 0;
+          probingDone.value = 0;
+        }
+      });
   }
 }
 
@@ -379,7 +396,7 @@ onMounted(async () => {
   if (sys.value?.os === "android") {
     try {
       const granted = await api.hasPersistentStorage();
-      if (!granted && sessionStorage.getItem("wt:storageGateSkipped") !== "1") {
+      if (!granted && !config.value?.has_seen_persistent_prompt) {
         showStorageGate.value = true;
       } else {
         if (granted) {
@@ -411,6 +428,9 @@ async function startEssentialsSafely() {
 async function onStorageGranted() {
   showStorageGate.value = false;
   storageGateResolved.value = true;
+  if (config.value && !config.value.has_seen_persistent_prompt) {
+    config.value.has_seen_persistent_prompt = true;
+  }
   try {
     models.value = await api.listModels();
   } catch (e) {
@@ -420,7 +440,9 @@ async function onStorageGranted() {
 }
 
 function onStorageSkipped() {
-  sessionStorage.setItem("wt:storageGateSkipped", "1");
+  if (config.value) {
+    config.value.has_seen_persistent_prompt = true;
+  }
   showStorageGate.value = false;
   storageGateResolved.value = true;
   void startEssentialsSafely();
@@ -849,6 +871,7 @@ const selectedProgress = computed(() =>
       :transcript="transcript"
       :audio-count="audioEntries.length"
       :transcribed-count="transcribedCount"
+      :probing="probingState"
     />
 
     <main

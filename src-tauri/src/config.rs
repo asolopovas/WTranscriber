@@ -11,6 +11,7 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Config {
     pub model: String,
     pub engine: Engine,
@@ -28,6 +29,8 @@ pub struct Config {
     pub last_dir: Option<std::path::PathBuf>,
     #[serde(default)]
     pub use_persistent_models: bool,
+    #[serde(default)]
+    pub has_seen_persistent_prompt: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
@@ -132,6 +135,7 @@ impl Default for Config {
             llm_model: default_llm_model(),
             last_dir: None,
             use_persistent_models: cfg!(target_os = "android"),
+            has_seen_persistent_prompt: false,
         }
     }
 }

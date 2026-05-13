@@ -38,6 +38,7 @@ const config = (): Config => ({
   llm_model: null,
   last_dir: null,
   use_persistent_models: false,
+  has_seen_persistent_prompt: false,
 });
 
 describe("model helpers", () => {
