@@ -13,9 +13,8 @@ pub(crate) mod proc;
 pub use patch::sign_patch_inline;
 
 #[allow(dead_code)]
-mod ident {
-    include!("../../../shared/identity.rs");
-}
+#[path = "../../../shared/identity.rs"]
+mod ident;
 const ANDROID_PACKAGE: &str = ident::APP_ID;
 
 #[derive(Subcommand)]

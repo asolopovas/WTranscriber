@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-include!("../../shared/identity.rs");
+#[path = "../../shared/identity.rs"]
+mod identity;
+pub use identity::*;
 
 pub const CONFIG_FILENAME: &str = "config.yml";
 pub const MODELS_DIRNAME: &str = "models";
