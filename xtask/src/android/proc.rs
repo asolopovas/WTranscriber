@@ -92,7 +92,7 @@ pub(super) fn spawn_persistent(
         let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
         let command_line = format!("cmd /C {}", cmd_quote(&batch_path.to_string_lossy()));
         let script = format!(
-            "$r=Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{{CommandLine={};CurrentDirectory={}}}; if($r.ReturnValue -ne 0){{throw \"Win32_Process.Create failed $($r.ReturnValue)\"}}; $r.ProcessId",
+            "$startup=([wmiclass]\"Win32_ProcessStartup\").CreateInstance(); $startup.ShowWindow=0; $r=([wmiclass]\"Win32_Process\").Create({}, {}, $startup); if($r.ReturnValue -ne 0){{throw \"Win32_Process.Create failed $($r.ReturnValue)\"}}; $r.ProcessId",
             quote(&command_line),
             quote(&root().to_string_lossy())
         );

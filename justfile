@@ -32,6 +32,7 @@ export CL := env_var_or_default('CL', _cl_default)
 _run := "bun scripts/run.ts"
 _par := "bun scripts/parallel.ts"
 _xtask_dev_stop := "cargo run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-dev-stop-target -- dev stop"
+_xtask_android_bootstrap := "cargo run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-android-bootstrap-target -- android bootstrap"
 
 default:
     @just --list --unsorted
@@ -69,7 +70,7 @@ dev action="":
 
 # Android HMR session. mode = usb (default) or host. Always force-restarts.
 android mode="usb" device="":
-    {{_run}} --tag android --idle 120 --max 2100 -- cargo xtask android bootstrap {{mode}} {{device}}
+    {{_run}} --tag android --idle 120 --max 2100 -- {{_xtask_android_bootstrap}} {{mode}} {{device}}
 
 # ─── quality ──────────────────────────────────────────────────────────────────
 

@@ -15,7 +15,6 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: "transcribe-all"): void;
-  (e: "pick-audio"): void;
   (e: "log-refresh"): void;
   (e: "log-clear"): void;
 }>();
@@ -97,17 +96,6 @@ const activeTabLabel = computed(() => TABS.find((t) => t.id === tab.value)?.labe
             : `Transcribe all (${pendingCount})`
         "
         aria-label="Transcribe all untranscribed files"
-      />
-      <Button
-        v-if="showTranscribeActions"
-        variant="primary"
-        shape="circle"
-        size="md"
-        icon="add"
-        :icon-size="22"
-        @click="emit('pick-audio')"
-        title="Add audio file(s) to working folder"
-        aria-label="Add audio files"
       />
     </div>
   </header>

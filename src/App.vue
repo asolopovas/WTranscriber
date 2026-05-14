@@ -838,7 +838,6 @@ const selectedProgress = computed(() =>
       :queue-done="queueDone"
       :queue-total="queueTotal"
       @transcribe-all="transcribeAll"
-      @pick-audio="pickAudio"
       @log-refresh="logViewerRef?.refresh()"
       @log-clear="logViewerRef?.clear()"
     />
@@ -965,6 +964,7 @@ const selectedProgress = computed(() =>
           :recording="recorderRef?.recording ?? false"
           :rec-elapsed="recorderRef?.elapsed ?? ''"
           @models-changed="(m) => (models = m)"
+          @pick-audio="pickAudio"
           @rec-start="recorderRef?.start()"
           @rec-stop="recorderRef?.stop()"
         />

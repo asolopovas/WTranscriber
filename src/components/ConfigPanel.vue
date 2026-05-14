@@ -40,6 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "models-changed", models: ModelInfo[]): void;
+  (e: "pick-audio"): void;
   (e: "rec-start"): void;
   (e: "rec-stop"): void;
 }>();
@@ -173,8 +174,9 @@ const headerAriaLabel = computed(() => {
         <Button
           v-if="!recording"
           variant="error"
-          size="md"
+          size="lg"
           icon="fiber_manual_record"
+          :icon-size="22"
           icon-fill
           title="Record"
           @pointerdown.stop
@@ -185,9 +187,10 @@ const headerAriaLabel = computed(() => {
         <Button
           v-else
           variant="primary"
-          size="md"
+          size="lg"
           bold
           icon="stop"
+          :icon-size="22"
           icon-fill
           :title="`Stop recording \u00b7 ${recElapsed}`"
           @pointerdown.stop
@@ -195,6 +198,18 @@ const headerAriaLabel = computed(() => {
         >
           {{ recElapsed }}
         </Button>
+        <Button
+          variant="ghost"
+          shape="circle"
+          size="lg"
+          icon="add"
+          :icon-size="22"
+          class="border border-outline-variant/60 bg-transparent text-on-surface-variant/80 hover:border-outline hover:bg-surface-container-high/60 hover:text-on-surface"
+          title="Add audio file(s) to working folder"
+          aria-label="Add audio files"
+          @pointerdown.stop
+          @click.stop.prevent="emit('pick-audio')"
+        />
       </div>
     </div>
 

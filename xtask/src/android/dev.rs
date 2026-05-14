@@ -87,7 +87,13 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
 
     let env = Vec::<(String, String)>::new();
     let mut args = vec![
-        "xtask".to_string(),
+        "run".to_string(),
+        "--quiet".to_string(),
+        "--manifest-path".to_string(),
+        "xtask/Cargo.toml".to_string(),
+        "--target-dir".to_string(),
+        "tmp/xtask-android-dev-target".to_string(),
+        "--".to_string(),
         "android".to_string(),
         "dev".to_string(),
         "--watch".to_string(),
