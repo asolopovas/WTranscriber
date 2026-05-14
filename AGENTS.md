@@ -19,7 +19,7 @@ scripts/         run.ts, parallel.ts, android-emu.ts, android-install.ts, cdp.ts
                  clean-temp.ts, clear-dev-logs.ts, dev-vital.ts, doctor.ts,
                  lint-vue.ts, install-*.ps1, bootstrap-windows.ps1, wt-windows-build.bat
 docs/            android · dev-loop · release · rust-build-speed · tmp · asr-pipeline-v2
-.agents/skills/  tauri (loaded by the Skill tool)
+.agents/skills/  project-local pi skills (mirrored under .opencode/skills for opencode)
 .vscode/         tasks.json (android build+install, dev, check, …)
 ```
 
@@ -115,7 +115,7 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Find code                     | Main-thread `Grep`/`Glob`, or `Explore` agent                                                              |
 | Diagnose a failing log signal | Read `logs/*.log` (build) + `tmp/*.log` (dev session) + `adb logcat` + `git log -p`; bisect recent commits |
-| Debug Tauri/WebView/IPC live  | Skill `tauri` (debugging section); CDP + logcat/`RustStdoutStderr`                                         |
+| Debug Tauri/WebView/IPC live  | Skill `tauri-v2`; CDP + logcat/`RustStdoutStderr`                                                          |
 | Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities                                      |
 | Edit project files            | Main thread (pre-commit hook is the gate)                                                                  |
 | Install Android APK only      | `bun scripts/android-install.ts` (add `--force` to wipe + reinstall on sig mismatch)                       |
@@ -124,4 +124,14 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 
 ## Skills
 
-- `tauri` — load before architectural / IPC / capability / mobile / distribution changes, and for WebView/CDP/logcat debugging.
+Project-relevant skills live in `.agents/skills/` for pi and are mirrored in `.opencode/skills/` for opencode. The matching global copies have been removed to avoid duplicate or stale skill selection.
+
+- `tauri-v2` — Tauri architecture, IPC, commands, capabilities, mobile, plugins, distribution.
+- `tauri-debugging` — live desktop/Android/iOS WebView, CDP, logcat, Rust panic, IPC/capability triage.
+- `rust-skills` — canonical Rust guidance; replaces redundant Rust best-practice/testing/async/pattern skills.
+- `chrome-devtools` — CDP/live browser inspection for the Vite/WebView surface.
+- `playwright-skill` — browser automation and end-to-end UI probes.
+- `error-resolver` — systematic diagnosis for errors, stack traces, and unexpected behaviour.
+- `verification-loop` — post-change verification and pre-PR quality gates.
+- `docker-patterns` — Docker release/build troubleshooting, especially Linux `.deb` packaging.
+- `improve-codebase-architecture` — architectural refactoring and module-depth reviews.
