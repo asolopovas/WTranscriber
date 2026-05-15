@@ -239,7 +239,7 @@ fn build_deb_in_docker(lock: &SharedOut) -> Result<i32> {
     let inner = r#"
 set -euo pipefail
 unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR || true
-bun install --frozen-lockfile --no-progress 2>&1 | tail -5
+flock /cache/bun/install.lock bun install --frozen-lockfile --no-progress 2>&1 | tail -5
 bun run tauri build --bundles deb -c '{"build":{"beforeBuildCommand":""}}' -- --no-default-features --features sherpa-static
 SRC="/cache/target/release/bundle/deb"
 DST="/work/src-tauri/target/release/bundle/deb"
@@ -305,10 +305,14 @@ if [[ ! -f "$KS" ]]; then
     -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
     -dname 'CN=Android Debug, O=Android, C=US' >/dev/null
 fi
-if [[ ! -f "$KP" ]]; then
+RECORDED_KS=""
+if [[ -f "$KP" ]]; then
+  RECORDED_KS="$(sed -n 's/^storeFile=//p' "$KP" | head -1)"
+fi
+if [[ ! -f "$KP" || ! -f "$RECORDED_KS" ]]; then
   printf 'storeFile=%s\nstorePassword=android\nkeyAlias=androiddebugkey\nkeyPassword=android\n' "$KS" > "$KP"
 fi
-bun install --frozen-lockfile --no-progress 2>&1 | tail -5
+flock /cache/bun/install.lock bun install --frozen-lockfile --no-progress 2>&1 | tail -5
 {dev_env} WT_SKIP_FRONTEND=1 cargo run --manifest-path xtask/Cargo.toml --quiet -- android build --target aarch64
 "#
     );
