@@ -54,8 +54,8 @@ fn invalidate_stale_cmake_caches() {
     // (whisper-rs-sys, sherpa-onnx-sys) from inside a build script races
     // with parallel cargo jobs that may currently be writing into those
     // very directories (just check launches 11 concurrent cargo invocations).
-    // scripts/parallel.ts performs the real wipe atomically before fanning
-    // out, keyed on the same sentinel.
+    // xtask check performs the real wipe atomically before fanning out, keyed
+    // on the same sentinel.
     if !prev.is_empty() {
         println!(
             "cargo:warning=CMAKE_GENERATOR changed ({prev:?} -> {generator:?}); \
@@ -84,11 +84,9 @@ fn stub_windows_bundle_resources() {
     if std::fs::create_dir_all(&release).is_err() {
         return;
     }
-    for name in ["wt.exe"] {
-        let p = release.join(name);
-        if !p.exists() {
-            let _ = touch(&p);
-        }
+    let p = release.join("wt.exe");
+    if !p.exists() {
+        let _ = touch(&p);
     }
 }
 

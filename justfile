@@ -32,7 +32,6 @@ _cl_default := if os() == 'windows' { '/FS' } else { '' }
 export CL := env_var_or_default('CL', _cl_default)
 
 _run := "bun scripts/run.ts"
-_par := "bun scripts/parallel.ts"
 _xtask_dev_stop := "cargo run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-dev-stop-target -- dev stop"
 _xtask_android_bootstrap := "cargo run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-android-bootstrap-target -- android bootstrap"
 
@@ -77,26 +76,8 @@ android mode="usb" device="":
 # ─── quality ──────────────────────────────────────────────────────────────────
 
 # Pre-release gate: 11 jobs in parallel.
-check: _ensure-machete _ensure-audit
-    {{_par}} --idle 600 --max 1800 \
-        --job 'fmt-check=cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo fmt --manifest-path xtask/Cargo.toml --all -- --check && bun x prettier --check "src/**/*.{ts,vue}" "scripts/**/*.ts" "*.{json,html,md}" "docs/**/*.md"' \
-        --job 'clippy=cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings' \
-        --job 'clippy-xtask=cargo clippy --manifest-path xtask/Cargo.toml --all-targets --offline -- -D warnings' \
-        --job 'typecheck=bun run typecheck' \
-        --job 'vue-lint=bun run scripts/lint-vue.ts' \
-        --job 'knip=bun x knip' \
-        --job 'rust-test=cargo test --manifest-path src-tauri/Cargo.toml --offline' \
-        --job 'xtask-test=cargo test --manifest-path xtask/Cargo.toml --offline' \
-        --job 'js-test=bun run test' \
-        --job 'machete=cargo machete src-tauri && cargo machete xtask' \
-        --job 'audit=cargo audit --file src-tauri/Cargo.lock && bun audit'
-    @echo "✓ check passed"
-
-_ensure-machete:
-    @bun scripts/ensure-cargo-tool.ts cargo-machete
-
-_ensure-audit:
-    @bun scripts/ensure-cargo-tool.ts cargo-audit
+check:
+    {{_run}} --tag check --idle 600 --max 1800 -- cargo xtask check
 
 # ─── build / release ──────────────────────────────────────────────────────────
 
@@ -115,7 +96,4 @@ release:
 
 # Stable release: check + bump + build + publish.
 release-stable level="patch":
-    @just check
-    {{_run}} --tag bump --idle 30 --max 120 -- cargo xtask bump {{level}}
-    {{_run}} --tag release --idle 180 --max 3600 -- cargo xtask release
-    {{_run}} --tag publish --idle 180 --max 1800 -- cargo xtask publish stable
+    {{_run}} --tag release-stable --idle 180 --max 7200 -- cargo xtask release-stable {{level}}

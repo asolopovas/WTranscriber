@@ -1,5 +1,5 @@
 [alias]
-xtask = "run --quiet --manifest-path xtask/Cargo.toml --"
+xtask = "run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-driver-target --"
 
 [env]
 # Pin the CMake generator so `cargo build/clippy/test` outside of `just` agrees

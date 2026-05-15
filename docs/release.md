@@ -2,14 +2,15 @@
 
 ## Commands
 
-| Command                             | What it does                                                   |
-| ----------------------------------- | -------------------------------------------------------------- |
-| `just build`                        | Build full matrix into `releases/dev/` (`xtask release --dev`) |
-| `just release`                      | Publish `releases/dev/*` to the rolling `dev` prerelease       |
-| `just release-stable [level]`       | `check` + bump (commits + tags) + build + publish stable       |
-| `cargo xtask bump [level]`          | Bump version, commit, tag (no push, no build)                  |
-| `cargo xtask release [--dev …]`     | Build artifacts into `releases/[dev/]`                         |
-| `cargo xtask publish <dev\|stable>` | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                 |
+| Command                              | What it does                                                   |
+| ------------------------------------ | -------------------------------------------------------------- |
+| `just build`                         | Build full matrix into `releases/dev/` (`xtask release --dev`) |
+| `just release`                       | Publish `releases/dev/*` to the rolling `dev` prerelease       |
+| `just release-stable [level]`        | `check` + bump (commits + tags) + build + publish stable       |
+| `cargo xtask bump [level]`           | Bump version, commit, tag (no push, no build)                  |
+| `cargo xtask release [--dev …]`      | Build artifacts into `releases/[dev/]`                         |
+| `cargo xtask publish <dev\|stable>`  | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                 |
+| `cargo xtask release-stable [level]` | Local stable flow: check + bump + build + publish              |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
 `xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
@@ -73,13 +74,13 @@ Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["ns
 
 ## Gates
 
-| Stage                    | Gate                                                                                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `xtask bump`             | Working tree clean; tag does not exist                                                                                                      |
-| `just release-stable`    | `just check` (11 parallel jobs: fmt-check, clippy, clippy-xtask, typecheck, vue-lint, knip, rust-test, xtask-test, js-test, machete, audit) |
-| `xtask publish stable`   | Clean tree, local tag exists                                                                                                                |
-| `xtask release` (stable) | Refuses unsigned APK                                                                                                                        |
-| `xtask release --dev`    | Warns on unsigned APK and continues                                                                                                         |
+| Stage                    | Gate                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `xtask bump`             | Working tree clean; tag does not exist                                             |
+| `just release-stable`    | `cargo xtask release-stable` runs the 11-job local check before bump/build/publish |
+| `xtask publish stable`   | Clean tree, local tag exists                                                       |
+| `xtask release` (stable) | Refuses unsigned APK                                                               |
+| `xtask release --dev`    | Warns on unsigned APK and continues                                                |
 
 The bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
 

@@ -3,9 +3,11 @@ use clap::Parser;
 
 mod android;
 mod bump;
+mod check;
 mod dev;
 mod publish;
 mod release;
+mod release_stable;
 mod util;
 
 #[derive(Parser)]
@@ -14,6 +16,8 @@ enum Cmd {
     Release(release::Args),
     Bump(bump::Args),
     Publish(publish::Args),
+    Check(check::Args),
+    ReleaseStable(release_stable::Args),
     #[command(subcommand)]
     Android(android::Cmd),
     #[command(subcommand)]
@@ -25,6 +29,8 @@ fn main() -> Result<()> {
         Cmd::Release(a) => release::run(a),
         Cmd::Bump(a) => bump::run(a),
         Cmd::Publish(a) => publish::run(a),
+        Cmd::Check(a) => check::run(a),
+        Cmd::ReleaseStable(a) => release_stable::run(a),
         Cmd::Android(c) => android::run(c),
         Cmd::Dev(c) => dev::run(c),
     }

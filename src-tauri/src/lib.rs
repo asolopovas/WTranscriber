@@ -52,12 +52,14 @@ pub mod runtime_setup {
 
     fn cli_progress(id: String) -> impl FnMut(models::download::Progress) + Send {
         move |p| {
-            let pct = if p.total == 0 {
-                0.0
+            let pct_tenths = if p.total == 0 {
+                0
             } else {
-                (p.downloaded as f64 / p.total as f64) * 100.0
+                (u128::from(p.downloaded).saturating_mul(1000) / u128::from(p.total)).min(1000)
             };
-            eprint!("\r[runtime:{id}] {:>5.1}%", pct);
+            let whole = pct_tenths / 10;
+            let frac = pct_tenths % 10;
+            eprint!("\r[runtime:{id}] {whole:>3}.{frac}%");
             if p.downloaded >= p.total && p.total > 0 {
                 eprintln!();
             }

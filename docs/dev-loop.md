@@ -12,7 +12,7 @@ Every `just` recipe runs through `scripts/run.ts`:
 
 `just dev` is long-running and uses `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
 
-`just check` runs **11 gates** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all complete. The same recipe runs in CI on every push and PR.
+`just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. The same recipe runs in CI on every push and PR.
 
 ## Desktop
 

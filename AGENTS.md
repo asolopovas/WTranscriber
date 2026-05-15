@@ -14,8 +14,8 @@ src-tauri/src/   commands/ (per-domain), lib.rs (invoke_handler!), bin/wt.rs,
                  models/, transcriber/, diarizer/, audio/, audio_toolkit/,
                  runtimes/, llm/, engine/, namer/
 src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
-xtask/src/       bump / publish / release / android orchestration
-scripts/         run.ts, parallel.ts, android-emu.ts, android-install.ts, cdp.ts,
+xtask/src/       check / bump / publish / release / android orchestration
+scripts/         run.ts, android-emu.ts, android-install.ts, cdp.ts,
                  clean-temp.ts, clear-dev-logs.ts, dev-vital.ts, doctor.ts,
                  lint-vue.ts, install-*.ps1, bootstrap-windows.ps1, wt-windows-build.bat
 docs/            android · dev-loop · release · rust-build-speed · tmp · asr-pipeline-v2
@@ -44,7 +44,7 @@ Android-only APK (no full release matrix): `bun scripts/android-install.ts` (bui
 
 `just build` runs `cargo xtask release --dev`: builds the Windows NSIS installer (host or via the `windowsVm` entry in `release.config.json`), the Android APK, and the Linux `.deb` (Docker) in parallel into `releases/dev/`. Self-healing on transient Windows-VM failures uses the configured VM start/restart commands + 1 retry. `just release` is publish-only (`cargo xtask publish dev`); it never builds. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
-`just check` runs **11 jobs** in parallel via `scripts/parallel.ts`: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. First failure wins; all jobs complete. The same recipe runs in CI (`.github/workflows/check.yml`). For targeted reruns, invoke the underlying tool directly (e.g. `cargo clippy …`, `bun run typecheck`).
+`just check` runs `cargo xtask check`, which fans out **11 jobs** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. The same recipe runs in CI (`.github/workflows/check.yml`). For targeted reruns, invoke the underlying tool directly (e.g. `cargo clippy …`, `bun run typecheck`).
 
 `just check` assumes the C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built — `just bootstrap` pre-warms them via `cargo build` after the system-deps script. Warm `just check` finishes in <10 s; a cold first run is ~5 min. If `target/` is wiped (`cargo clean`, fresh checkout, deleted `tmp/.bootstrap.stamp`), re-run `just bootstrap` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
 
