@@ -32,6 +32,18 @@ pub(super) fn adb_reverse(device: Option<&str>, port: &str) -> Result<()> {
     adb_run(device, &["reverse", &spec, &spec], Duration::from_secs(5))
 }
 
+pub(super) fn connected_devices() -> Vec<String> {
+    let Some(txt) = capture_timeout("adb", &["devices"], Duration::from_secs(5)) else {
+        return Vec::new();
+    };
+    txt.lines()
+        .filter_map(|line| {
+            let (id, state) = line.split_once('\t')?;
+            (state.trim() == "device").then(|| id.trim().to_string())
+        })
+        .collect()
+}
+
 pub(super) fn attach_webview(device: Option<&str>, quiet: bool) -> Result<()> {
     let socket = adb_capture(
         device,

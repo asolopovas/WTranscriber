@@ -6,7 +6,8 @@ use std::time::Duration;
 use crate::util::root;
 
 use super::adb::{
-    adb_reverse, adb_run, detect_dev_host, detect_device_target, wait_for_attach, with_device,
+    adb_reverse, adb_run, connected_devices, detect_dev_host, detect_device_target,
+    wait_for_attach, with_device,
 };
 use super::build::{preflight_node_modules, prepare};
 use super::lldb;
@@ -336,19 +337,47 @@ pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
             println!("stopped stale port {port} owner pid={pid}");
         }
     }
-    lldb::cleanup(device.as_deref(), pids.get("app_pid").copied());
     reap_tauri_logcat_orphans();
-    if !keep_reverse {
-        let d = device.as_deref();
-        let t = Duration::from_secs(3);
-        let _ = adb_run(d, &["forward", "--remove", "tcp:9222"], t);
-        let _ = adb_run(d, &["reverse", "--remove", "tcp:1420"], t);
-        let _ = adb_run(d, &["reverse", "--remove", "tcp:1421"], t);
+    let devices = stop_devices(device.as_deref());
+    for d in &devices {
+        let d = d.as_deref();
+        lldb::cleanup(d, pids.get("app_pid").copied());
+        if adb_run(
+            d,
+            &["shell", "am", "force-stop", ANDROID_PACKAGE],
+            Duration::from_secs(5),
+        )
+        .is_ok()
+        {
+            println!("force-stopped {ANDROID_PACKAGE}{}", device_suffix(d));
+        }
+        if !keep_reverse {
+            let t = Duration::from_secs(3);
+            let _ = adb_run(d, &["forward", "--remove", "tcp:9222"], t);
+            let _ = adb_run(d, &["reverse", "--remove", "tcp:1420"], t);
+            let _ = adb_run(d, &["reverse", "--remove", "tcp:1421"], t);
+        }
     }
     let _ = fs::remove_file(tmp.join("_pids.json"));
     let _ = fs::remove_file(tmp.join("_platform"));
     println!("dev session stopped");
     Ok(())
+}
+
+fn stop_devices(device: Option<&str>) -> Vec<Option<String>> {
+    if let Some(device) = device {
+        return vec![Some(device.to_string())];
+    }
+    let devices = connected_devices();
+    if devices.is_empty() {
+        vec![None]
+    } else {
+        devices.into_iter().map(Some).collect()
+    }
+}
+
+fn device_suffix(device: Option<&str>) -> String {
+    device.map(|d| format!(" on {d}")).unwrap_or_default()
 }
 
 pub(super) fn cmd_dev(

@@ -60,7 +60,11 @@ bootstrap-if-stale:
 
 # ─── develop ──────────────────────────────────────────────────────────────────
 
-# Desktop HMR (Vite + tauri dev). `just dev stop` stops any running dev session.
+# Stop desktop/Android dev sessions and clean host/device forwarding.
+stop:
+    {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}
+
+# Desktop HMR (Vite + tauri dev). `just dev stop` / `just stop` stops any running dev session.
 [windows]
 dev action="":
     if ("{{action}}" -eq "stop") { {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}} } else { {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; $env:RUST_BACKTRACE='1'; {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev }
