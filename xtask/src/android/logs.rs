@@ -323,6 +323,8 @@ fn is_noise_line(line: &str) -> bool {
         "couldn't find an opengl es implementation",
         "failed to open file for reading seed",
         "http cache size is",
+        "page_load_metrics_update_dispatcher",
+        "invalid first_paint",
     ]
     .iter()
     .any(|needle| lower.contains(needle))

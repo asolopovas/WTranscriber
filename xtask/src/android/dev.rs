@@ -185,6 +185,8 @@ fn cmd_bootstrap_attempt(
                 s.contains("Info Opening ")
                     || (s.contains("Starting: Intent") && s.contains("wtranscriber"))
                     || (s.contains("am_proc_start") && s.contains("wtranscriber"))
+                    || (s.contains("RustStdoutStderr:")
+                        && s.contains("renderer error bridge installed"))
             },
             Duration::from_secs(1800),
             healthy,
