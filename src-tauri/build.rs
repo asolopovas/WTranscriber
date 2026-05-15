@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     stub_windows_bundle_resources();
+    link_onnxruntime_import_lib();
     invalidate_stale_cmake_caches();
     tauri_build::build();
     point_sherpa_lib_dir_to_cuda();
@@ -15,6 +16,26 @@ fn main() {
 // doesn't notice the env change. We fingerprint the active generator under
 // target/ and rm -rf any whisper-rs-sys / sherpa-onnx-sys build dirs on
 // mismatch.
+fn link_onnxruntime_import_lib() {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let Some(manifest) = std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let lib = manifest
+        .join("vendor")
+        .join("onnxruntime-directml-1.24.2")
+        .join("lib");
+    if lib.join("onnxruntime.lib").exists() {
+        println!("cargo:rustc-link-search=native={}", lib.display());
+        println!(
+            "cargo:rerun-if-changed={}",
+            lib.join("onnxruntime.lib").display()
+        );
+    }
+}
+
 fn invalidate_stale_cmake_caches() {
     let manifest = match std::env::var_os("CARGO_MANIFEST_DIR") {
         Some(v) => PathBuf::from(v),
@@ -47,10 +68,9 @@ fn invalidate_stale_cmake_caches() {
 }
 
 // tauri_build::build() validates every bundle resource path on every cargo
-// build (clippy, test, dev). The Windows config references
-// target/release/*.dll and target/release/wt.exe — these only exist after a
-// release build + sherpa-cuda runtime install. To keep `just check` and dev
-// builds green on a fresh checkout, touch zero-byte placeholders so path
+// build (clippy, test, dev). The Windows config references target/release/wt.exe,
+// which only exists after the release CLI build. To keep `just check` and dev
+// builds green on a fresh checkout, touch a zero-byte placeholder so path
 // validation passes. xtask release verifies real content before bundling.
 fn stub_windows_bundle_resources() {
     if !cfg!(target_os = "windows") {
@@ -64,13 +84,7 @@ fn stub_windows_bundle_resources() {
     if std::fs::create_dir_all(&release).is_err() {
         return;
     }
-    for name in [
-        "sherpa-onnx-c-api.dll",
-        "sherpa-onnx-cxx-api.dll",
-        "onnxruntime.dll",
-        "onnxruntime_providers_shared.dll",
-        "wt.exe",
-    ] {
+    for name in ["wt.exe"] {
         let p = release.join(name);
         if !p.exists() {
             let _ = touch(&p);

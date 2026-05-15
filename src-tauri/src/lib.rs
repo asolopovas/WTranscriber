@@ -25,6 +25,45 @@ mod runtimes;
 pub mod cuda_setup {
     pub use super::runtimes::inproc_cuda::setup;
 }
+
+pub mod runtime_setup {
+    use super::{logfile, models, runtimes};
+
+    pub async fn ensure_for_cli(cuda: bool) {
+        let variant = if cuda {
+            runtimes::SherpaVariant::Cuda
+        } else {
+            runtimes::SherpaVariant::Cpu
+        };
+        let mut sherpa_progress = cli_progress(format!("sherpa-onnx-{}", variant.slug()));
+        if let Err(e) = runtimes::ensure_sherpa(variant, &mut sherpa_progress).await {
+            logfile::error(&format!("cli runtime sherpa install: {e}"));
+        }
+        if cuda && runtimes::cudnn_supported() {
+            let mut cudnn_progress = cli_progress("cudnn".to_string());
+            if let Err(e) = runtimes::ensure_cudnn(&mut cudnn_progress).await {
+                logfile::error(&format!("cli runtime cudnn install: {e}"));
+            }
+        }
+        if cuda {
+            runtimes::inproc_cuda::setup();
+        }
+    }
+
+    fn cli_progress(id: String) -> impl FnMut(models::download::Progress) + Send {
+        move |p| {
+            let pct = if p.total == 0 {
+                0.0
+            } else {
+                (p.downloaded as f64 / p.total as f64) * 100.0
+            };
+            eprint!("\r[runtime:{id}] {:>5.1}%", pct);
+            if p.downloaded >= p.total && p.total > 0 {
+                eprintln!();
+            }
+        }
+    }
+}
 mod transcriber;
 
 pub mod api;

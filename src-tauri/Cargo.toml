@@ -14,6 +14,7 @@ default-run = "wtranscriber"
 default = ["cuda"]
 sherpa-static = ["sherpa-onnx/static"]
 cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda", "whisper-rs/cuda"]
+directml = ["parakeet-rs/directml", "parakeet-rs/load-dynamic", "ort/directml", "ort/load-dynamic"]
 android = ["sherpa-onnx/shared", "ort/load-dynamic"]
 
 [lib]

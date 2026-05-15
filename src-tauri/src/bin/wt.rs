@@ -180,10 +180,6 @@ async fn main() -> ExitCode {
         cfg!(feature = "cuda"),
     ));
 
-    if cfg!(feature = "cuda") {
-        wtranscriber_lib::cuda_setup::setup();
-    }
-
     let result = if let Some(cmd) = cli.command {
         run_command(cmd).await
     } else {
@@ -444,6 +440,8 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
         eprintln!("warning: {msg}; falling back to --device cpu");
         config.device = Device::Cpu;
     }
+
+    wtranscriber_lib::runtime_setup::ensure_for_cli(matches!(config.device, Device::Cuda)).await;
 
     logfile::info(&format!(
         "cli run: device={} engine={} model={} lang={} diarize={} speakers={:?} inputs={}",

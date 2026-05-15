@@ -30,7 +30,6 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "deb"],
-    "resources": ["../scripts/install-cudnn.ps1", "../scripts/install-sherpa-cuda.ps1"],
     "linux": {
       "deb": {
         "depends": [
