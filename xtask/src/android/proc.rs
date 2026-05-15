@@ -64,10 +64,10 @@ pub(super) fn spawn_persistent(
     stdout_path: &Path,
     stderr_path: &Path,
 ) -> Result<u32> {
+    if let Some(parent) = stdout_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     if cfg!(windows) {
-        if let Some(parent) = stdout_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let cmd_quote = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let batch_path = stdout_path.with_extension("cmd");
         let mut batch = String::from("@echo off\r\n");
@@ -205,9 +205,15 @@ pub(crate) fn kill_pid(pid: u32) {
     if cfg!(windows) {
         let _ = Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid_text])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status();
     } else {
-        let _ = Command::new("kill").args(["-TERM", &pid_text]).status();
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid_text])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
 }
 
@@ -215,19 +221,19 @@ pub(super) fn reap_tauri_logcat_orphans() {
     if !cfg!(windows) {
         return;
     }
+    let root_text = root().to_string_lossy().replace('\'', "''");
+    let script = format!(
+        "$root = '{root_text}'; Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -and ($_.Name -in @('cmd.exe','adb.exe','bun.exe','node.exe','vite.exe','cargo.exe','java.exe')) -and ($_.CommandLine.Contains($root + '\\tmp\\logcat.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\dev-vital.out.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-dev.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-tauri.cmd') -or $_.CommandLine.Contains('scripts/dev-vital.ts') -or ($_.Name -eq 'adb.exe' -and $_.CommandLine.Contains('logcat') -and $_.CommandLine.Contains('RustStdoutStderr')) -or ($_.Name -eq 'java.exe' -and ($_.CommandLine.Contains('GradleDaemon') -or $_.CommandLine.Contains('KotlinCompileDaemon')))) }} | ForEach-Object {{ $_.ProcessId }}"
+    );
     let Some(out) = capture_timeout(
         "powershell",
-        &[
-            "-NoProfile",
-            "-Command",
-            "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'adb.exe' -and $_.CommandLine -match 'logcat .* -s wtranscriber' } | ForEach-Object { $_.ProcessId }",
-        ],
+        &["-NoProfile", "-Command", &script],
         Duration::from_secs(3),
     ) else {
         return;
     };
     for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
         kill_pid(pid);
-        eprintln!("reaped orphan tauri logcat pid={pid}");
+        eprintln!("reaped orphan android dev pid={pid}");
     }
 }

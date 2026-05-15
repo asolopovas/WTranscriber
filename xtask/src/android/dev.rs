@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use std::fs;
 use std::time::Duration;
@@ -21,6 +21,14 @@ use super::proc::{
 use super::{ANDROID_PACKAGE, BootstrapMode};
 
 pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result<()> {
+    cmd_bootstrap_attempt(mode, device, false)
+}
+
+fn cmd_bootstrap_attempt(
+    mode: BootstrapMode,
+    device: Option<&str>,
+    signature_retry_done: bool,
+) -> Result<()> {
     let tmp = root().join("tmp");
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
@@ -33,6 +41,19 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     preflight_node_modules()?;
     detect_device_target(device)?;
     fs::write(tmp.join("_platform"), "android")?;
+    for name in [
+        "logcat.log",
+        "logcat.err.log",
+        "dev-vital.out.log",
+        "dev-vital.err.log",
+        "android-dev.log",
+        "android-dev.err.log",
+        "android-tauri.log",
+        "android-tauri.err.log",
+    ] {
+        let path = tmp.join(name);
+        fs::write(&path, "").with_context(|| format!("truncate {}", path.display()))?;
+    }
 
     let _ = adb_run(
         device,
@@ -76,7 +97,10 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
     )?;
 
     let mut vite_env = Vec::<(String, String)>::new();
-    let host_ip = detect_dev_host(device);
+    let host_ip = match mode {
+        BootstrapMode::Usb => Some("127.0.0.1".to_string()),
+        BootstrapMode::Host => detect_dev_host(device),
+    };
     if let Some(ip) = host_ip.clone() {
         vite_env.push(("TAURI_DEV_HOST".into(), ip));
     }
@@ -154,15 +178,13 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
             healthy,
         )?;
         eprintln!(
-            "[stage 5a/7] waiting for cargo+gradle build → APK install/launch (event: \"Info Opening\"/\"Finished\"/am_proc_start in logs, ≤1800s)"
+            "[stage 5a/7] waiting for cargo+gradle build → app launch (event: \"Info Opening\"/wtranscriber am_proc_start in logs, ≤1800s)"
         );
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
-            "APK install/launch",
+            "app launch",
             |s| {
                 s.contains("Info Opening ")
-                    || s.contains("Info Installing")
-                    || s.contains("Performing Streamed Install")
                     || (s.contains("Starting: Intent") && s.contains("wtranscriber"))
                     || (s.contains("am_proc_start") && s.contains("wtranscriber"))
             },
@@ -213,21 +235,27 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         Ok(info) => info,
         Err(err) => {
             if install_signature_mismatch(&[&dev_log, &dev_err]) {
-                eprintln!(
-                    "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
-                );
                 kill_pid(dev_pid);
                 kill_pid(vite_pid);
                 kill_pid(logcat_pid);
                 kill_pid(vital_pid);
                 reap_tauri_logcat_orphans();
-                let _ = adb_run(
+                let _ = fs::remove_file(&pids_path);
+                if signature_retry_done {
+                    eprintln!(
+                        "bootstrap failed after one APK signature-mismatch retry; remove {ANDROID_PACKAGE} from the device manually and re-run `just android usb`"
+                    );
+                    return Err(err);
+                }
+                eprintln!(
+                    "detected APK signature mismatch — uninstalling {ANDROID_PACKAGE} and retrying once"
+                );
+                adb_run(
                     device,
                     &["uninstall", ANDROID_PACKAGE],
                     Duration::from_secs(30),
-                );
-                let _ = fs::remove_file(&pids_path);
-                return cmd_bootstrap(mode, device);
+                )?;
+                return cmd_bootstrap_attempt(mode, device, true);
             }
             eprintln!("bootstrap failed: {err:#}");
             eprintln!("--- last 10 lines of android-dev.err.log ---");
@@ -375,6 +403,9 @@ pub(super) fn cmd_dev(
         tauri_args.push(value);
     } else if host {
         tauri_args.push("--host".into());
+    } else {
+        tauri_args.push("--host".into());
+        tauri_args.push("127.0.0.1".into());
     }
     if !watch {
         tauri_args.push("--no-watch".into());

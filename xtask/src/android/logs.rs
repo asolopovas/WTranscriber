@@ -224,19 +224,18 @@ fn trim_log_line(line: &str) -> String {
 }
 
 fn strip_ansi(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
-            i += 2;
-            while i < bytes.len() && !(0x40..=0x7e).contains(&bytes[i]) {
-                i += 1;
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if ('@'..='~').contains(&c) {
+                    break;
+                }
             }
-            i += 1;
         } else {
-            out.push(bytes[i] as char);
-            i += 1;
+            out.push(ch);
         }
     }
     out
