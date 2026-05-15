@@ -7,7 +7,6 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
     sync::{Mutex, OnceLock},
 };
 
@@ -20,6 +19,7 @@ use crate::{
     config::{Config, Device},
     error::{Error, Result},
     models,
+    process::quiet_command,
     transcriber::{Segment, Token},
 };
 
@@ -158,7 +158,7 @@ fn run_cuda_worker(
     }
     let worker = cuda_worker_path()?;
     let audio = write_samples(samples)?;
-    let output = Command::new(&worker)
+    let output = quiet_command(worker.as_os_str())
         .arg("--model")
         .arg(model_path)
         .arg("--audio-f32le")
