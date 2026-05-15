@@ -91,7 +91,7 @@ fn jobs() -> Vec<Job> {
         },
         Job {
             tag: "clippy",
-            command: "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --offline -- -D warnings",
+            command: "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-default-features --features sherpa-shared --offline -- -D warnings",
         },
         Job {
             tag: "clippy-xtask",
@@ -111,7 +111,7 @@ fn jobs() -> Vec<Job> {
         },
         Job {
             tag: "rust-test",
-            command: "cargo test --manifest-path src-tauri/Cargo.toml --offline",
+            command: "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features sherpa-shared --offline",
         },
         Job {
             tag: "xtask-test",

@@ -16,7 +16,8 @@ use self::builders::{build_android, build_deb_docker, build_host};
 use self::config::ReleaseConfig;
 use self::windows_vm::{build_windows_vm, fetch_windows_vm_exe};
 use crate::util::{
-    SharedOut, git_branch, git_short_sha, is_windows, pkg_version, root, run_streamed, shared_out,
+    SharedOut, configure_parallel_build_env, git_branch, git_short_sha, is_windows, parallel_jobs,
+    pkg_version, root, run_streamed, shared_out,
 };
 
 type BuildTask = (&'static str, Box<dyn FnOnce(SharedOut) -> i32 + Send>);
@@ -58,6 +59,9 @@ pub fn run(args: Args) -> Result<()> {
         if args.dev { "dev" } else { "stable" },
         !args.sequential
     );
+    let jobs = parallel_jobs();
+    configure_parallel_build_env(jobs);
+    println!("→ native build jobs: {jobs}");
 
     if !args.skip_rebuild {
         prewarm()?;

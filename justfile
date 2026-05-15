@@ -104,7 +104,7 @@ build-host: bootstrap-if-stale clean-logs
 build-cuda *args: bootstrap-if-stale clean-logs
     {{_run}} --tag build-cuda --idle 1800 --max 14400 -- cargo xtask cuda-workers build {{args}}
 
-# Upload previously built CUDA worker zips to the cuda-workers-v<version> GitHub release.
+# Upload previously built CUDA worker zips to the rolling `cuda` GitHub release.
 [windows]
 release-cuda *args:
     {{_run}} --tag release-cuda --idle 180 --max 1800 -- cargo xtask cuda-workers publish {{args}}
@@ -113,6 +113,6 @@ release-cuda *args:
 release:
     {{_run}} --tag publish-dev --idle 180 --max 1800 -- cargo xtask publish dev
 
-# Stable release: check + bump + build + publish.
-release-stable level="patch":
-    {{_run}} --tag release-stable --idle 180 --max 7200 -- cargo xtask release-stable {{level}}
+# Stable release: check + build + publish current version. Add `--bump [level]` to bump first.
+release-stable *args:
+    {{_run}} --tag release-stable --idle 180 --max 7200 -- cargo xtask release-stable {{args}}

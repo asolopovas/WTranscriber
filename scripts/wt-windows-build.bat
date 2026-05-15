@@ -43,6 +43,13 @@ if errorlevel 1 (
 )
 
 set "CMAKE_CUDA_ARCHITECTURES=61;75;80;86;89"
+if not defined WT_BUILD_JOBS for /f %%J in ('powershell -NoProfile -Command "[Environment]::ProcessorCount"') do set "WT_BUILD_JOBS=%%J"
+if not defined WT_BUILD_JOBS set "WT_BUILD_JOBS=1"
+set "CARGO_BUILD_JOBS=%WT_BUILD_JOBS%"
+set "CMAKE_BUILD_PARALLEL_LEVEL=%WT_BUILD_JOBS%"
+set "MAKEFLAGS=-j%WT_BUILD_JOBS%"
+set "GRADLE_OPTS=-Dorg.gradle.workers.max=%WT_BUILD_JOBS% %GRADLE_OPTS%"
+echo [win] native build jobs: %WT_BUILD_JOBS%
 
 call bun install --frozen-lockfile --no-progress || exit /b %ERRORLEVEL%
 for /d %%D in ("src-tauri\target\release\build\whisper-rs-sys-*") do rmdir /S /Q "%%~fD"

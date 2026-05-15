@@ -12,6 +12,7 @@ default-run = "wtranscriber"
 
 [features]
 default = []
+sherpa-shared = ["sherpa-onnx/shared"]
 sherpa-static = ["sherpa-onnx/static"]
 cuda = ["sherpa-onnx/shared", "parakeet-rs/cuda", "whisper-rs/cuda"]
 directml = ["sherpa-onnx/shared", "parakeet-rs/directml", "parakeet-rs/load-dynamic", "ort/directml", "ort/load-dynamic"]

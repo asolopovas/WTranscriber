@@ -37,7 +37,7 @@ just check             pre-release gate (11 jobs in parallel; accepts job tags)
 just check-changed     changed-file gate for pre-commit/CI
 just build             Windows-only dev release matrix → releases/dev/
 just release           publish releases/dev/ to the rolling gh `dev` prerelease
-just release-stable    check + bump + build + publish (stable)
+just release-stable    check + build + publish current version (add --bump [level] to bump first)
 just bootstrap         Windows host toolchain install + dep prewarm
 just setup             bun install + git hooks
 ```

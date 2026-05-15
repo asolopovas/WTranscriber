@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use crate::util::{SharedOut, exe, root, run_streamed, sh, shared_out};
 
 const ARCHES: [&str; 5] = ["61", "75", "80", "86", "89"];
-const DEFAULT_TAG: &str = "cuda-workers-v1";
+const DEFAULT_TAG: &str = "cuda";
 
 #[derive(Subcommand)]
 #[command(about = "Build and publish optional Windows Whisper CUDA worker zips")]
@@ -32,13 +32,13 @@ pub enum Cmd {
 pub struct BuildArgs {
     #[arg(long, value_delimiter = ',', help = "CUDA SM arch list, e.g. 61,86")]
     pub arch: Vec<String>,
-    #[arg(long, help = "Output directory; defaults to releases/cuda-workers-v1")]
+    #[arg(long, help = "Output directory; defaults to releases/cuda")]
     pub out_dir: Option<PathBuf>,
 }
 
 #[derive(ClapArgs)]
 pub struct PublishArgs {
-    #[arg(long, help = "GitHub release tag; defaults to cuda-workers-v1")]
+    #[arg(long, help = "GitHub release tag; defaults to cuda")]
     pub tag: Option<String>,
     #[arg(long, help = "Artifact directory; defaults to releases/<tag>")]
     pub dir: Option<PathBuf>,
@@ -353,6 +353,7 @@ fn publish(args: PublishArgs) -> Result<()> {
                 &tag,
                 "--notes",
                 "Optional WTranscriber Whisper CUDA worker binaries. The main installer downloads the matching sm-specific zip on NVIDIA systems.",
+                "--latest=false",
             ],
         )?;
     }

@@ -96,6 +96,7 @@ fn publish_dev(artifacts: &[PathBuf]) -> Result<()> {
             "--title",
             &title,
             "--prerelease",
+            "--latest=false",
             "--notes",
             &notes,
         ],
@@ -112,23 +113,58 @@ fn publish_stable(artifacts: &[PathBuf]) -> Result<()> {
     if !dirty.is_empty() {
         bail!("working tree dirty — refusing to publish stable");
     }
-    if std::process::Command::new("git")
-        .args(["rev-parse", &tag])
+    let head = capture("git", &["rev-parse", "HEAD"])?;
+    let tag_commit = std::process::Command::new("git")
+        .args(["rev-parse", &format!("{tag}^{{commit}}")])
         .current_dir(root())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| !s.success())
-        .unwrap_or(true)
-    {
-        bail!("tag {tag} does not exist locally — run `xtask bump` first");
+        .output()
+        .context("spawn git")?;
+    if !tag_commit.status.success() {
+        bail!(
+            "tag {tag} does not exist locally — run `xtask release-stable` or `xtask bump` first"
+        );
     }
-    println!("--- pushing HEAD + tag {tag} ---");
+    let tag_commit = String::from_utf8_lossy(&tag_commit.stdout)
+        .trim()
+        .to_string();
+    if tag_commit != head {
+        bail!(
+            "tag {tag} points to {tag_commit}, not HEAD {head} — run `xtask release-stable` to sync the current version tag"
+        );
+    }
+    let latest_commit = std::process::Command::new("git")
+        .args(["rev-parse", "latest^{commit}"])
+        .current_dir(root())
+        .output()
+        .context("spawn git")?;
+    if !latest_commit.status.success() {
+        bail!("tag latest does not exist locally — run `xtask release-stable` to sync stable tags");
+    }
+    let latest_commit = String::from_utf8_lossy(&latest_commit.stdout)
+        .trim()
+        .to_string();
+    if latest_commit != head {
+        bail!(
+            "tag latest points to {latest_commit}, not HEAD {head} — run `xtask release-stable` to sync stable tags"
+        );
+    }
+    println!("--- pushing HEAD + tags {tag}, latest ---");
     sh("git", &["push", "origin", "HEAD"])?;
-    sh("git", &["push", "origin", &tag])?;
+    let tag_ref = format!("refs/tags/{tag}:refs/tags/{tag}");
+    sh("git", &["push", "--force", "origin", &tag_ref])?;
+    sh(
+        "git",
+        &[
+            "push",
+            "--force",
+            "origin",
+            "refs/tags/latest:refs/tags/latest",
+        ],
+    )?;
 
     if release_exists(&tag) {
         println!("--- release {tag} already exists; uploading additional artifacts ---");
+        sh("gh", &["release", "edit", &tag, "--latest"])?;
     } else {
         println!("--- creating release {tag} ---");
         sh(
@@ -140,6 +176,7 @@ fn publish_stable(artifacts: &[PathBuf]) -> Result<()> {
                 "--title",
                 &tag,
                 "--generate-notes",
+                "--latest",
             ],
         )?;
     }

@@ -106,6 +106,48 @@ pub fn shared_out() -> SharedOut {
     Arc::new(Mutex::new(()))
 }
 
+pub fn parallel_jobs() -> usize {
+    std::env::var("WT_BUILD_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| thread::available_parallelism().map_or(1, std::num::NonZero::get))
+}
+
+pub fn parallel_build_env(jobs: usize) -> Vec<(String, String)> {
+    let jobs = jobs.to_string();
+    vec![
+        ("CARGO_BUILD_JOBS".into(), jobs.clone()),
+        ("CMAKE_BUILD_PARALLEL_LEVEL".into(), jobs.clone()),
+        ("MAKEFLAGS".into(), format!("-j{jobs}")),
+        ("GRADLE_OPTS".into(), gradle_opts_with_workers(&jobs)),
+    ]
+}
+
+pub fn configure_parallel_build_env(jobs: usize) {
+    for (key, value) in parallel_build_env(jobs) {
+        unsafe { std::env::set_var(key, value) };
+    }
+}
+
+fn gradle_opts_with_workers(jobs: &str) -> String {
+    let flag = format!("-Dorg.gradle.workers.max={jobs}");
+    let Ok(existing) = std::env::var("GRADLE_OPTS") else {
+        return flag;
+    };
+    let trimmed = existing.trim();
+    if trimmed
+        .split_whitespace()
+        .any(|part| part.starts_with("-Dorg.gradle.workers.max="))
+    {
+        trimmed.to_string()
+    } else if trimmed.is_empty() {
+        flag
+    } else {
+        format!("{flag} {trimmed}")
+    }
+}
+
 pub fn run_streamed(
     tag: &str,
     prog: &str,

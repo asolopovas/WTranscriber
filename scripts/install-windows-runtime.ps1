@@ -156,7 +156,7 @@ function Install-WhisperCudaWorker {
         Write-SetupLog "NVIDIA compute capability sm_$arch is not packaged; skipping Whisper CUDA worker"
         return
     }
-    $releaseTag = if ($env:WT_CUDA_WORKER_TAG) { $env:WT_CUDA_WORKER_TAG } else { 'cuda-workers-v1' }
+    $releaseTag = if ($env:WT_CUDA_WORKER_TAG) { $env:WT_CUDA_WORKER_TAG } else { 'cuda' }
     $asset = "wtranscriber-cuda-sm$arch-win-x64.zip"
     Write-SetupLog "Installing Whisper CUDA worker sm_$arch from GitHub release $releaseTag"
     $archive = Join-Path $cache $asset

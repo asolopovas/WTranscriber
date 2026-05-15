@@ -2,7 +2,7 @@ use anyhow::{Context, Result, bail};
 use std::fs;
 use std::process::Command;
 
-use crate::util::{exe, root, sh_in};
+use crate::util::{exe, parallel_build_env, parallel_jobs, root, sh_in};
 
 use super::patch::{
     copy_jni_prebuilts, patch_generated_activities, patch_gradle_build_config,
@@ -47,6 +47,7 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
             bindgen_args,
         ),
     ];
+    e.extend(parallel_build_env(parallel_jobs()));
     e.sort();
     Ok(e)
 }

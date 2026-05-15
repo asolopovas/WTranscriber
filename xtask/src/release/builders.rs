@@ -214,6 +214,15 @@ fn root_for_mount() -> String {
     }
 }
 
+fn docker_parallel_env_args() -> Vec<String> {
+    let mut out = Vec::new();
+    for (key, value) in crate::util::parallel_build_env(crate::util::parallel_jobs()) {
+        out.push("-e".into());
+        out.push(format!("{key}={value}"));
+    }
+    out
+}
+
 fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
     let rebuild = std::env::var("WT_BUILDER_REBUILD").ok().as_deref() == Some("1");
     let need_build = rebuild
@@ -285,31 +294,35 @@ cp -f "$SRC"/*.deb "$DST"/
     let vmc = format!("{vol_cargo}:/cache/cargo");
     let vmt = format!("{vol_target}:/cache/target");
     let vmb = format!("{vol_bun}:/cache/bun");
-    let args = vec![
-        "run",
-        "--rm",
-        "-v",
-        &mount,
-        "-v",
-        &vmc,
-        "-v",
-        &vmt,
-        "-v",
-        &vmb,
-        "-e",
-        "CARGO_TARGET_DIR=/cache/target",
-        "-e",
-        "CARGO_INCREMENTAL=1",
-        "-e",
-        "BUN_INSTALL_CACHE_DIR=/cache/bun",
-        "-w",
-        "/work",
-        &image,
-        "bash",
-        "-lc",
-        inner,
+    let mut args = vec![
+        "run".into(),
+        "--rm".into(),
+        "-v".into(),
+        mount,
+        "-v".into(),
+        vmc,
+        "-v".into(),
+        vmt,
+        "-v".into(),
+        vmb,
+        "-e".into(),
+        "CARGO_TARGET_DIR=/cache/target".into(),
+        "-e".into(),
+        "CARGO_INCREMENTAL=1".into(),
+        "-e".into(),
+        "BUN_INSTALL_CACHE_DIR=/cache/bun".into(),
     ];
-    run_streamed("deb", "docker", &args, &[], lock)
+    args.extend(docker_parallel_env_args());
+    args.extend([
+        "-w".into(),
+        "/work".into(),
+        image,
+        "bash".into(),
+        "-lc".into(),
+        inner.into(),
+    ]);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_streamed("deb", "docker", &arg_refs, &[], lock)
 }
 
 fn build_android_in_docker(dev: bool, lock: &SharedOut) -> Result<i32> {
@@ -356,31 +369,35 @@ flock /cache/bun/install.lock bun install --frozen-lockfile --no-progress 2>&1 |
     let vmt = format!("{vol_target}:/cache/target");
     let vmb = format!("{vol_bun}:/cache/bun");
     let vmg = format!("{vol_gradle}:/root/.gradle");
-    let args = vec![
-        "run",
-        "--rm",
-        "-v",
-        &mount,
-        "-v",
-        &vmc,
-        "-v",
-        &vmt,
-        "-v",
-        &vmb,
-        "-v",
-        &vmg,
-        "-e",
-        "CARGO_TARGET_DIR=/cache/target",
-        "-e",
-        "CARGO_INCREMENTAL=1",
-        "-e",
-        "BUN_INSTALL_CACHE_DIR=/cache/bun",
-        "-w",
-        "/work",
-        &image,
-        "bash",
-        "-lc",
-        &inner,
+    let mut args = vec![
+        "run".into(),
+        "--rm".into(),
+        "-v".into(),
+        mount,
+        "-v".into(),
+        vmc,
+        "-v".into(),
+        vmt,
+        "-v".into(),
+        vmb,
+        "-v".into(),
+        vmg,
+        "-e".into(),
+        "CARGO_TARGET_DIR=/cache/target".into(),
+        "-e".into(),
+        "CARGO_INCREMENTAL=1".into(),
+        "-e".into(),
+        "BUN_INSTALL_CACHE_DIR=/cache/bun".into(),
     ];
-    run_streamed("and", "docker", &args, &[], lock)
+    args.extend(docker_parallel_env_args());
+    args.extend([
+        "-w".into(),
+        "/work".into(),
+        image,
+        "bash".into(),
+        "-lc".into(),
+        inner,
+    ]);
+    let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_streamed("and", "docker", &arg_refs, &[], lock)
 }
