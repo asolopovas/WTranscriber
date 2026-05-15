@@ -18,6 +18,10 @@ import Card from "@components/ui/Card.vue";
 import DefRow from "@components/ui/DefRow.vue";
 import Button from "@components/ui/Button.vue";
 
+const emit = defineEmits<{
+  (e: "app-data-reset"): void;
+}>();
+
 const config = ref<Config | null>(null);
 const sys = ref<SystemInfo | null>(null);
 const models = ref<ModelInfo[]>([]);
@@ -151,18 +155,14 @@ onUnmounted(() => {
   persistentVisibilityHandler = null;
 });
 
-async function resetTranscriptCache() {
-  const ok = await confirm("Clear saved transcript previews and cached transcription results?");
+async function resetAppData() {
+  const ok = await confirm(
+    "Clear logs, cached transcripts, converted audio and file history? This keeps installed models and settings.",
+  );
   if (!ok) return;
-  const removed = await api.resetTranscriptCache();
-  maintenanceStatus.value = `Transcript cache reset (${removed} files removed).`;
-}
-
-async function resetAudioCache() {
-  const ok = await confirm("Clear converted audio cache files?");
-  if (!ok) return;
-  const removed = await api.resetAudioCache();
-  maintenanceStatus.value = `Audio cache reset (${removed} files removed).`;
+  const removed = await api.resetAppData();
+  maintenanceStatus.value = `App data cleared (${removed.cache_entries_removed} cache entries, ${removed.workdir_entries_removed} file entries removed).`;
+  emit("app-data-reset");
 }
 </script>
 
@@ -215,14 +215,11 @@ async function resetAudioCache() {
 
         <Card icon="cleaning_services" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">
-            <div class="grid grid-cols-2 gap-md">
-              <Button class="w-full justify-center" @click="resetTranscriptCache">
-                Transcript cache
-              </Button>
-              <Button class="w-full justify-center" @click="resetAudioCache"> Audio cache </Button>
+            <div class="grid grid-cols-1 gap-md">
+              <Button class="w-full justify-center" @click="resetAppData">Clear cache</Button>
               <Button
                 v-if="isAndroid"
-                class="w-full justify-center col-span-2"
+                class="w-full justify-center"
                 :variant="persistentEnabled ? 'primary' : 'neutral'"
                 @click="togglePersistent(!persistentEnabled)"
               >

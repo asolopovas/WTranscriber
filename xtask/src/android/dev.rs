@@ -184,7 +184,7 @@ pub(super) fn cmd_bootstrap(mode: BootstrapMode, device: Option<&str>) -> Result
         eprintln!("[stage 6/7] attaching CDP and probing tauri IPC");
         wait_for_attach(device, Duration::from_secs(10))?;
         match api_probe(Duration::from_secs(20)) {
-            Some(_) => {}
+            Some(_) => eprintln!("  ✓ Tauri IPC probe"),
             None => eprintln!(
                 "warning: Tauri IPC probe did not return within 20s; session is up (WebView connected to :1420), continuing"
             ),

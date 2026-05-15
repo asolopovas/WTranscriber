@@ -225,6 +225,7 @@ pub fn run() {
             commands::diagnostics::log_renderer,
             commands::diagnostics::reset_transcript_cache,
             commands::diagnostics::reset_audio_cache,
+            commands::diagnostics::reset_app_data,
             android::has_persistent_storage,
             android::request_persistent_storage,
             android::enable_persistent_storage,

@@ -1,11 +1,19 @@
 #![allow(clippy::needless_pass_by_value)]
 
+use serde::Serialize;
+
 use crate::{
-    audio,
+    audio, browser,
     error::Result,
-    logfile,
+    logfile, paths,
     transcriber::{self, Transcript},
 };
+
+#[derive(Debug, Serialize)]
+pub struct ResetAppDataResult {
+    pub cache_entries_removed: u64,
+    pub workdir_entries_removed: u64,
+}
 
 #[tauri::command]
 pub fn log_renderer(
@@ -51,6 +59,43 @@ pub fn reset_transcript_cache() -> Result<u64> {
 #[tauri::command]
 pub fn reset_audio_cache() -> Result<u64> {
     audio::clear_cache()
+}
+
+#[tauri::command]
+pub fn reset_app_data() -> Result<ResetAppDataResult> {
+    let cache_entries_removed = clear_dir_contents(&paths::cache_dir()?)?;
+    let workdir = browser::home_dir();
+    let workdir_entries_removed = clear_dir_contents(&workdir)?;
+    logfile::clear()?;
+    Ok(ResetAppDataResult {
+        cache_entries_removed,
+        workdir_entries_removed,
+    })
+}
+
+fn clear_dir_contents(dir: &std::path::Path) -> Result<u64> {
+    std::fs::create_dir_all(dir)?;
+    let mut removed = 0_u64;
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        removed = removed.saturating_add(remove_path(&path)?);
+    }
+    Ok(removed)
+}
+
+fn remove_path(path: &std::path::Path) -> Result<u64> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.is_dir() {
+        let mut removed = 1_u64;
+        for entry in std::fs::read_dir(path)? {
+            removed = removed.saturating_add(remove_path(&entry?.path())?);
+        }
+        std::fs::remove_dir(path)?;
+        Ok(removed)
+    } else {
+        std::fs::remove_file(path)?;
+        Ok(1)
+    }
 }
 
 #[tauri::command]

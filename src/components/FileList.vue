@@ -151,17 +151,17 @@ defineExpose({
           <div class="text-bodyMedium text-on-surface truncate" :title="title">
             {{ pretty.display }}
           </div>
-          <div
-            class="mt-[2px] flex flex-wrap items-center gap-x-md gap-y-unit font-mono text-labelSmall text-on-surface-variant leading-tight"
-          >
-            <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
-            <span>{{ fmtBytes(entry.size_bytes) }}</span>
-            <span v-if="pretty.timestampPretty" class="text-secondary">
+          <div class="mt-[2px] font-mono text-labelSmall leading-tight">
+            <div class="flex flex-wrap items-center gap-x-md gap-y-unit text-on-surface-variant">
+              <span>{{ entry.duration_ms ? fmtMs(entry.duration_ms) : "—" }}</span>
+              <span>{{ fmtBytes(entry.size_bytes) }}</span>
+              <span v-if="entry.trim_start_ms || entry.trim_end_ms" class="text-primary"
+                >trimmed</span
+              >
+            </div>
+            <div v-if="pretty.timestampPretty" class="mt-unit text-secondary">
               {{ pretty.timestampPretty }}
-            </span>
-            <span v-if="entry.trim_start_ms || entry.trim_end_ms" class="text-primary"
-              >trimmed</span
-            >
+            </div>
           </div>
         </div>
         <div v-if="!selectionActive" class="flex items-center gap-unit shrink-0" @click.stop>

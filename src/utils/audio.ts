@@ -115,7 +115,7 @@ export function formatTimestampPretty(ts: string | null): string | null {
   const [, yy, mm, dd, hh, mi, ss] = m;
   const monthIdx = Number(mm) - 1;
   const month = monthIdx >= 0 && monthIdx < 12 ? MONTH_NAMES[monthIdx] : mm;
-  return `${yy}-${month}-${dd} ${hh}:${mi}:${ss}`;
+  return `${hh}:${mi}:${ss} ${dd}/${month}/${yy}`;
 }
 
 export function prettyName(name: string): {

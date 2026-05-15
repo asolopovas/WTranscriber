@@ -458,6 +458,17 @@ watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
 });
 
+async function onAppDataReset() {
+  transcript.value = null;
+  selectedPath.value = "";
+  clearSelection();
+  progressByPath.value = {};
+  busy.value = {};
+  probingTotal.value = 0;
+  probingDone.value = 0;
+  await refreshListing();
+}
+
 const { error: saveError } = useDebouncedSave(config, (next) => api.saveConfig(next));
 watch(saveError, (e) => {
   if (e) error.value = `save failed: ${e}`;
@@ -982,7 +993,7 @@ const selectedProgress = computed(() =>
         />
       </template>
 
-      <Settings v-else-if="tab === 'settings'" />
+      <Settings v-else-if="tab === 'settings'" @app-data-reset="onAppDataReset" />
       <LogViewer
         v-else-if="tab === 'logs'"
         ref="logViewerRef"

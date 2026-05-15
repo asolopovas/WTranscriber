@@ -254,9 +254,13 @@ pub(super) fn install_signature_mismatch(paths: &[&Path]) -> bool {
 
 pub(super) fn api_probe(timeout: Duration) -> Option<String> {
     let expr = concat!(
-        "import('/src/api.ts').then(m => Promise.all([",
-        "m.api.appVersion(), m.api.systemInfo(), m.api.loadConfig()",
-        "]).then(([version, systemInfo]) => ({version, os: systemInfo.os, ok: true})))"
+        "(async () => {",
+        "const invoke = window.__TAURI_INTERNALS__?.invoke;",
+        "if (typeof invoke !== 'function') throw new Error('tauri invoke unavailable');",
+        "const systemInfo = await invoke('system_info');",
+        "return {version: systemInfo.app_version ?? systemInfo.appVersion, ",
+        "os: systemInfo.os, ok: true};",
+        "})()"
     );
     capture_timeout("bun", &["scripts/cdp.ts", expr], timeout)
 }

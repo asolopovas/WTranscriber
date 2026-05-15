@@ -105,24 +105,6 @@ function accPct(m: ModelInfo): number {
             title="Install"
             @click="emit('install', m.id)"
           />
-          <button
-            v-else-if="m.status === 'installed'"
-            type="button"
-            class="shrink-0 inline-flex items-center justify-center w-11 h-11 rounded-full hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
-            :class="isSelected(m) ? 'text-primary' : 'text-on-surface-variant'"
-            :aria-pressed="isSelected(m)"
-            :aria-label="
-              isSelected(m)
-                ? `${m.display_name} is the default`
-                : `Set ${m.display_name} as default`
-            "
-            :title="isSelected(m) ? 'Default' : 'Set as default'"
-            @click="emit('select', { family: m.family, id: m.id })"
-          >
-            <span class="material-symbols-outlined text-[24px]">
-              {{ isSelected(m) ? "radio_button_checked" : "radio_button_unchecked" }}
-            </span>
-          </button>
         </div>
         <div v-if="progress[m.id]" class="flex flex-col gap-unit">
           <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
@@ -227,24 +209,12 @@ function accPct(m: ModelInfo): number {
               aria-label="Install"
               @click="emit('install', m.id)"
             />
-            <button
+            <span
               v-else-if="m.status === 'installed'"
-              type="button"
-              class="inline-flex items-center justify-center w-10 h-10 rounded-full hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-colors"
-              :class="isSelected(m) ? 'text-primary' : 'text-on-surface-variant'"
-              :aria-pressed="isSelected(m)"
-              :aria-label="
-                isSelected(m)
-                  ? `${m.display_name} is the default`
-                  : `Set ${m.display_name} as default`
-              "
-              :title="isSelected(m) ? 'Default' : 'Set as default'"
-              @click="emit('select', { family: m.family, id: m.id })"
+              class="text-labelSmall text-on-surface-variant"
             >
-              <span class="material-symbols-outlined text-[24px]">
-                {{ isSelected(m) ? "radio_button_checked" : "radio_button_unchecked" }}
-              </span>
-            </button>
+              —
+            </span>
           </td>
         </tr>
       </tbody>

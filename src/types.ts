@@ -57,6 +57,11 @@ export interface AudioMeta {
   duration_ms: number | null;
 }
 
+export interface ResetAppDataResult {
+  cache_entries_removed: number;
+  workdir_entries_removed: number;
+}
+
 export interface DirListing {
   path: string;
   parent: string | null;
