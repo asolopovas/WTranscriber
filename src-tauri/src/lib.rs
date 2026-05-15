@@ -85,7 +85,7 @@ fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "debug,wtranscriber=trace,wtranscriber_lib=trace".into()),
+                .unwrap_or_else(|_| "warn,wtranscriber=info,wtranscriber_lib=info".into()),
         )
         .init();
 

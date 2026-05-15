@@ -33,11 +33,11 @@ fn cmd_bootstrap_attempt(
     fs::create_dir_all(&tmp)?;
     let pids_path = tmp.join("_pids.json");
     if pids_path.exists() || tcp_open(1420) {
-        eprintln!("[stage 0/6] previous session detected — stopping for clean restart");
+        eprintln!("[stage 0/7] previous session detected — stopping for clean restart");
         cmd_stop(false, device)?;
     }
     reap_tauri_logcat_orphans();
-    eprintln!("[stage 1/6] preflight (node_modules, device)");
+    eprintln!("[stage 1/7] preflight (node_modules, device)");
     preflight_node_modules()?;
     detect_device_target(device)?;
     fs::write(tmp.join("_platform"), "android")?;
@@ -66,10 +66,11 @@ fn cmd_bootstrap_attempt(
             "logcat",
             "-b",
             "main,events",
-            "*:W",
-            "RustStdoutStderr:V",
-            "Tauri:V",
-            "chromium:V",
+            "*:S",
+            "RustStdoutStderr:I",
+            "Tauri:I",
+            "chromium:W",
+            "AndroidRuntime:E",
             "am_crash:V",
             "am_proc_died:V",
             "am_proc_start:V",
@@ -80,7 +81,7 @@ fn cmd_bootstrap_attempt(
     .map(String::from)
     .collect();
     let logcat_arg_refs: Vec<&str> = logcat_args.iter().map(String::as_str).collect();
-    eprintln!("[stage 2/6] starting logcat capture");
+    eprintln!("[stage 2/7] starting focused logcat capture");
     let logcat_pid = spawn_persistent(
         "adb",
         &logcat_arg_refs,
@@ -106,7 +107,7 @@ fn cmd_bootstrap_attempt(
     }
     let vite_log = tmp.join("android-dev.log");
     let vite_err = tmp.join("android-dev.err.log");
-    eprintln!("[stage 3a/6] spawning Vite HMR server (logs: tmp/android-dev.{{log,err.log}})");
+    eprintln!("[stage 3a/7] spawning Vite HMR server (logs: tmp/android-dev.{{log,err.log}})");
     let vite_pid = spawn_persistent("bun", &["run", "dev"], &vite_env, &vite_log, &vite_err)?;
 
     let env = Vec::<(String, String)>::new();
@@ -139,7 +140,7 @@ fn cmd_bootstrap_attempt(
         args.push(d.to_string());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    eprintln!("[stage 3b/6] spawning tauri android dev (logs: tmp/android-tauri.{{log,err.log}})");
+    eprintln!("[stage 3b/7] spawning tauri android dev (logs: tmp/android-tauri.{{log,err.log}})");
     let dev_pid = spawn_persistent(
         "cargo",
         &arg_refs,
@@ -156,6 +157,7 @@ fn cmd_bootstrap_attempt(
         vite_err.clone(),
         dev_log.clone(),
         dev_err.clone(),
+        logcat_log.clone(),
     ]);
     let healthy = || {
         if !pid_alive(dev_pid) || !pid_alive(vite_pid) {
@@ -167,9 +169,7 @@ fn cmd_bootstrap_attempt(
         true
     };
     let bring_up = || -> Result<Option<lldb::LldbInfo>> {
-        eprintln!(
-            "[stage 4/7] waiting for vite :1420 (event: \"ready in\"/\"Local:\"/\"Network:\" in tmp/android-dev.log, ≤90s)"
-        );
+        eprintln!("[stage 4/7] waiting for Vite HMR on :1420 (≤90s)");
         wait_for_log_line_with_guard(
             &[&vite_log, &vite_err],
             "vite ready on :1420",
@@ -177,9 +177,7 @@ fn cmd_bootstrap_attempt(
             Duration::from_secs(90),
             healthy,
         )?;
-        eprintln!(
-            "[stage 5a/7] waiting for cargo+gradle build → app launch (event: \"Info Opening\"/wtranscriber am_proc_start in logs, ≤1800s)"
-        );
+        eprintln!("[stage 5/7] waiting for cargo+gradle build, install, and app launch (≤1800s)");
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
             "app launch",
@@ -191,20 +189,9 @@ fn cmd_bootstrap_attempt(
             Duration::from_secs(1800),
             healthy,
         )?;
-        eprintln!(
-            "[stage 5b/7] waiting for WebView → :1420 connection (event: connecting/connected to :1420 in logcat, ≤90s)"
-        );
-        wait_for_log_line_with_guard(
-            &[&dev_log, &dev_err, &logcat_log],
-            "WebView connecting to :1420",
-            |s| {
-                (s.contains("connecting to ") || s.contains("connected to ")) && s.contains(":1420")
-            },
-            Duration::from_secs(90),
-            healthy,
-        )?;
-        eprintln!("[stage 6/7] attaching CDP and probing tauri IPC");
-        wait_for_attach(device, Duration::from_secs(10))?;
+        eprintln!("[stage 6/7] attaching WebView DevTools and probing Tauri IPC (≤90s)");
+        wait_for_attach(device, Duration::from_secs(90))?;
+        eprintln!("  ✓ WebView DevTools attached");
         match api_probe(Duration::from_secs(20)) {
             Some(_) => eprintln!("  ✓ Tauri IPC probe"),
             None => eprintln!(
@@ -289,6 +276,9 @@ fn cmd_bootstrap_attempt(
             return Err(err);
         }
     };
+    let app_pid = info.as_ref().map(|i| i.app_pid);
+    let lldb_server = info.as_ref().map(|i| i.server_pid);
+    let lldb_port = info.as_ref().map(|i| i.host_port);
     let pids = json!({
         "device": device,
         "dev_wrapper": dev_pid,
@@ -296,19 +286,25 @@ fn cmd_bootstrap_attempt(
         "dev_port_owner": port_owner(1420),
         "logcat": logcat_pid,
         "vital": vital_pid,
-        "lldb_server": info.as_ref().map(|i| i.server_pid),
-        "lldb_port": info.as_ref().map(|i| i.host_port),
-        "app_pid": info.as_ref().map(|i| i.app_pid)
+        "lldb_server": lldb_server,
+        "lldb_port": lldb_port,
+        "app_pid": app_pid
     });
     fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
+    let mode_name = match mode {
+        BootstrapMode::Usb => "usb",
+        BootstrapMode::Host => "host",
+    };
     println!(
-        "BOOTSTRAP OK platform=android mode={} pids={}",
-        match mode {
-            BootstrapMode::Usb => "usb",
-            BootstrapMode::Host => "host",
-        },
-        pids
+        "BOOTSTRAP OK platform=android mode={mode_name} app_pid={} cdp=tcp:9222 lldb={}",
+        app_pid
+            .map(|pid| pid.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        lldb_port
+            .map(|port| format!("tcp:{port}"))
+            .unwrap_or_else(|| "disabled".to_string())
     );
+    println!("logs: tmp/android-dev.log tmp/android-tauri.log tmp/logcat.log tmp/dev-vital.log");
     Ok(())
 }
 

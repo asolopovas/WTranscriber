@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -57,14 +57,12 @@ pub(super) fn wait_for_log_line_with_guard(
                     eprintln!("  ✓ {label} ({}s)", start.elapsed().as_secs());
                     break Ok(());
                 }
-                if last_progress.elapsed() >= Duration::from_secs(5) && is_progress_line(&line) {
-                    if last_line.as_deref() != Some(line.as_str()) {
-                        eprintln!(
-                            "  [{:>3}s] {}",
-                            start.elapsed().as_secs(),
-                            trim_log_line(&line)
-                        );
-                        last_line = Some(line);
+                if last_progress.elapsed() >= Duration::from_secs(5)
+                    && let Some(display) = console_log_line(&line)
+                {
+                    if last_line.as_deref() != Some(display.as_str()) {
+                        eprintln!("  [{:>3}s] {display}", start.elapsed().as_secs());
+                        last_line = Some(display);
                     }
                     last_progress = Instant::now();
                 }
@@ -72,6 +70,10 @@ pub(super) fn wait_for_log_line_with_guard(
             Err(RecvTimeoutError::Timeout) => {
                 if !guard() {
                     break Err(());
+                }
+                if last_progress.elapsed() >= Duration::from_secs(30) {
+                    eprintln!("  [{:>3}s] waiting for {label}…", start.elapsed().as_secs());
+                    last_progress = Instant::now();
                 }
             }
             Err(RecvTimeoutError::Disconnected) => break Err(()),
@@ -133,11 +135,6 @@ fn tail_lines(paths: Vec<PathBuf>, tx: mpsc::Sender<String>, stop: Arc<AtomicBoo
     }
 }
 
-fn is_progress_line(line: &str) -> bool {
-    let l = line.trim_start();
-    !l.starts_with('$') && !l.starts_with("---") && l.len() >= 3
-}
-
 pub(super) struct LogStreamer {
     stop: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
@@ -149,6 +146,7 @@ impl LogStreamer {
         let stop_clone = Arc::clone(&stop);
         let handle = thread::spawn(move || {
             let mut offsets: Vec<u64> = vec![0; paths.len()];
+            let mut shown = HashSet::<String>::new();
             for (i, p) in paths.iter().enumerate() {
                 offsets[i] = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
             }
@@ -170,13 +168,10 @@ impl LogStreamer {
                     let chunk = &raw[from..];
                     if let Ok(text) = std::str::from_utf8(chunk) {
                         for line in text.lines() {
-                            let cleaned = strip_ansi(line);
-                            let trimmed = cleaned.trim_end();
-                            if trimmed.is_empty() {
-                                continue;
-                            }
-                            if should_show_line(trimmed) {
-                                eprintln!("  │ {}", trim_log_line(trimmed));
+                            if let Some(display) = console_log_line(line)
+                                && shown.insert(display.clone())
+                            {
+                                eprintln!("  │ {display}");
                             }
                         }
                         offsets[i] = raw.len() as u64;
@@ -199,25 +194,152 @@ impl LogStreamer {
     }
 }
 
-fn should_show_line(line: &str) -> bool {
-    let l = line.trim_start();
-    if l.starts_with('$') {
-        return false;
+fn console_log_line(line: &str) -> Option<String> {
+    let cleaned = strip_ansi(line);
+    let trimmed = cleaned.trim();
+    if trimmed.len() < 3 || trimmed.starts_with('$') || trimmed.starts_with("---") {
+        return None;
     }
-    if l.contains("---") && l.starts_with("---") {
-        return false;
+    if verbose_android_logs() {
+        return Some(trim_log_line(trimmed));
     }
-    if l.len() < 3 {
-        return false;
+    if is_noise_line(trimmed) {
+        return None;
     }
-    true
+    if let Some(line) = compact_known_line(trimmed) {
+        return Some(line);
+    }
+    if is_error_line(trimmed) {
+        return Some(format!(
+            "issue: {}",
+            trim_log_line(&compact_logcat_line(trimmed))
+        ));
+    }
+    None
+}
+
+fn verbose_android_logs() -> bool {
+    std::env::var_os("WT_ANDROID_VERBOSE").is_some()
+        || std::env::var_os("ANDROID_VERBOSE_LOGS").is_some()
+}
+
+fn compact_known_line(line: &str) -> Option<String> {
+    if line.contains("VITE v") && line.contains("ready in") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Local:") && line.contains(":1420") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Network:") && line.contains(":1420") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("android dev: detected ABI") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Using installed NDK") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Replacing devUrl host") {
+        return Some("tauri dev URL host prepared".to_string());
+    }
+    if line.trim_start().starts_with("Compiling wtranscriber ") {
+        return Some("cargo compiling wtranscriber".to_string());
+    }
+    if line.trim_start().starts_with("Compiling ") {
+        return Some("cargo compiling Rust crates".to_string());
+    }
+    if line.contains("Finished `dev` profile") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Performing Streamed Install") {
+        return Some("apk installing".to_string());
+    }
+    if line.trim() == "Success" {
+        return Some("apk install success".to_string());
+    }
+    if line.contains("Starting: Intent") && line.contains("wtranscriber") {
+        return Some("app launch intent sent".to_string());
+    }
+    if line.contains("Info Opening ") {
+        return Some(trim_log_line(line));
+    }
+    if line.contains("Forwarding port 1420") {
+        return Some("adb reverse tcp:1420 ready".to_string());
+    }
+    if line.contains("Watching ") && line.contains("src-tauri") {
+        return Some("watching src-tauri for Rust changes".to_string());
+    }
+    if let Some(line) = compact_rust_stdout(line) {
+        return Some(line);
+    }
+    if (line.contains("am_crash") || line.contains("am_proc_died") || line.contains("am_kill"))
+        && line.contains("wtranscriber")
+    {
+        return Some(trim_log_line(line));
+    }
+    None
+}
+
+fn compact_rust_stdout(line: &str) -> Option<String> {
+    let (_, msg) = line.split_once("RustStdoutStderr:")?;
+    let msg = msg.trim();
+    if msg.starts_with("INFO") || msg.starts_with("WARN") || msg.starts_with("ERROR") {
+        return Some(format!("app: {}", trim_log_line(msg)));
+    }
+    if msg.contains(" WARN ") || msg.contains(" ERROR ") {
+        return Some(format!("app: {}", trim_log_line(msg)));
+    }
+    None
+}
+
+fn is_error_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    (lower.contains("panic")
+        || lower.contains(" error")
+        || lower.contains("error:")
+        || lower.contains("failed")
+        || lower.contains("denied")
+        || lower.contains("not allowed")
+        || lower.contains("install_failed"))
+        && !is_noise_line(line)
+}
+
+fn is_noise_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    [
+        "external vite already running",
+        "requires shared lib",
+        "symlinking lib",
+        "symlink at",
+        "tcp:1420 already forwarded",
+        "failed to read dnsconfig",
+        "unsupported mediatype",
+        "unsupported mime",
+        "unrecognized profile/level",
+        "bluetooth_connect permission is missing",
+        "requires bluetooth permission",
+        "access denied finding property",
+        "pinning is deprecated",
+        "couldn't find an opengl es implementation",
+        "failed to open file for reading seed",
+        "http cache size is",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn compact_logcat_line(line: &str) -> String {
+    if let Some((_, msg)) = line.split_once("RustStdoutStderr:") {
+        return msg.trim().to_string();
+    }
+    line.to_string()
 }
 
 fn trim_log_line(line: &str) -> String {
     let no_ansi = strip_ansi(line);
     let trimmed = no_ansi.trim();
-    if trimmed.len() > 140 {
-        format!("{}…", &trimmed[..139])
+    if trimmed.chars().count() > 140 {
+        format!("{}…", trimmed.chars().take(139).collect::<String>())
     } else {
         trimmed.to_string()
     }
