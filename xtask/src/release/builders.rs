@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 
 use anyhow::Result;
@@ -26,6 +26,54 @@ fn windows_host_env() -> Vec<(&'static str, &'static str)> {
     env
 }
 
+fn whisper_release_build_dirs() -> Vec<PathBuf> {
+    let build_dir = root()
+        .join("src-tauri")
+        .join("target")
+        .join("release")
+        .join("build");
+    let Ok(entries) = fs::read_dir(build_dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_dir()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("whisper-rs-sys-"))
+        })
+        .collect()
+}
+
+fn whisper_release_cuda_arch_stale() -> bool {
+    let expected = format!("CMAKE_CUDA_ARCHITECTURES:UNINITIALIZED={WINDOWS_CUDA_ARCHITECTURES}");
+    for dir in whisper_release_build_dirs() {
+        let cache = dir.join("out").join("build").join("CMakeCache.txt");
+        let Ok(raw) = fs::read_to_string(cache) else {
+            continue;
+        };
+        if raw.lines().any(|line| line.trim() == expected) {
+            return false;
+        }
+        if raw
+            .lines()
+            .any(|line| line.starts_with("CMAKE_CUDA_ARCHITECTURES:"))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn clean_whisper_release_build_dirs() -> Result<()> {
+    for path in whisper_release_build_dirs() {
+        fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+
 // Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
 //
 // Both invocations share `src-tauri/target/release`. Cargo's per-crate file
@@ -39,21 +87,24 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[host] --skip-rebuild, reusing existing bundle");
         return Ok(0);
     }
-    let clean_rc = run_streamed(
-        "host-clean",
-        "cargo",
-        &[
-            "clean",
-            "--manifest-path",
-            "src-tauri/Cargo.toml",
-            "-p",
-            "whisper-rs-sys",
-        ],
-        &[],
-        lock,
-    )?;
-    if clean_rc != 0 {
-        return Ok(clean_rc);
+    if whisper_release_cuda_arch_stale() {
+        clean_whisper_release_build_dirs()?;
+        let clean_rc = run_streamed(
+            "host-clean",
+            "cargo",
+            &[
+                "clean",
+                "--manifest-path",
+                "src-tauri/Cargo.toml",
+                "-p",
+                "whisper-rs-sys",
+            ],
+            &[],
+            lock,
+        )?;
+        if clean_rc != 0 {
+            return Ok(clean_rc);
+        }
     }
     let lock_cli = lock.clone();
     let lock_gui = lock.clone();

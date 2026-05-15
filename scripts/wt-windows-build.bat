@@ -45,6 +45,7 @@ if errorlevel 1 (
 set "CMAKE_CUDA_ARCHITECTURES=75;80;86;89"
 
 call bun install --frozen-lockfile --no-progress || exit /b %ERRORLEVEL%
+for /d %%D in ("src-tauri\target\release\build\whisper-rs-sys-*") do rmdir /S /Q "%%~fD"
 call cargo clean --manifest-path src-tauri\Cargo.toml -p whisper-rs-sys || exit /b %ERRORLEVEL%
 call cargo build --manifest-path src-tauri\Cargo.toml --release --bin wt --features directml || exit /b %ERRORLEVEL%
 call bun run tauri build -c "{\"build\":{\"beforeBuildCommand\":\"\"}}" -- --features directml || exit /b %ERRORLEVEL%
