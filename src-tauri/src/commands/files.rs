@@ -29,6 +29,10 @@ pub async fn add_to_workdir(source: PathBuf, workdir: PathBuf) -> Result<PathBuf
 }
 
 fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
+    #[cfg(target_os = "android")]
+    if is_content_uri(source) {
+        return add_android_uri_to_workdir(source, workdir);
+    }
     if !source.is_file() {
         return Err(Error::Config(format!("not a file: {}", source.display())));
     }
@@ -56,6 +60,50 @@ fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
         dst.display()
     ));
     Ok(dst)
+}
+
+#[cfg(target_os = "android")]
+fn is_content_uri(source: &Path) -> bool {
+    source.to_string_lossy().starts_with("content://")
+}
+
+#[cfg(target_os = "android")]
+fn add_android_uri_to_workdir(source: &Path, workdir: &Path) -> Result<PathBuf> {
+    std::fs::create_dir_all(workdir)?;
+    let source_text = source.to_string_lossy();
+    let raw_name = crate::android_display_name_for_uri(&source_text)
+        .or_else(|| source.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "audio".to_owned());
+    let safe_name = sanitize_file_name(&raw_name);
+    let dst = unique_child_path(workdir, std::ffi::OsStr::new(&safe_name), "file")
+        .ok_or_else(|| Error::Config(format!("too many copies of '{safe_name}' in workdir")))?;
+    if !crate::android_copy_uri_to_file(&source_text, &dst) {
+        return Err(Error::Config(format!(
+            "could not copy Android content URI: {source_text}"
+        )));
+    }
+    logfile::info(&format!(
+        "add_to_workdir {source_text} -> {}",
+        dst.display()
+    ));
+    Ok(dst)
+}
+
+#[cfg(target_os = "android")]
+fn sanitize_file_name(name: &str) -> String {
+    let trimmed = name.trim();
+    let safe: String = trimmed
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | '\0' => '_',
+            _ => c,
+        })
+        .collect();
+    if safe.is_empty() {
+        "audio".into()
+    } else {
+        safe
+    }
 }
 
 #[tauri::command]

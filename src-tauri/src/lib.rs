@@ -73,7 +73,8 @@ pub mod api;
 use tracing_subscriber::EnvFilter;
 
 pub use android::{
-    android_backup_model, android_mirror_after_install, android_notify_transcription_done,
+    android_backup_model, android_copy_uri_to_file, android_display_name_for_uri,
+    android_mirror_after_install, android_notify_transcription_done,
     android_remove_from_persistent, android_reveal_path, android_share_text,
     android_start_transcription_service, android_stop_transcription_service,
 };

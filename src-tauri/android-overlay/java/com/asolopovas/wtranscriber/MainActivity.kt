@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -127,6 +128,41 @@ class MainActivity : TauriActivity() {
       true
     } catch (e: Exception) {
       android.util.Log.w("WTranscriber", "revealPath: clipboard fallback failed: $e")
+      false
+    }
+  }
+
+  @Keep
+  fun displayNameForUri(uriText: String): String {
+    val uri = Uri.parse(uriText)
+    if (uri.scheme == "content") {
+      runCatching {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+          if (cursor.moveToFirst()) {
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0) return cursor.getString(idx) ?: ""
+          }
+        }
+      }
+    }
+    return uri.lastPathSegment ?: ""
+  }
+
+  @Keep
+  fun copyUriToFile(uriText: String, destPath: String): Boolean {
+    val uri = Uri.parse(uriText)
+    val dest = java.io.File(destPath)
+    dest.parentFile?.mkdirs()
+    return try {
+      contentResolver.openInputStream(uri)?.use { input ->
+        dest.outputStream().use { output ->
+          input.copyTo(output, 1024 * 1024)
+        }
+      } ?: return false
+      true
+    } catch (e: Exception) {
+      android.util.Log.e("WTranscriber", "copyUriToFile failed: $uriText -> $destPath", e)
+      dest.delete()
       false
     }
   }

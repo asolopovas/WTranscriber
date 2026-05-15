@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { open, save, confirm, message } from "@tauri-apps/plugin-dialog";
-import { readFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, events } from "@/api";
 import type {
@@ -125,21 +125,45 @@ async function reload() {
   }
 }
 
+const probeQueue: Array<() => Promise<void>> = [];
+const probingPaths = new Set<string>();
+let probeActive = 0;
+
+function probeLimit() {
+  return sys.value?.is_mobile ? 1 : 3;
+}
+
+function drainProbeQueue() {
+  while (probeActive < probeLimit()) {
+    const job = probeQueue.shift();
+    if (!job) return;
+    probeActive += 1;
+    void job().finally(() => {
+      probeActive -= 1;
+      drainProbeQueue();
+    });
+  }
+}
+
 function trackedProbe(stub: DirEntry, path: string) {
+  if (probingPaths.has(path)) return;
+  probingPaths.add(path);
   probingTotal.value += 1;
-  void api
-    .probeDuration(path)
-    .then((ms) => {
+  probeQueue.push(async () => {
+    try {
+      const ms = await api.probeDuration(path);
       if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
-    })
-    .catch(() => {})
-    .finally(() => {
+    } catch {
+    } finally {
+      probingPaths.delete(path);
       probingDone.value += 1;
       if (probingDone.value >= probingTotal.value) {
         probingTotal.value = 0;
         probingDone.value = 0;
       }
-    });
+    }
+  });
+  drainProbeQueue();
 }
 
 function probeMissingDurations() {
@@ -239,19 +263,7 @@ function addPathsToWorkdir(paths: string[]) {
     } catch (e) {
       eRaw = e;
     }
-    if (!sys.value?.is_mobile) {
-      throw eRaw instanceof Error ? eRaw : new Error(String(eRaw));
-    }
-    try {
-      const bytes = await readFile(source);
-      if (bytes.byteLength > 200 * 1024 * 1024) {
-        throw new Error("file exceeds 200 MB limit for in-process copy");
-      }
-      await yieldToUI();
-      return await api.saveRecording(dir, basenameOf(source), bytes);
-    } catch (e2) {
-      throw new Error(`${eRaw} / ${e2}`);
-    }
+    throw eRaw instanceof Error ? eRaw : new Error(String(eRaw));
   };
 
   void (async () => {

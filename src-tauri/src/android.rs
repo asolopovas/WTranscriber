@@ -158,6 +158,54 @@ pub const fn android_reveal_path(_path: &str) -> bool {
 }
 
 #[cfg(target_os = "android")]
+pub fn android_display_name_for_uri(uri: &str) -> Option<String> {
+    android_jni::with_activity(None, |env, activity| {
+        let u = env.new_string(uri)?;
+        let value = env
+            .call_method(
+                activity,
+                android_jni::jni_str!("displayNameForUri"),
+                android_jni::jni_sig!((arg0: JString) -> JString),
+                &[(&u).into()],
+            )?
+            .l()?;
+        let jstr = env.cast_local::<jni::objects::JString>(value)?;
+        let name = jstr.try_to_string(env)?;
+        Ok((!name.is_empty()).then_some(name))
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+#[must_use]
+pub const fn android_display_name_for_uri(_uri: &str) -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "android")]
+pub fn android_copy_uri_to_file(uri: &str, dest: &std::path::Path) -> bool {
+    android_jni::with_activity(false, |env, activity| {
+        let u = env.new_string(uri)?;
+        let dest_text = dest.to_string_lossy();
+        let d = env.new_string(dest_text.as_ref())?;
+        let ok = env
+            .call_method(
+                activity,
+                android_jni::jni_str!("copyUriToFile"),
+                android_jni::jni_sig!((arg0: JString, arg1: JString) -> bool),
+                &[(&u).into(), (&d).into()],
+            )?
+            .z()?;
+        Ok(ok)
+    })
+}
+
+#[cfg(not(target_os = "android"))]
+#[must_use]
+pub const fn android_copy_uri_to_file(_uri: &str, _dest: &std::path::Path) -> bool {
+    false
+}
+
+#[cfg(target_os = "android")]
 pub fn android_notify_transcription_done(title: &str, text: &str, success: bool) {
     android_jni::with_activity((), |env, activity| {
         let t = env.new_string(title)?;
