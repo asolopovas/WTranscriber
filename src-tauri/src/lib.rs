@@ -27,25 +27,26 @@ pub mod cuda_setup {
 }
 
 pub mod runtime_setup {
-    use super::{logfile, models, runtimes};
+    use super::{config, logfile, models, runtimes};
 
     pub async fn ensure_for_cli(cuda: bool) {
-        let variant = if cuda {
-            runtimes::SherpaVariant::Cuda
+        let requested = if cuda {
+            config::Device::Cuda
         } else {
-            runtimes::SherpaVariant::Cpu
+            config::Device::Cpu
         };
-        let mut sherpa_progress = cli_progress(format!("sherpa-onnx-{}", variant.slug()));
-        if let Err(e) = runtimes::ensure_sherpa(variant, &mut sherpa_progress).await {
+        let plan = runtimes::dependencies::plan(requested, true, runtimes::cudnn_supported());
+        let mut sherpa_progress = cli_progress(format!("sherpa-onnx-{}", plan.sherpa.slug()));
+        if let Err(e) = runtimes::ensure_sherpa(plan.sherpa, &mut sherpa_progress).await {
             logfile::error(&format!("cli runtime sherpa install: {e}"));
         }
-        if cuda && runtimes::cudnn_supported() {
+        if plan.cudnn {
             let mut cudnn_progress = cli_progress("cudnn".to_string());
             if let Err(e) = runtimes::ensure_cudnn(&mut cudnn_progress).await {
                 logfile::error(&format!("cli runtime cudnn install: {e}"));
             }
         }
-        if cuda {
+        if plan.setup_process_cuda() {
             runtimes::inproc_cuda::setup();
         }
     }

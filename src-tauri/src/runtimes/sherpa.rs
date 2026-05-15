@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use crate::{
-    config::Device,
     error::{Error, Result},
     models::download::{Progress, download_file},
     paths,
@@ -17,13 +16,6 @@ pub enum Variant {
 }
 
 impl Variant {
-    pub const fn from_device(d: Device) -> Self {
-        match d {
-            Device::Cuda => Self::Cuda,
-            Device::Cpu => Self::Cpu,
-        }
-    }
-
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Cpu => "cpu",

@@ -68,14 +68,11 @@ pub fn key_for(config: &Config) -> CacheKey {
     }
 }
 
-fn provider_for(device: Device) -> &'static str {
-    if !cfg!(feature = "cuda") || CUDA_DISABLED.load(Ordering::Relaxed) {
+fn provider_for(config: &Config) -> &'static str {
+    if CUDA_DISABLED.load(Ordering::Relaxed) {
         return "cpu";
     }
-    match device {
-        Device::Cuda => "cuda",
-        Device::Cpu => "cpu",
-    }
+    super::runtime::provider(config).as_arg()
 }
 
 fn build_config(config: &Config, provider: &str, threads: u32) -> Result<OfflineRecognizerConfig> {
@@ -92,7 +89,7 @@ fn build_config(config: &Config, provider: &str, threads: u32) -> Result<Offline
 
 fn build(config: &Config) -> Result<OfflineRecognizer> {
     let t0 = std::time::Instant::now();
-    let provider = provider_for(config.device);
+    let provider = provider_for(config);
     let threads = crate::engine::threads(config);
     logfile::info(&format!(
         "engine init: model={} engine={} device={} threads={}",

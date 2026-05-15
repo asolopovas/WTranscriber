@@ -19,36 +19,35 @@ pub async fn ensure_runtimes(app: &tauri::AppHandle) {
         return;
     }
     let cfg = config::Config::load().unwrap_or_default();
-    let gpu_present = has_nvidia_gpu();
-    let effective_device = effective_device(cfg.device, gpu_present);
-    let variant = runtimes::SherpaVariant::from_device(effective_device);
-
-    let sherpa_static_cpu =
-        cfg!(feature = "sherpa-static") && matches!(variant, runtimes::SherpaVariant::Cpu);
-    if sherpa_static_cpu {
-        logfile::info("runtime sherpa-onnx-cpu skipped (statically linked into binary)");
-    } else {
-        install_sherpa(app, variant).await;
-    }
-
-    if matches!(variant, runtimes::SherpaVariant::Cuda) && runtimes::cudnn_supported() {
-        install_cudnn(app).await;
-    }
-    install_llama(app).await;
-    if matches!(variant, runtimes::SherpaVariant::Cuda) {
-        runtimes::inproc_cuda::setup();
-        runtimes::inproc_cuda::dump_path();
-    }
-}
-
-fn effective_device(requested: config::Device, gpu_present: bool) -> config::Device {
-    if matches!(requested, config::Device::Cuda) && !gpu_present {
+    let plan =
+        runtimes::dependencies::plan(cfg.device, has_nvidia_gpu(), runtimes::cudnn_supported());
+    if plan.cuda_without_gpu() {
         logfile::info(
             "config device=cuda but no NVIDIA GPU detected; treating as cpu for runtime install",
         );
-        return config::Device::Cpu;
     }
-    requested
+    if plan.onnx_cuda_unavailable() {
+        logfile::info(
+            "config device=cuda but ONNX CUDA runtime is disabled for this build; treating sherpa runtimes as cpu",
+        );
+    }
+
+    let sherpa_static_cpu =
+        cfg!(feature = "sherpa-static") && matches!(plan.sherpa, runtimes::SherpaVariant::Cpu);
+    if sherpa_static_cpu {
+        logfile::info("runtime sherpa-onnx-cpu skipped (statically linked into binary)");
+    } else {
+        install_sherpa(app, plan.sherpa).await;
+    }
+
+    if plan.cudnn {
+        install_cudnn(app).await;
+    }
+    install_llama(app).await;
+    if plan.setup_process_cuda() {
+        runtimes::inproc_cuda::setup();
+        runtimes::inproc_cuda::dump_path();
+    }
 }
 
 fn has_nvidia_gpu() -> bool {

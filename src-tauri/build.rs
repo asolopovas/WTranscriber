@@ -139,6 +139,20 @@ fn install_cuda_dlls() {
     if !cfg!(target_os = "windows") {
         return;
     }
+    let names = [
+        "onnxruntime.dll",
+        "onnxruntime_providers_cuda.dll",
+        "onnxruntime_providers_shared.dll",
+        "onnxruntime_providers_tensorrt.dll",
+    ];
+    if std::env::var("CARGO_FEATURE_DIRECTML").is_ok() {
+        if let Some(dst_dir) = target_profile_dir() {
+            for name in names {
+                let _ = std::fs::remove_file(dst_dir.join(name));
+            }
+        }
+        return;
+    }
     let Some(dst_dir) = target_profile_dir() else {
         println!("cargo:warning=cuda-dll-install: cannot resolve target profile dir");
         return;
@@ -153,13 +167,6 @@ fn install_cuda_dlls() {
 
     println!("cargo:rerun-if-changed={}", src_dir.display());
     println!("cargo:rerun-if-env-changed=WT_CUDA_DLL_SRC");
-
-    let names = [
-        "onnxruntime.dll",
-        "onnxruntime_providers_cuda.dll",
-        "onnxruntime_providers_shared.dll",
-        "onnxruntime_providers_tensorrt.dll",
-    ];
     for name in names {
         let src = src_dir.join(name);
         let dst = dst_dir.join(name);

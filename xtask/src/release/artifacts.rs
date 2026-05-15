@@ -19,25 +19,36 @@ pub(super) fn find_host_bundle(ver: &str, branch: &str, dev: bool) -> Option<(Pa
         .join("bundle");
     if is_windows() {
         let dir = target.join("nsis");
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.extension().and_then(|x| x.to_str()) == Some("exe")
+        let mut candidates: Vec<PathBuf> = fs::read_dir(&dir)
+            .ok()?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension().and_then(|x| x.to_str()) == Some("exe")
                     && p.file_name()
                         .and_then(|n| n.to_str())
-                        .map(|n| n.ends_with("-setup.exe"))
-                        .unwrap_or(false)
-                {
-                    let name = if dev {
-                        format!("wtranscriber-setup-{branch}.exe")
-                    } else {
-                        format!("wtranscriber-setup-{ver}.exe")
-                    };
-                    return Some((p, name));
-                }
-            }
-        }
-        return None;
+                        .is_some_and(|n| n.ends_with("-setup.exe"))
+            })
+            .collect();
+        let expected = format!("_{ver}_");
+        let p = candidates
+            .iter()
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.contains(&expected))
+            })
+            .cloned()
+            .or_else(|| {
+                candidates.sort_by_key(|p| p.metadata().and_then(|m| m.modified()).ok());
+                candidates.pop()
+            })?;
+        let name = if dev {
+            format!("wtranscriber-setup-{branch}.exe")
+        } else {
+            format!("wtranscriber-setup-{ver}.exe")
+        };
+        return Some((p, name));
     }
     let dir = target.join("deb");
     if let Ok(entries) = fs::read_dir(&dir) {

@@ -1,4 +1,5 @@
 pub mod cudnn;
+pub mod dependencies;
 pub mod inproc_cuda;
 pub mod llama;
 pub mod sherpa;

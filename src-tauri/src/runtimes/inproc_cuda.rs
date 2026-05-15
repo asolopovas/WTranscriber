@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     logfile,
-    runtimes::{cudnn, sherpa},
+    runtimes::{cudnn, dependencies, sherpa},
 };
 
 const CUDA_DLL_NAMES: &[&str] = &[
@@ -23,6 +23,10 @@ pub fn setup() {
     }
     if !cfg!(target_os = "windows") {
         logfile::info("inproc-cuda: skipped (unsupported os)");
+        return;
+    }
+    if !dependencies::onnx_cuda_supported_for_build() {
+        logfile::info("inproc-cuda: skipped (windows directml build owns ONNX Runtime DLLs)");
         return;
     }
 
