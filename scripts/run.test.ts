@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 
@@ -12,14 +15,26 @@ const collect = (child: ReturnType<typeof spawn>) =>
     child.on("exit", (code) => resolve({ code, stderr }));
   });
 
-const pgrep = (pattern: string) =>
-  collect(spawn("pgrep", ["-f", pattern], { stdio: ["ignore", "ignore", "pipe"] }));
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 describe("run.ts", () => {
-  it.skipIf(process.platform === "win32")(
-    "kills shell grandchildren on timeout",
-    async () => {
-      const marker = `wt-run-tree-${process.pid}-${Date.now()}`;
+  it("kills grandchildren on timeout", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "wt-run-tree-"));
+    const helperPath = join(dir, "helper.mjs");
+    const pidPath = join(dir, "grandchild.pid");
+    writeFileSync(
+      helperPath,
+      `import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst child = spawn(process.execPath, ["-e", "setInterval(() => {}, 30000)"], { stdio: "ignore" });\nchild.unref();\nwriteFileSync(process.argv[2], String(child.pid ?? ""));\nsetInterval(() => {}, 30000);\n`,
+    );
+
+    try {
       const child = spawn(
         "bun",
         [
@@ -31,21 +46,23 @@ describe("run.ts", () => {
           "--max",
           "1",
           "--",
-          "bash",
-          "-lc",
-          `exec -a ${marker} sleep 30 & wait`,
+          "bun",
+          helperPath,
+          pidPath,
         ],
         { stdio: ["ignore", "ignore", "pipe"] },
       );
 
       const result = await collect(child);
       await delay(200);
-      const survivors = await pgrep(marker);
+      const grandchildPid = Number(readFileSync(pidPath, "utf8"));
 
       expect(result.code).toBe(124);
       expect(result.stderr).toContain("MAX_TIMEOUT");
-      expect(survivors.code).toBe(1);
-    },
-    10_000,
-  );
+      expect(Number.isInteger(grandchildPid)).toBe(true);
+      expect(isAlive(grandchildPid)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
 });
