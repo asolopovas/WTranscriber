@@ -74,19 +74,31 @@ pub(super) fn find_deb(ver: &str, branch: &str, dev: bool) -> Option<(PathBuf, S
         .join("release")
         .join("bundle")
         .join("deb");
-    let entries = fs::read_dir(&dir).ok()?;
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.extension().and_then(|x| x.to_str()) == Some("deb") {
-            let name = if dev {
-                format!("wtranscriber-{branch}_amd64.deb")
-            } else {
-                format!("wtranscriber_{ver}_amd64.deb")
-            };
-            return Some((p, name));
-        }
-    }
-    None
+    let mut candidates: Vec<PathBuf> = fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("deb"))
+        .collect();
+    let expected = format!("_{ver}_");
+    let p = candidates
+        .iter()
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.contains(&expected))
+        })
+        .cloned()
+        .or_else(|| {
+            candidates.sort_by_key(|p| p.metadata().and_then(|m| m.modified()).ok());
+            candidates.pop()
+        })?;
+    let name = if dev {
+        format!("wtranscriber-{branch}_amd64.deb")
+    } else {
+        format!("wtranscriber_{ver}_amd64.deb")
+    };
+    Some((p, name))
 }
 
 #[allow(clippy::too_many_lines)]

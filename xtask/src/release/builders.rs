@@ -282,8 +282,22 @@ fn build_deb_in_docker(lock: &SharedOut) -> Result<i32> {
 set -euo pipefail
 unset SHERPA_ONNX_LIB_DIR SHERPA_ONNX_LIB SHERPA_ONNX_INCLUDE_DIR || true
 flock /cache/bun/install.lock bun install --frozen-lockfile --no-progress 2>&1 | tail -5
-bun run tauri build --bundles deb -c '{"build":{"beforeBuildCommand":""}}' -- --no-default-features --features sherpa-static
 SRC="/cache/target/release/bundle/deb"
+mkdir -p "$SRC"
+rm -f "$SRC"/*.deb
+bun run tauri build --bundles deb -c '{"build":{"beforeBuildCommand":""}}' -- --no-default-features --features sherpa-static
+for deb in "$SRC"/*.deb; do
+  pkg="$(mktemp -d)"
+  out="$deb.repacked"
+  dpkg-deb -R "$deb" "$pkg"
+  if [[ -d "$pkg/usr/bin" ]]; then
+    find "$pkg/usr/bin" -maxdepth 1 -type f -perm -0100 -exec strip --strip-unneeded {} +
+  fi
+  dpkg-deb -Zxz -z9 -b "$pkg" "$out" >/dev/null
+  mv -f "$out" "$deb"
+  rm -rf "$pkg"
+  du -h "$deb"
+done
 DST="/work/src-tauri/target/release/bundle/deb"
 mkdir -p "$DST"
 cp -f "$SRC"/*.deb "$DST"/
