@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
-const WINDOWS_CUDA_ARCHITECTURES: &str = "75;80;86;89";
+const WINDOWS_CUDA_ARCHITECTURES: &str = "61;75;80;86;89";
 
 fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
     // sccache wraps cmake-launched cl.exe (CMAKE_{C,CXX}_COMPILER_LAUNCHER is
