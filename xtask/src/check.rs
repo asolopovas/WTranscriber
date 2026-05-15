@@ -12,19 +12,26 @@ use crate::util::{SharedOut, root, run_streamed, shared_out};
 pub struct Args {
     #[arg(long)]
     pub sequential: bool,
+    #[arg(value_name = "JOB")]
+    pub jobs: Vec<String>,
 }
 
+#[derive(Clone, Copy)]
 struct Job {
     tag: &'static str,
     command: &'static str,
 }
 
 pub fn run(args: Args) -> Result<()> {
-    ensure_cargo_tool("cargo-machete")?;
-    ensure_cargo_tool("cargo-audit")?;
-    invalidate_stale_cmake_caches()?;
+    let jobs = select_jobs(args.jobs)?;
+    ensure_tools(&jobs)?;
+    if jobs
+        .iter()
+        .any(|job| matches!(job.tag, "clippy" | "rust-test"))
+    {
+        invalidate_stale_cmake_caches()?;
+    }
 
-    let jobs = jobs();
     let out = shared_out();
     let mut results = Vec::with_capacity(jobs.len());
 
@@ -54,6 +61,26 @@ pub fn run(args: Args) -> Result<()> {
     }
     println!("✓ check passed ({} jobs)", results.len());
     Ok(())
+}
+
+fn select_jobs(selected: Vec<String>) -> Result<Vec<Job>> {
+    let jobs = jobs();
+    if selected.is_empty() {
+        return Ok(jobs);
+    }
+    let mut out = Vec::with_capacity(selected.len());
+    for tag in selected {
+        let Some(index) = jobs.iter().position(|job| job.tag == tag) else {
+            let known = jobs
+                .iter()
+                .map(|job| job.tag)
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!("unknown check job {tag:?}; known jobs: {known}");
+        };
+        out.push(jobs[index]);
+    }
+    Ok(out)
 }
 
 fn jobs() -> Vec<Job> {
@@ -111,6 +138,16 @@ fn run_job(job: &Job, out: &SharedOut) -> Result<i32> {
     } else {
         run_streamed(job.tag, "sh", &["-c", job.command], &[], out)
     }
+}
+
+fn ensure_tools(jobs: &[Job]) -> Result<()> {
+    if jobs.iter().any(|job| job.tag == "machete") {
+        ensure_cargo_tool("cargo-machete")?;
+    }
+    if jobs.iter().any(|job| job.tag == "audit") {
+        ensure_cargo_tool("cargo-audit")?;
+    }
+    Ok(())
 }
 
 fn ensure_cargo_tool(tool: &str) -> Result<()> {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Glob } from "bun";
-import { relative } from "node:path";
+import { resolve, relative } from "node:path";
 
 interface Rule {
   id: string;
@@ -23,9 +23,14 @@ const RULES: Rule[] = [
 
 const ROOT = process.cwd();
 const glob = new Glob("src/**/*.vue");
+const args = process.argv.slice(2).filter((file) => file.endsWith(".vue"));
+const files =
+  args.length > 0
+    ? args.map((file) => resolve(ROOT, file))
+    : glob.scan({ cwd: ROOT, absolute: true });
 
 let failed = 0;
-for await (const file of glob.scan({ cwd: ROOT, absolute: true })) {
+for await (const file of files) {
   const text = await Bun.file(file).text();
   const lines = text.split("\n");
   for (const rule of RULES) {

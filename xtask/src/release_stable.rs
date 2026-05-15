@@ -14,7 +14,10 @@ pub struct Args {
 
 pub fn run(args: Args) -> Result<()> {
     if !args.skip_check {
-        check::run(check::Args { sequential: false })?;
+        check::run(check::Args {
+            sequential: false,
+            jobs: Vec::new(),
+        })?;
     }
     bump::run(bump::Args { level: args.level })?;
     release::run(release::Args {

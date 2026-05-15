@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Pre-commit gate optimised for fast LLM iteration:
 #   - Auto-formats touched files and re-stages them (formatting is never a gate).
-#   - Type-checks the TS/Vue project (real correctness, fast, clear errors).
-#   - Skips heavy steps (clippy, cargo check, full test) — those belong in CI / `just check`.
+#   - Runs changed-file gates for checks that are cheap enough before commit.
+#   - Skips src-tauri compile-heavy steps — those belong in explicit `just check` / release gates.
 # All output uses `→` prefix lines so an agent can parse step boundaries.
 set -e
 cd "$(git rev-parse --show-toplevel)"
@@ -35,8 +35,6 @@ if [ -n "$ts_vue_files" ]; then
   echo "→ ts/vue/scripts: prettier --write (auto-fix, touched files)"
   echo "$ts_vue_files" | xargs bun x prettier --write --log-level warn
   echo "$ts_vue_files" | xargs git add
-  echo "→ ts/vue/scripts: typecheck (gate)"
-  bun run typecheck
   ran_any=1
 fi
 
@@ -48,5 +46,8 @@ if [ -n "$prettier_other" ]; then
 fi
 
 if [ "$ran_any" = 0 ]; then
-  echo "→ no checks needed for staged files"
+  echo "→ no auto-format needed for staged files"
 fi
+
+echo "→ changed-file checks (gate)"
+bun scripts/check-changed.ts --staged

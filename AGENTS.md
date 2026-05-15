@@ -17,7 +17,8 @@ src-tauri/       tauri.conf.json, capabilities/default.json, gen/android/
 xtask/src/       check / bump / publish / release / android orchestration
 scripts/         run.ts, android-emu.ts, android-install.ts, cdp.ts,
                  clean-temp.ts, clear-dev-logs.ts, dev-vital.ts, doctor.ts,
-                 lint-vue.ts, install-*.ps1, bootstrap-windows.ps1, wt-windows-build.bat
+                 check-changed.ts, lint-vue.ts, install-*.ps1,
+                 bootstrap-windows.ps1, wt-windows-build.bat
 docs/            android · dev-loop · release · rust-build-speed · tmp · asr-pipeline-v2
 .agents/skills/  project-local pi skills (mirrored under .opencode/skills for opencode)
 .vscode/         tasks.json (android build+install, dev, check, …)
@@ -32,7 +33,8 @@ Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefi
 ```
 just dev               desktop HMR (Linux/Windows); `just dev stop` to stop
 just android           Android USB/host HMR session (idempotent)
-just check             pre-release gate (11 jobs in parallel)
+just check             pre-release gate (11 jobs in parallel; accepts job tags)
+just check-changed     changed-file gate for pre-commit/CI
 just build             dev release matrix (host + Android + Linux .deb) → releases/dev/
 just release           publish releases/dev/ to the rolling gh `dev` prerelease
 just release-stable    check + bump + build + publish (stable)
@@ -44,7 +46,9 @@ Android-only APK (no full release matrix): `bun scripts/android-install.ts` (bui
 
 `just build` runs `cargo xtask release --dev`: builds the Windows NSIS installer (host or via the `windowsVm` entry in `release.config.json`), the Android APK, and the Linux `.deb` (Docker) in parallel into `releases/dev/`. Self-healing on transient Windows-VM failures uses the configured VM start/restart commands + 1 retry. `just release` is publish-only (`cargo xtask publish dev`); it never builds. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
-`just check` runs `cargo xtask check`, which fans out **11 jobs** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. The same recipe runs in CI (`.github/workflows/check.yml`). For targeted reruns, invoke the underlying tool directly (e.g. `cargo clippy …`, `bun run typecheck`).
+`just check` runs `cargo xtask check`, which fans out **11 jobs** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. Pass job tags for a focused run, e.g. `just check typecheck js-test`.
+
+CI (`.github/workflows/check.yml`) runs `just check-changed --base …`: formatting/lint/typecheck/tests/audits are selected from the changed files, while full native Rust/Tauri gates stay local/release-only.
 
 `just check` assumes the C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built — `just bootstrap` pre-warms them via `cargo build` after the system-deps script. Warm `just check` finishes in <10 s; a cold first run is ~5 min. If `target/` is wiped (`cargo clean`, fresh checkout, deleted `tmp/.bootstrap.stamp`), re-run `just bootstrap` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
 
@@ -63,7 +67,7 @@ Android-only APK (no full release matrix): `bun scripts/android-install.ts` (bui
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt` for `src-tauri`/`xtask`, TS/Vue/scripts/docs via `prettier --write`), re-stages, then gates on `bun run typecheck` for TS/Vue/scripts changes. Rust correctness (clippy, tests) is **not** in the hook — it lives in `just check` and CI. Run `just check` before opening a PR.
+`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden (the sole exception is the release bump commit, which runs after `just check`). Auto-formats touched files (Rust via `cargo fmt` for `src-tauri`/`xtask`, TS/Vue/scripts/docs via `prettier --write`), re-stages, then runs `bun scripts/check-changed.ts --staged`. The hook covers changed-file formatting, TS/Vue typecheck/tests/lint, xtask clippy/tests, and dependency audits when lockfiles change. Compile-heavy src-tauri Rust correctness stays in explicit `just check` and release gates.
 
 ## Tauri 2.11 patches
 

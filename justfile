@@ -75,9 +75,13 @@ android mode="usb" device="":
 
 # ─── quality ──────────────────────────────────────────────────────────────────
 
-# Pre-release gate: 11 jobs in parallel.
-check:
-    {{_run}} --tag check --idle 600 --max 1800 -- cargo xtask check
+# Pre-release gate: all jobs by default, or selected jobs by tag.
+check *jobs:
+    {{_run}} --tag check --idle 600 --max 1800 -- cargo xtask check {{jobs}}
+
+# Changed-file gate for hooks and CI.
+check-changed *args:
+    {{_run}} --tag check-changed --idle 120 --max 900 -- bun scripts/check-changed.ts {{args}}
 
 # ─── build / release ──────────────────────────────────────────────────────────
 

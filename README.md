@@ -23,6 +23,7 @@ just build        # full release matrix (Linux + Windows + Android), CLI include
 just build-host   # current host only: GUI installer + wt CLI
 just cli ARGS     # run the CLI in dev (e.g. `just cli models list`)
 just check        # parallel pre-release gate
+just check-changed --staged  # changed-file gate used by hooks/CI
 ```
 
 `just --list` for everything else. Conventions and dev-loop rules: [`AGENTS.md`](AGENTS.md).

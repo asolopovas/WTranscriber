@@ -12,7 +12,9 @@ Every `just` recipe runs through `scripts/run.ts`:
 
 `just dev` is long-running and uses `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
 
-`just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. The same recipe runs in CI on every push and PR.
+`just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. Pass job tags for focused runs, e.g. `just check typecheck js-test`.
+
+CI runs `just check-changed --base …` on every push and PR so only checks selected by changed files run there. Use full `just check` locally before releases or wider refactors.
 
 ## Desktop
 
@@ -23,6 +25,7 @@ just dev          # HMR (Vite + tauri dev)
 just dev stop     # stop any running dev session (desktop + android)
 just build        # full release matrix (host + Android + Linux .deb)
 just check        # parallel pre-release gate
+just check-changed --staged  # changed-file gate used by hooks/CI
 ```
 
 ## Android
