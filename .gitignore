@@ -1,19 +1,22 @@
-# Logs
-logs
+# Logs and scratch output
+logs/
+tmp/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-tmp
+
+# Local/generated media
 *.png
 !src-tauri/icons/*.png
 !src/assets/**/*.png
 
-node_modules
-dist
-dist-ssr
+# Frontend dependencies and build outputs
+node_modules/
+dist/
+dist-ssr/
 *.local
 
 # Editor directories and files
@@ -37,10 +40,17 @@ bun.lock
 # TypeScript build info
 *.tsbuildinfo
 
-# Tauri build outputs
+# Rust/Cargo build outputs, including nested worker crates
+target/
 src-tauri/target/
 xtask/target/
+workers/*/target/
+
+# Tauri/Android generated outputs
 src-tauri/gen/
+.gradle/
+.kotlin/
+local.properties
 
 # Release artifacts
 releases/
