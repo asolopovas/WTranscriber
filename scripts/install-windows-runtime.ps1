@@ -99,10 +99,36 @@ function Install-DirectML {
     Write-SetupLog 'DirectML installed'
 }
 
+function Get-NvidiaSmiPath {
+    $cmd = Get-Command 'nvidia-smi.exe' -ErrorAction SilentlyContinue
+    if ($null -ne $cmd) {
+        return $cmd.Source
+    }
+    $candidates = @(
+        (Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'),
+        (Join-Path $env:SystemRoot 'Sysnative\nvidia-smi.exe'),
+        (Join-Path $env:ProgramW6432 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'),
+        (Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+    return $null
+}
+
 function Has-NvidiaGpu {
     try {
-        $out = & nvidia-smi -L 2>$null
-        return ($LASTEXITCODE -eq 0 -and ($out -match '^GPU '))
+        $nvidiaSmi = Get-NvidiaSmiPath
+        if ($null -ne $nvidiaSmi) {
+            $out = & $nvidiaSmi -L 2>$null
+            if ($LASTEXITCODE -eq 0 -and ($out -match '^GPU ')) {
+                return $true
+            }
+        }
+        $controllers = Get-CimInstance -ClassName Win32_VideoController -ErrorAction SilentlyContinue
+        return ($null -ne ($controllers | Where-Object { $_.Name -match 'NVIDIA' -or $_.AdapterCompatibility -match 'NVIDIA' } | Select-Object -First 1))
     } catch {
         return $false
     }
@@ -110,7 +136,11 @@ function Has-NvidiaGpu {
 
 function Get-NvidiaComputeCapability {
     try {
-        $rows = & nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader,nounits 2>$null
+        $nvidiaSmi = Get-NvidiaSmiPath
+        if ($null -eq $nvidiaSmi) {
+            return $null
+        }
+        $rows = & $nvidiaSmi --query-gpu=name,compute_cap --format=csv,noheader,nounits 2>$null
         if ($LASTEXITCODE -ne 0 -or $null -eq $rows) {
             return $null
         }
