@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::thread;
 
 use anyhow::Result;
 
@@ -18,12 +17,6 @@ fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
     // have not yet captured env, so removal is observed by their children.
     unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
     Vec::new()
-}
-
-fn windows_host_env() -> Vec<(&'static str, &'static str)> {
-    let mut env = cargo_incremental_env();
-    env.push(("CMAKE_CUDA_ARCHITECTURES", WINDOWS_CUDA_ARCHITECTURES));
-    env
 }
 
 fn whisper_release_build_dirs() -> Vec<PathBuf> {
@@ -74,14 +67,6 @@ fn clean_whisper_release_build_dirs() -> Result<()> {
     Ok(())
 }
 
-// Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
-//
-// Both invocations share `src-tauri/target/release`. Cargo's per-crate file
-// locks serialise overlapping compile units, so concurrent invocations are
-// safe — the second build sees most crates already compiled and only links
-// the binary it needs. SHERPA_ONNX_LIB_DIR from install-sherpa-cuda.ps1 is
-// inherited so build.rs links the CUDA runtime instead of the CPU
-// auto-download.
 pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
     if skip {
         println!("[host] --skip-rebuild, reusing existing bundle");
@@ -106,51 +91,24 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
             return Ok(clean_rc);
         }
     }
-    let lock_cli = lock.clone();
-    let lock_gui = lock.clone();
-    let incr_cli = windows_host_env();
-    let incr_gui = windows_host_env();
-    let h_cli = thread::spawn(move || {
-        run_streamed(
-            "host-cli",
-            "cargo",
-            &[
-                "build",
-                "--manifest-path",
-                "src-tauri/Cargo.toml",
-                "--release",
-                "--bin",
-                "wt",
-                "--features",
-                "directml",
-            ],
-            &incr_cli,
-            &lock_cli,
-        )
-    });
-    let h_gui = thread::spawn(move || {
-        run_streamed(
-            "host-gui",
-            "bun",
-            &[
-                "run",
-                "tauri",
-                "build",
-                "-c",
-                "{\"build\":{\"beforeBuildCommand\":\"\"}}",
-                "--",
-                "--features",
-                "directml",
-            ],
-            &incr_gui,
-            &lock_gui,
-        )
-    });
-    let rc_cli = h_cli.join().unwrap_or(Ok(101))?;
-    let rc_gui = h_gui.join().unwrap_or(Ok(101))?;
-    if rc_cli != 0 {
-        return Ok(rc_cli);
-    }
+    let incr_gui = cargo_incremental_env();
+    let rc_gui = run_streamed(
+        "host-gui",
+        "bun",
+        &[
+            "run",
+            "tauri",
+            "build",
+            "-c",
+            "{\"build\":{\"beforeBuildCommand\":\"\"}}",
+            "--",
+            "--no-default-features",
+            "--features",
+            "directml",
+        ],
+        &incr_gui,
+        lock,
+    )?;
     Ok(rc_gui)
 }
 

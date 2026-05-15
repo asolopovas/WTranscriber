@@ -22,16 +22,22 @@ pub fn run(args: Args) -> Result<()> {
     println!("bump: {cur} -> {next}");
     set_pkg_version(&next)?;
     set_cargo_version(&next)?;
+    set_worker_cargo_version(&next)?;
     set_tauri_version(&next)?;
     let have_lock = sync_cargo_lock()?;
+    let have_worker_lock = sync_worker_cargo_lock()?;
 
     let mut to_add: Vec<&str> = vec![
         "package.json",
         "src-tauri/Cargo.toml",
         "src-tauri/tauri.conf.json",
+        "workers/whisper-cuda-worker/Cargo.toml",
     ];
     if have_lock {
         to_add.push("src-tauri/Cargo.lock");
+    }
+    if have_worker_lock {
+        to_add.push("workers/whisper-cuda-worker/Cargo.lock");
     }
     let mut args_add: Vec<&str> = vec!["add"];
     args_add.extend(to_add);
@@ -91,7 +97,11 @@ fn set_pkg_version(v: &str) -> Result<()> {
 
 fn set_cargo_version(v: &str) -> Result<()> {
     let p = root().join("src-tauri").join("Cargo.toml");
-    let raw = fs::read_to_string(&p)?;
+    set_toml_package_version(&p, v)
+}
+
+fn set_toml_package_version(p: &std::path::Path, v: &str) -> Result<()> {
+    let raw = fs::read_to_string(p)?;
     let mut found = false;
     let mut out = String::with_capacity(raw.len());
     for line in raw.split_inclusive('\n') {
@@ -113,10 +123,20 @@ fn set_cargo_version(v: &str) -> Result<()> {
         out.push_str(line);
     }
     if !found {
-        bail!("could not find `version = ...` line in src-tauri/Cargo.toml");
+        bail!("could not find `version = ...` line in {}", p.display());
     }
-    fs::write(&p, out)?;
+    fs::write(p, out)?;
     Ok(())
+}
+
+fn set_worker_cargo_version(v: &str) -> Result<()> {
+    set_toml_package_version(
+        &root()
+            .join("workers")
+            .join("whisper-cuda-worker")
+            .join("Cargo.toml"),
+        v,
+    )
 }
 
 fn set_tauri_version(v: &str) -> Result<()> {
@@ -125,6 +145,27 @@ fn set_tauri_version(v: &str) -> Result<()> {
         "version",
         v,
     )
+}
+
+fn sync_worker_cargo_lock() -> Result<bool> {
+    let lock = root()
+        .join("workers")
+        .join("whisper-cuda-worker")
+        .join("Cargo.lock");
+    if !lock.exists() {
+        return Ok(false);
+    }
+    sh(
+        "cargo",
+        &[
+            "update",
+            "--manifest-path",
+            "workers/whisper-cuda-worker/Cargo.toml",
+            "-w",
+            "--offline",
+        ],
+    )?;
+    Ok(true)
 }
 
 fn sync_cargo_lock() -> Result<bool> {

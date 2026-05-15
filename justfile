@@ -94,10 +94,20 @@ clean-logs:
 build: bootstrap-if-stale clean-logs
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
-# Windows host only: NSIS installer + bundled CLI → releases/dev/.
+# Windows host only: small NSIS installer → releases/dev/.
 [windows]
 build-host: bootstrap-if-stale clean-logs
     {{_run}} --tag build-host --idle 1800 --max 3600 -- cargo xtask release --dev --no-android --no-deb --no-windows-vm
+
+# Build optional CUDA worker zips for GitHub release hosting.
+[windows]
+build-cuda *args: bootstrap-if-stale clean-logs
+    {{_run}} --tag build-cuda --idle 1800 --max 14400 -- cargo xtask cuda-workers build {{args}}
+
+# Upload previously built CUDA worker zips to the cuda-workers-v<version> GitHub release.
+[windows]
+release-cuda *args:
+    {{_run}} --tag release-cuda --idle 180 --max 1800 -- cargo xtask cuda-workers publish {{args}}
 
 # Publish releases/dev/ to the rolling gh `dev` prerelease.
 release:

@@ -4,8 +4,14 @@
     clippy::items_after_statements
 )]
 
-use std::sync::{Mutex, OnceLock};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{Mutex, OnceLock},
+};
 
+use serde::Deserialize;
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
@@ -30,7 +36,7 @@ fn ctx_slot() -> &'static Mutex<Option<CtxCell>> {
     CTX.get_or_init(|| Mutex::new(None))
 }
 
-fn resolve_model_path(model_id: &str) -> Result<std::path::PathBuf> {
+fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
     let entry = models::by_id(model_id).ok_or_else(|| {
         Error::Config(format!(
             "unknown whisper-cpp model id `{model_id}` (run `wt models list`)"
@@ -96,6 +102,93 @@ const fn t_centisec_to_ms(t: i64) -> u64 {
     (t as u64).saturating_mul(10)
 }
 
+#[derive(Deserialize)]
+struct WorkerOutput {
+    segments: Vec<Segment>,
+    language: String,
+    rtf: f64,
+}
+
+fn cuda_worker_path() -> Result<PathBuf> {
+    if let Some(p) = std::env::var_os("WT_CUDA_WORKER") {
+        let p = PathBuf::from(p);
+        if p.exists() {
+            return Ok(p);
+        }
+    }
+    let exe = std::env::current_exe()?;
+    let install_dir = exe
+        .parent()
+        .ok_or_else(|| Error::Config("cannot resolve application directory".into()))?;
+    let worker = install_dir
+        .join("runtime")
+        .join("cuda")
+        .join("wt-whisper-cuda-worker.exe");
+    if worker.exists() {
+        return Ok(worker);
+    }
+    Err(Error::Config(format!(
+        "Whisper CUDA worker is not installed at {}. Re-run the installer with NVIDIA GPU access, or set WT_CUDA_WORKER to a downloaded worker executable.",
+        worker.display()
+    )))
+}
+
+fn write_samples(samples: &[f32]) -> Result<tempfile::NamedTempFile> {
+    let mut tmp = tempfile::Builder::new()
+        .prefix("wtranscriber-whisper-")
+        .suffix(".f32le")
+        .tempfile()?;
+    for sample in samples {
+        tmp.write_all(&sample.to_le_bytes())?;
+    }
+    tmp.flush()?;
+    Ok(tmp)
+}
+
+fn run_cuda_worker(
+    samples: &[f32],
+    audio_dur_sec: f64,
+    config: &Config,
+    model_path: &Path,
+    on_progress: &mut dyn FnMut(f64),
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(Vec<Segment>, String, f64)> {
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let worker = cuda_worker_path()?;
+    let audio = write_samples(samples)?;
+    let output = Command::new(&worker)
+        .arg("--model")
+        .arg(model_path)
+        .arg("--audio-f32le")
+        .arg(audio.path())
+        .arg("--duration-sec")
+        .arg(format!("{audio_dur_sec:.6}"))
+        .arg("--language")
+        .arg(&config.language)
+        .arg("--threads")
+        .arg(config.threads.to_string())
+        .output()
+        .map_err(|e| Error::Transcribe(format!("launch CUDA worker {}: {e}", worker.display())))?;
+    if cancelled() {
+        return Err(Error::Cancelled);
+    }
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::Transcribe(format!(
+            "CUDA worker failed ({}): {}",
+            output.status,
+            stderr.trim()
+        )));
+    }
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| Error::Transcribe(format!("CUDA worker returned non-UTF8 JSON: {e}")))?;
+    let parsed: WorkerOutput = serde_json::from_str(stdout.trim())?;
+    on_progress(100.0);
+    Ok((parsed.segments, parsed.language, parsed.rtf))
+}
+
 pub fn run(
     samples: &[f32],
     audio_dur_sec: f64,
@@ -105,6 +198,16 @@ pub fn run(
 ) -> Result<(Vec<Segment>, String, f64)> {
     let model_path = resolve_model_path(&config.model)?;
     let use_gpu = cfg!(feature = "cuda") && matches!(config.device, Device::Cuda);
+    if matches!(config.device, Device::Cuda) && !use_gpu {
+        return run_cuda_worker(
+            samples,
+            audio_dur_sec,
+            config,
+            &model_path,
+            on_progress,
+            cancelled,
+        );
+    }
     ensure_state(&model_path, use_gpu)?;
     let slot = ctx_slot()
         .lock()

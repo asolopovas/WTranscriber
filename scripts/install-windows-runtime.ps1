@@ -108,6 +108,74 @@ function Has-NvidiaGpu {
     }
 }
 
+function Get-NvidiaComputeCapability {
+    try {
+        $rows = & nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader,nounits 2>$null
+        if ($LASTEXITCODE -ne 0 -or $null -eq $rows) {
+            return $null
+        }
+        foreach ($row in @($rows)) {
+            $parts = "$row".Split(',') | ForEach-Object { $_.Trim() }
+            if ($parts.Count -ge 2 -and $parts[1] -match '^(\d+)\.(\d+)$') {
+                return "$($Matches[1])$($Matches[2])"
+            }
+        }
+    } catch {
+        return $null
+    }
+    return $null
+}
+
+function Get-ReleaseSha256([string]$ReleaseTag, [string]$Asset) {
+    $sums = Join-Path $cache "SHA256SUMS-$ReleaseTag"
+    $url = "https://github.com/asolopovas/WTranscriber/releases/download/$ReleaseTag/SHA256SUMS"
+    Download-FileChecked $url $sums
+    $line = Get-Content $sums | Where-Object { $_ -match "\s+$([regex]::Escape($Asset))$" } | Select-Object -First 1
+    if ($null -eq $line) {
+        throw "checksum for $Asset not found in SHA256SUMS"
+    }
+    return ($line -split '\s+')[0]
+}
+
+function Assert-Sha256([string]$Path, [string]$Expected) {
+    $actual = (Get-FileHash -Algorithm SHA256 $Path).Hash.ToLowerInvariant()
+    if ($actual -ne $Expected.ToLowerInvariant()) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $Path
+        throw "checksum mismatch for $(Split-Path -Leaf $Path): expected $Expected, got $actual"
+    }
+}
+
+function Install-WhisperCudaWorker {
+    $arch = Get-NvidiaComputeCapability
+    if ($null -eq $arch) {
+        Write-SetupLog 'No NVIDIA compute capability detected; skipping Whisper CUDA worker'
+        return
+    }
+    $supported = @('61', '75', '80', '86', '89')
+    if ($supported -notcontains $arch) {
+        Write-SetupLog "NVIDIA compute capability sm_$arch is not packaged; skipping Whisper CUDA worker"
+        return
+    }
+    $releaseTag = if ($env:WT_CUDA_WORKER_TAG) { $env:WT_CUDA_WORKER_TAG } else { 'cuda-workers-v1' }
+    $asset = "wtranscriber-cuda-sm$arch-win-x64.zip"
+    Write-SetupLog "Installing Whisper CUDA worker sm_$arch from GitHub release $releaseTag"
+    $archive = Join-Path $cache $asset
+    $expected = Get-ReleaseSha256 $releaseTag $asset
+    Download-FileChecked "https://github.com/asolopovas/WTranscriber/releases/download/$releaseTag/$asset" $archive
+    Assert-Sha256 $archive $expected
+    $stage = Join-Path $cache "wtranscriber-cuda-sm$arch"
+    Expand-Zip $archive $stage
+    $exe = Get-ChildItem -Path $stage -Recurse -Filter 'wt-whisper-cuda-worker.exe' | Select-Object -First 1
+    if ($null -eq $exe) {
+        throw "CUDA worker archive layout unexpected"
+    }
+    $dst = Join-Path $InstallDir 'runtime\cuda'
+    New-Item -ItemType Directory -Force -Path $dst | Out-Null
+    Copy-Item -Force $exe.FullName (Join-Path $dst 'wt-whisper-cuda-worker.exe')
+    Set-Content -Path (Join-Path $dst 'arch.txt') -Value "sm_$arch" -Encoding ASCII
+    Write-SetupLog "Whisper CUDA worker sm_$arch installed"
+}
+
 function Install-SherpaOnnx {
     $version = 'v1.13.0'
     Write-SetupLog "Installing sherpa-onnx speech runtime $version"
@@ -155,6 +223,11 @@ try {
     Install-SherpaOnnx
     Install-OnnxRuntimeDirectML
     Install-DirectML
+    try {
+        Install-WhisperCudaWorker
+    } catch {
+        Write-SetupLog "Optional Whisper CUDA worker installation skipped: $($_.Exception.Message)"
+    }
     Write-SetupLog 'Runtime dependency installation complete'
 } catch {
     Write-SetupLog "Runtime dependency installation failed: $($_.Exception.Message)"
