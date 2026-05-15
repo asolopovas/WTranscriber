@@ -7,7 +7,7 @@ Dev-loop commands live in [`dev-loop.md`](dev-loop.md). This file: prerequisites
 - Android Studio with SDK + NDK (version pinned in `justfile` `_android_ndk` — currently `27.2.12479018`)
 - JDK 21
 - Rust Android targets (`rustup target add aarch64-linux-android`, etc.)
-- sherpa-onnx Android prebuilts (auto-fetched on first build into `.android-prebuilt/`; manual: `cargo xtask android prebuilts`)
+- sherpa-onnx Android prebuilts are fetched automatically on first build into `.android-prebuilt/`
 
 `bun scripts/doctor.ts` validates host prerequisites are reachable from the current shell.
 
@@ -26,19 +26,18 @@ The keystore-properties path is regenerated per-host by `xtask/src/release/build
 
 ## What `just android` guarantees
 
-`cargo xtask android bootstrap usb`:
+`cargo xtask android bootstrap usb` always stops any existing dev session first, then starts a fresh one:
 
-1. No-ops if a healthy session exists.
-2. Validates adb device, writes `tmp/_platform`.
-3. Clears + tails logcat → `tmp/logcat.log` (W+, RustStdoutStderr/Tauri/chromium; `am_crash`, `am_proc_died`, `am_proc_start`, `am_kill` raised to V).
-4. In USB mode, configures `adb reverse tcp:1420` and `tcp:1421` for localhost/emulator fallback. Tauri 2.11 rewrites physical Android devices to the host LAN IP on Windows, so the effective host is the one printed by `tauri android dev`.
-5. Spawns a detached Vite dev server → `tmp/android-dev.{log,err.log}`, then `tauri android dev` with the frontend hook replaced by a no-op → `tmp/android-tauri.{log,err.log}`. Vite is owned by bootstrap so it stays alive after the APK launch.
-6. Waits for Vite ready event (`Local:`/`Network:` + `:1420` line in `tmp/android-dev.log`, ≤90 s; fast-fails on child death or signature mismatch).
-7. Waits for cargo+gradle build → APK install/launch (any of `Info Opening`, `Info Installing`, `Performing Streamed Install`, `Starting: Intent … wtranscriber`, or `am_proc_start … wtranscriber`, ≤1800 s — covers cold cargo+NDK builds).
-8. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤90 s).
-9. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`) for ≤20 s — non-fatal, since the WebView-connected event already proves the session is live.
-10. Auto-recovers signature mismatch (uninstall + retry once).
-11. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
+1. Validates adb device, writes `tmp/_platform`.
+2. Clears + tails logcat → `tmp/logcat.log` (W+, RustStdoutStderr/Tauri/chromium; `am_crash`, `am_proc_died`, `am_proc_start`, `am_kill` raised to V).
+3. In USB mode, configures `adb reverse tcp:1420` and `tcp:1421` for localhost/emulator fallback. Tauri 2.11 rewrites physical Android devices to the host LAN IP on Windows, so the effective host is the one printed by `tauri android dev`.
+4. Spawns a detached Vite dev server → `tmp/android-dev.{log,err.log}`, then `tauri android dev` with the frontend hook replaced by a no-op → `tmp/android-tauri.{log,err.log}`. Vite is owned by bootstrap so it stays alive after the APK launch.
+5. Waits for Vite ready event (`Local:`/`Network:` + `:1420` line in `tmp/android-dev.log`, ≤90 s; fast-fails on child death or signature mismatch).
+6. Waits for cargo+gradle build → APK install/launch (any of `Info Opening`, `Info Installing`, `Performing Streamed Install`, `Starting: Intent … wtranscriber`, or `am_proc_start … wtranscriber`, ≤1800 s — covers cold cargo+NDK builds).
+7. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤90 s).
+8. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`) for ≤20 s — non-fatal, since the WebView-connected event already proves the session is live.
+9. Auto-recovers signature mismatch (uninstall + retry once).
+10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
 
 Outer harness budget: `--idle 120 --max 2100` (cold aarch64-android cargo + first-run gradle commonly takes 10–30 min; warm builds finish in <30 s).
 

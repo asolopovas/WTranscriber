@@ -47,12 +47,12 @@ Optimises deps once; hot-path crates (`sherpa-onnx`, `tokio`, `reqwest`, `rubato
 
 Warm rebuild after one Rust source change (Windows, 16 cores):
 
-| Command                                           | Time  | Output                                                   |
-| ------------------------------------------------- | ----- | -------------------------------------------------------- |
-| `cargo xtask release --dev --no-android --no-deb` | ~50 s | Host only: GUI installer + `wt` CLI                      |
-| `just build`                                      | ~5 m  | Full matrix: host (GUI + CLI) + Android APK + Linux .deb |
+| Command                                           | Time  | Output                              |
+| ------------------------------------------------- | ----- | ----------------------------------- |
+| `cargo xtask release --dev --no-android --no-deb` | ~50 s | Host only: GUI installer + `wt` CLI |
+| `just build`                                      | ~5 m  | Windows-only full dev matrix        |
 
-Cold build: ~210 s. Floor is the single-threaded link of statically-bundled `sherpa-onnx`.
+Cold builds are much slower because whisper.cpp, ggml, and sherpa-onnx all configure and compile native code.
 
 ## Dependencies
 

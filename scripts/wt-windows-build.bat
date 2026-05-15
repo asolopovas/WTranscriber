@@ -17,7 +17,6 @@ call "%VCVARS%" >NUL || exit /b %ERRORLEVEL%
 set "PATH=%USERPROFILE%\.cargo\bin;%USERPROFILE%\.bun\bin;C:\Program Files\just;C:\Program Files\nodejs;%PATH%"
 
 where tar >NUL 2>&1 || ( echo [win] tar missing on PATH 1>&2 & exit /b 91 )
-where just >NUL 2>&1 || ( echo [win] just missing on PATH; run scripts\bootstrap-windows.ps1 1>&2 & exit /b 92 )
 where bun  >NUL 2>&1 || ( echo [win] bun missing on PATH 1>&2 & exit /b 93 )
 where cargo >NUL 2>&1 || ( echo [win] cargo missing on PATH 1>&2 & exit /b 94 )
 
@@ -44,6 +43,7 @@ if errorlevel 1 (
 )
 
 call bun install --frozen-lockfile --no-progress || exit /b %ERRORLEVEL%
-call just build-host || exit /b %ERRORLEVEL%
+call cargo build --manifest-path src-tauri\Cargo.toml --release --bin wt --features directml || exit /b %ERRORLEVEL%
+call bun run tauri build -c "{\"build\":{\"beforeBuildCommand\":\"\"}}" -- --features directml || exit /b %ERRORLEVEL%
 
 dir src-tauri\target\release\bundle\nsis\*-setup.exe

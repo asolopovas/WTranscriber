@@ -2,25 +2,22 @@
 
 ## Commands
 
-| Command                              | What it does                                                   |
-| ------------------------------------ | -------------------------------------------------------------- |
-| `just build`                         | Build full matrix into `releases/dev/` (`xtask release --dev`) |
-| `just release`                       | Publish `releases/dev/*` to the rolling `dev` prerelease       |
-| `just release-stable [level]`        | `check` + bump (commits + tags) + build + publish stable       |
-| `cargo xtask bump [level]`           | Bump version, commit, tag (no push, no build)                  |
-| `cargo xtask release [--dev …]`      | Build artifacts into `releases/[dev/]`                         |
-| `cargo xtask publish <dev\|stable>`  | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                 |
-| `cargo xtask release-stable [level]` | Local stable flow: check + bump + build + publish              |
+| Command                              | What it does                                                        |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| `just build`                         | Windows-only shortcut: build full dev matrix into `releases/dev/`   |
+| `just release`                       | Publish `releases/dev/*` to the rolling `dev` prerelease            |
+| `just release-stable [level]`        | `check` + bump (commits + tags) + build + publish stable            |
+| `cargo xtask bump [level]`           | Bump version, commit, tag (no push, no build)                       |
+| `cargo xtask release [--dev …]`      | Build artifacts into `releases/[dev/]`; use directly outside `just` |
+| `cargo xtask publish <dev\|stable>`  | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                      |
+| `cargo xtask release-stable [level]` | Local stable flow: check + bump + build + publish                   |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
 `xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
 ## Windows VM preflight
 
-The Linux host builds the Windows NSIS installer by SSH-driving the VM
-configured in `release.config.json` (`windowsVm`). The default config uses
-the `windows-vm` SSH alias and starts/restarts `/home/andrius/vms/win11`
-through its Makefile. Override the config path with `WT_RELEASE_CONFIG`.
+When `cargo xtask release` runs from Linux, it builds the Windows NSIS installer by SSH-driving the VM configured in `release.config.json` (`windowsVm`). The default config uses the `windows-vm` SSH alias and starts/restarts `/home/andrius/vms/win11` through its Makefile. Override the config path with `WT_RELEASE_CONFIG`.
 
 ```bash
 make -C ~/vms/win11 up
@@ -52,8 +49,7 @@ run the manual nuke once from inside the VM:
 powershell -ExecutionPolicy Bypass -File \\host.lan\Data\fix-rustup.ps1
 ```
 
-Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via
-`rustup-init.exe`, and re-add the msvc target. Then re-run `just release`.
+Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via `rustup-init.exe`, and re-add the msvc target. Then rebuild with `just build` on Windows or `cargo xtask release --dev` on Linux, and publish with `just release`.
 
 ## Channels
 
@@ -64,7 +60,7 @@ Delete `~/.rustup` and `~/.cargo/bin` inside the guest, reinstall via
 
 ## Artifacts
 
-Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb"]`):
+Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["nsis", "deb"]`). The release matrix adds Android through xtask:
 
 - Windows host: `wtranscriber-setup-*.exe` (NSIS)
 - Linux `.deb` (Docker, cross-platform): produced inside `debian:12-slim` by `cargo xtask release`, written to `src-tauri/target/release/bundle/deb/`

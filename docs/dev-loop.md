@@ -18,12 +18,12 @@ CI runs `just check-changed --base …` on every push and PR so only checks sele
 
 ## Desktop
 
-Windows is the primary release host; Linux is supported for dev (`just dev`) and the `.deb` build (Docker, via `cargo xtask release`). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
+Windows is the primary release host. Linux is supported for desktop dev (`just dev`) and for the Docker-based `.deb` path inside `cargo xtask release`. The `just build` shortcut is Windows-only. `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
 
 ```bash
 just dev          # HMR (Vite + tauri dev)
 just dev stop     # stop any running dev session (desktop + android)
-just build        # full release matrix (host + Android + Linux .deb)
+just build        # Windows-only: full dev release matrix
 just check        # parallel pre-release gate
 just check-changed --staged  # changed-file gate used by hooks/CI
 ```
@@ -31,7 +31,7 @@ just check-changed --staged  # changed-file gate used by hooks/CI
 ## Android
 
 ```bash
-just android                       # bootstrap USB HMR session (idempotent)
+just android                       # clean-start USB HMR session
 just android host                  # bootstrap Wi-Fi/LAN session
 just android usb R5CXB2PGC2H       # pick a device when multiple are attached
 just dev stop                      # stop session and forwards
@@ -51,6 +51,8 @@ The `.vscode/tasks.json` entries "android: build + install APK" and "android: bu
 - `location.href` is not a health signal on Android.
 
 Full `tmp/` artefact contract: [`tmp.md`](tmp.md).
+
+`just android` is repeatable but not a no-op: it stops any existing Android dev session before starting a new one.
 
 ## HMR rule
 

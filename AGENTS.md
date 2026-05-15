@@ -32,10 +32,10 @@ Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefi
 
 ```
 just dev               desktop HMR (Linux/Windows); `just dev stop` to stop
-just android           Android USB/host HMR session (idempotent)
+just android           Android USB/host HMR session (clean restart)
 just check             pre-release gate (11 jobs in parallel; accepts job tags)
 just check-changed     changed-file gate for pre-commit/CI
-just build             dev release matrix (host + Android + Linux .deb) → releases/dev/
+just build             Windows-only dev release matrix → releases/dev/
 just release           publish releases/dev/ to the rolling gh `dev` prerelease
 just release-stable    check + bump + build + publish (stable)
 just bootstrap         Windows host toolchain install + dep prewarm
@@ -44,7 +44,7 @@ just setup             bun install + git hooks
 
 Android-only APK (no full release matrix): `bun scripts/android-install.ts` (build + adb install -r; add `--force` to handle keystore signature mismatch). Same via `.vscode/tasks.json` → "android: build + install APK". Headless emulator: `bun scripts/android-emu.ts`.
 
-`just build` runs `cargo xtask release --dev`: builds the Windows NSIS installer (host or via the `windowsVm` entry in `release.config.json`), the Android APK, and the Linux `.deb` (Docker) in parallel into `releases/dev/`. Self-healing on transient Windows-VM failures uses the configured VM start/restart commands + 1 retry. `just release` is publish-only (`cargo xtask publish dev`); it never builds. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
+`just build` is Windows-only and runs `cargo xtask release --dev`: builds the Windows NSIS installer, the Android APK, and the Linux `.deb` (Docker) in parallel into `releases/dev/`. On Linux, run `cargo xtask release --dev` directly to use the `windowsVm` entry in `release.config.json`. Self-healing on transient Windows-VM failures uses the configured VM start/restart commands + 1 retry. `just release` is publish-only (`cargo xtask publish dev`); it never builds. See [`docs/release.md`](docs/release.md) for the failsafe + recovery flow.
 
 `just check` runs `cargo xtask check`, which fans out **11 jobs** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. Pass job tags for a focused run, e.g. `just check typecheck js-test`.
 
@@ -75,8 +75,8 @@ In-tree workarounds for upstream issues until Tauri 2.12 lands:
 
 - `src-tauri/gen/android/app/src/main/java/com/asolopovas/wtranscriber/generated/WryActivity.kt` carries inline `@Suppress("DEPRECATION")` annotations on the `onDestroy`/`onRestart` overrides so they don't fail `-Werror` Kotlin builds.
 - `xtask/src/android/patch.rs::patch_plugin_consumer_rules` touches an empty `consumer-rules.pro` inside each plugin's `android/` dir referenced by `gen/android/tauri.settings.gradle` (covers `tauri-plugin-dialog`, `tauri-plugin-fs`). Wired into `prepare()` before every Android build.
-- `src-tauri/build.rs::stub_windows_bundle_resources` touches zero-byte placeholders for the Windows bundle DLLs declared in `tauri.windows.conf.json`, so `tauri_build`'s resource validation passes during `just check` / dev builds on a fresh checkout. `install_cuda_dlls` then overwrites them with real binaries from `%APPDATA%` during release builds. Pre-bundle: verify file sizes before shipping a release.
-- `src-tauri/build.rs::invalidate_stale_cmake_caches` wipes `target/{debug,release}/build/{whisper-rs-sys-*,sherpa-onnx-sys-*}` when `CMAKE_GENERATOR` changes vs the `target/.cmake-generator` sentinel.
+- `src-tauri/build.rs::stub_windows_bundle_resources` touches the Windows bundle placeholder needed by `tauri_build` resource validation during `just check` / dev builds on a fresh checkout. `install_cuda_dlls` then copies real CUDA DLLs from `%APPDATA%` during release builds. Pre-bundle: verify file sizes before shipping a release.
+- `src-tauri/build.rs` warns when `CMAKE_GENERATOR` changes; `xtask/src/check.rs` owns the cache wipe for `target/{debug,release}/build/{whisper-rs-sys-*,sherpa-onnx-sys-*}` using the `target/.cmake-generator` sentinel.
 - `xtask/src/release/builders.rs::ensure_dev_keystore_properties` regenerates `src-tauri/gen/android/keystore.properties` whenever the recorded `storeFile` is missing on the current host (so the same checkout signs APKs on Windows and Linux). Called from both `cargo xtask android build` and the release matrix.
 
 Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migration.
@@ -123,7 +123,7 @@ Drop these once Tauri 2.12 publishes the fixed plugin gradle + activity migratio
 | Add/change Tauri command      | Main thread; sync handler + invoke + api.ts + types.ts + capabilities                                      |
 | Edit project files            | Main thread (pre-commit hook is the gate)                                                                  |
 | Install Android APK only      | `bun scripts/android-install.ts` (add `--force` to wipe + reinstall on sig mismatch)                       |
-| Dev release                   | `just build` then `just release` (build → `releases/dev/`, publish rolling `dev` prerelease)               |
+| Dev release                   | Windows: `just build` then `just release` (build → `releases/dev/`, publish rolling `dev` prerelease)      |
 | Stable release                | `just release-stable`                                                                                      |
 
 ## Skills
