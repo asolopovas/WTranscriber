@@ -11,7 +11,7 @@ use whisper_rs::{
 };
 
 use crate::{
-    config::Config,
+    config::{Config, Device},
     error::{Error, Result},
     models,
     transcriber::{Segment, Token},
@@ -19,6 +19,7 @@ use crate::{
 
 struct CtxCell {
     model_path: String,
+    use_gpu: bool,
     _ctx: WhisperContext,
     state: Mutex<WhisperState>,
 }
@@ -57,7 +58,7 @@ fn resolve_model_path(model_id: &str) -> Result<std::path::PathBuf> {
     Ok(path)
 }
 
-fn ensure_state(model_path: &std::path::Path) -> Result<()> {
+fn ensure_state(model_path: &std::path::Path, use_gpu: bool) -> Result<()> {
     let mut slot = ctx_slot()
         .lock()
         .map_err(|e| Error::Transcribe(format!("whisper-cpp ctx lock: {e}")))?;
@@ -65,16 +66,22 @@ fn ensure_state(model_path: &std::path::Path) -> Result<()> {
         .to_str()
         .ok_or_else(|| Error::Config("whisper-cpp model path is not UTF-8".into()))?
         .to_owned();
-    if slot.as_ref().is_some_and(|c| c.model_path == model_str) {
+    if slot
+        .as_ref()
+        .is_some_and(|c| c.model_path == model_str && c.use_gpu == use_gpu)
+    {
         return Ok(());
     }
-    let ctx = WhisperContext::new_with_params(&model_str, WhisperContextParameters::default())
+    let mut params = WhisperContextParameters::default();
+    params.use_gpu(use_gpu);
+    let ctx = WhisperContext::new_with_params(&model_str, params)
         .map_err(|e| Error::Transcribe(format!("whisper-cpp init {model_str}: {e}")))?;
     let state = ctx
         .create_state()
         .map_err(|e| Error::Transcribe(format!("whisper-cpp state: {e}")))?;
     *slot = Some(CtxCell {
         model_path: model_str,
+        use_gpu,
         _ctx: ctx,
         state: Mutex::new(state),
     });
@@ -97,7 +104,8 @@ pub fn run(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<(Vec<Segment>, String, f64)> {
     let model_path = resolve_model_path(&config.model)?;
-    ensure_state(&model_path)?;
+    let use_gpu = cfg!(feature = "cuda") && matches!(config.device, Device::Cuda);
+    ensure_state(&model_path, use_gpu)?;
     let slot = ctx_slot()
         .lock()
         .map_err(|e| Error::Transcribe(format!("whisper-cpp slot lock: {e}")))?;

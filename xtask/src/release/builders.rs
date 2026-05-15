@@ -6,6 +6,8 @@ use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
+const WINDOWS_CUDA_ARCHITECTURES: &str = "75;80;86;89";
+
 fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
     // sccache wraps cmake-launched cl.exe (CMAKE_{C,CXX}_COMPILER_LAUNCHER is
     // baked into whisper-rs-sys's CMake build files at first configure) and
@@ -16,6 +18,12 @@ fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
     // have not yet captured env, so removal is observed by their children.
     unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
     Vec::new()
+}
+
+fn windows_host_env() -> Vec<(&'static str, &'static str)> {
+    let mut env = cargo_incremental_env();
+    env.push(("CMAKE_CUDA_ARCHITECTURES", WINDOWS_CUDA_ARCHITECTURES));
+    env
 }
 
 // Windows host: GUI installer (NSIS) and `wt` CLI in parallel.
@@ -31,10 +39,26 @@ pub(super) fn build_host(skip: bool, lock: &SharedOut) -> Result<i32> {
         println!("[host] --skip-rebuild, reusing existing bundle");
         return Ok(0);
     }
+    let clean_rc = run_streamed(
+        "host-clean",
+        "cargo",
+        &[
+            "clean",
+            "--manifest-path",
+            "src-tauri/Cargo.toml",
+            "-p",
+            "whisper-rs-sys",
+        ],
+        &[],
+        lock,
+    )?;
+    if clean_rc != 0 {
+        return Ok(clean_rc);
+    }
     let lock_cli = lock.clone();
     let lock_gui = lock.clone();
-    let incr_cli = cargo_incremental_env();
-    let incr_gui = cargo_incremental_env();
+    let incr_cli = windows_host_env();
+    let incr_gui = windows_host_env();
     let h_cli = thread::spawn(move || {
         run_streamed(
             "host-cli",

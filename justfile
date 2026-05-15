@@ -94,6 +94,11 @@ clean-logs:
 build: bootstrap-if-stale clean-logs
     {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
 
+# Windows host only: NSIS installer + bundled CLI → releases/dev/.
+[windows]
+build-host: bootstrap-if-stale clean-logs
+    {{_run}} --tag build-host --idle 600 --max 2400 -- cargo xtask release --dev --no-android --no-deb --no-windows-vm
+
 # Publish releases/dev/ to the rolling gh `dev` prerelease.
 release:
     {{_run}} --tag publish-dev --idle 180 --max 1800 -- cargo xtask publish dev
