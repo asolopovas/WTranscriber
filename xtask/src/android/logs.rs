@@ -321,6 +321,7 @@ fn is_noise_line(line: &str) -> bool {
         "access denied finding property",
         "pinning is deprecated",
         "couldn't find an opengl es implementation",
+        "failed to load pipeline blob cache",
         "failed to open file for reading seed",
         "http cache size is",
         "page_load_metrics_update_dispatcher",
