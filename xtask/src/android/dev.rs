@@ -282,6 +282,22 @@ fn cmd_bootstrap_attempt(
     let app_pid = info.as_ref().map(|i| i.app_pid);
     let lldb_server = info.as_ref().map(|i| i.server_pid);
     let lldb_port = info.as_ref().map(|i| i.host_port);
+    let mode_name = match mode {
+        BootstrapMode::Usb => "usb",
+        BootstrapMode::Host => "host",
+    };
+    let mut watcher_args = vec!["scripts/android-native-watch.ts", mode_name];
+    if let Some(d) = device {
+        watcher_args.push(d);
+    }
+    let native_watcher_pid = spawn_persistent(
+        "bun",
+        &watcher_args,
+        &[],
+        &tmp.join("android-native-watch.log"),
+        &tmp.join("android-native-watch.err.log"),
+    )?;
+    let _ = fs::remove_file(tmp.join("android-native-reload.lock"));
     let pids = json!({
         "device": device,
         "dev_wrapper": dev_pid,
@@ -289,15 +305,12 @@ fn cmd_bootstrap_attempt(
         "dev_port_owner": port_owner(1420),
         "logcat": logcat_pid,
         "vital": vital_pid,
+        "native_watcher": native_watcher_pid,
         "lldb_server": lldb_server,
         "lldb_port": lldb_port,
         "app_pid": app_pid
     });
     fs::write(tmp.join("_pids.json"), serde_json::to_string(&pids)?)?;
-    let mode_name = match mode {
-        BootstrapMode::Usb => "usb",
-        BootstrapMode::Host => "host",
-    };
     println!(
         "BOOTSTRAP OK platform=android mode={mode_name} app_pid={} cdp=tcp:9222 lldb={}",
         app_pid
@@ -324,6 +337,7 @@ pub(crate) fn cmd_stop(keep_reverse: bool, device_arg: Option<&str>) -> Result<(
         "logcat",
         "dev_wrapper",
         "vite",
+        "native_watcher",
         "dev_port_owner",
     ] {
         if let Some(pid) = pids.get(key) {

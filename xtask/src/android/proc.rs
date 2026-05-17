@@ -297,6 +297,7 @@ pub(super) fn reap_tauri_logcat_orphans() {
                 || command.contains("node_modules/.bin/vite"));
         let android_dev = project_scoped
             || command.contains("scripts/dev-vital.ts")
+            || command.contains("scripts/android-native-watch.ts")
             || (command.contains("adb logcat") && command.contains("RustStdoutStderr"));
         if android_dev {
             kill_pid(pid);
