@@ -39,7 +39,7 @@ The keystore-properties path is regenerated per-host by `xtask/src/release/build
 9. Auto-recovers signature mismatch (uninstall + retry once).
 10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
 
-Outer harness budget: `--idle 120 --max 2100` (cold aarch64-android cargo + first-run gradle commonly takes 10–30 min; warm builds finish in <30 s).
+Outer harness budget: `--idle 0 --max 0`; Android dev bootstrap is not killed during quiet cargo/Gradle phases.
 
 ## Headless emulator
 

@@ -75,7 +75,7 @@ dev action="":
 
 # Android HMR session. mode = usb (default) or host. Always force-restarts.
 android mode="usb" device="":
-    {{_run}} --tag android --idle 120 --max 2100 -- {{_xtask_android_bootstrap}} {{mode}} {{device}}
+    {{_run}} --tag android --idle 0 --max 0 -- {{_xtask_android_bootstrap}} {{mode}} {{device}}
 
 # ─── quality ──────────────────────────────────────────────────────────────────
 

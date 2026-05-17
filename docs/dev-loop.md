@@ -10,7 +10,7 @@ Every `just` recipe runs through `scripts/run.ts`:
 - Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
 - Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
 
-`just dev` is long-running and uses `--idle 0 --max 0` (heartbeat only); `just android` is finite (bootstraps the detached session and exits) and uses `--idle 120 --max 2100` to absorb cold aarch64-android cargo + first-run gradle (10–30 min). Anything quiet >30 s during steady state is a bug.
+`just dev` and `just android` use `--idle 0 --max 0` so live/dev setup is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
 
 `just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. Pass job tags for focused runs, e.g. `just check typecheck js-test`.
 
