@@ -7,7 +7,10 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicI32, Ordering},
+    },
 };
 
 use serde::Deserialize;
@@ -243,6 +246,23 @@ pub fn run(
     params.set_debug_mode(false);
     params.set_translate(false);
     params.set_single_segment(false);
+
+    let last_progress_step = Arc::new(AtomicI32::new(0));
+    let progress_step = Arc::clone(&last_progress_step);
+    params.set_progress_callback_safe(move |pct| {
+        let step = (pct / 10) * 10;
+        if step <= 0 || step >= 100 {
+            return;
+        }
+        let previous = progress_step.load(Ordering::Relaxed);
+        if step > previous
+            && progress_step
+                .compare_exchange(previous, step, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+        {
+            crate::logfile::info(&format!("whisper-cpp progress {step}%"));
+        }
+    });
 
     if cancelled() {
         return Err(Error::Cancelled);

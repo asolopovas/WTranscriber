@@ -12,6 +12,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::{error::Result, paths};
 
@@ -461,6 +462,9 @@ pub trait Sink: Send + Sync {
     fn report_pct(&self, phase: Phase, pct: f64);
     fn is_cancelled(&self) -> bool {
         false
+    }
+    fn cancellation_token(&self) -> Option<CancellationToken> {
+        None
     }
     fn set_diarize_backend(&self, _name: &str) {}
 }

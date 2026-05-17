@@ -413,6 +413,10 @@ impl Sink for TranscribeSink {
         self.cancel.is_cancelled()
     }
 
+    fn cancellation_token(&self) -> Option<CancellationToken> {
+        Some(self.cancel.clone())
+    }
+
     fn set_diarize_backend(&self, name: &str) {
         self.update_diarize_backend(name);
     }

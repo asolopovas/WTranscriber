@@ -4,12 +4,16 @@
     clippy::cast_precision_loss
 )]
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, mpsc},
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
+};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-
-use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -131,6 +135,45 @@ struct StreamState {
     detected_language: String,
 }
 
+struct SlabHeartbeat {
+    stop: mpsc::Sender<()>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl SlabHeartbeat {
+    fn start(index: usize, start: String, end: String, cancel: Option<CancellationToken>) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let t0 = Instant::now();
+            loop {
+                match rx.recv_timeout(Duration::from_secs(15)) {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if cancel.as_ref().is_some_and(CancellationToken::is_cancelled) {
+                            break;
+                        }
+                        logfile::info(&format!(
+                            "slab #{index} processing {start}-{end} ({:.0}s elapsed)",
+                            t0.elapsed().as_secs_f64()
+                        ));
+                    }
+                }
+            }
+        });
+        Self {
+            stop: tx,
+            handle: Some(handle),
+        }
+    }
+
+    fn stop(mut self) {
+        let _ = self.stop.send(());
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 struct ChunkAcc<'a> {
     state: &'a mut partial::Partial,
     region_start_sec: f64,
@@ -181,6 +224,18 @@ fn process_region(
     }
     st.slab_index += 1;
     let region_dur_sec = region.end_sec - region.start_sec;
+    let start_label = format_hms(std::time::Duration::from_secs_f64(region.start_sec));
+    let end_label = format_hms(std::time::Duration::from_secs_f64(region.end_sec));
+    logfile::info(&format!(
+        "slab #{} start {}-{} ({region_dur_sec:.1}s audio)",
+        st.slab_index, start_label, end_label
+    ));
+    let heartbeat = SlabHeartbeat::start(
+        st.slab_index,
+        start_label.clone(),
+        end_label.clone(),
+        ctx.sink.cancellation_token(),
+    );
     let resume_floor = st.state.last_done_sec;
     let t0 = std::time::Instant::now();
     let mut acc = ChunkAcc {
@@ -194,16 +249,28 @@ fn process_region(
         dropped: 0,
         save_err: None,
     };
-    let mut sub_progress = |_pct: f64| {};
+    let mut last_progress_log = 0_i32;
+    let mut sub_progress = |pct: f64| {
+        let pct = pct.clamp(0.0, 100.0);
+        let abs_end = region.start_sec + region_dur_sec * pct / 100.0;
+        emit_pct(ctx.sink, abs_end, ctx.trimmed_dur_sec);
+        let step = ((pct / 25.0).floor() as i32) * 25;
+        if step > last_progress_log && step < 100 {
+            last_progress_log = step;
+            logfile::info(&format!("slab #{} progress {step}%", st.slab_index));
+        }
+    };
     let cancelled = || ctx.sink.is_cancelled();
-    let (slab_detected, _rtf) = engine::run(
+    let run_result = engine::run(
         &region.samples,
         region_dur_sec,
         ctx.config,
         &mut sub_progress,
         &cancelled,
         &mut |segs, end| acc.on_chunk(segs, end),
-    )?;
+    );
+    heartbeat.stop();
+    let (slab_detected, _rtf) = run_result?;
     if let Some(e) = acc.save_err.take() {
         return Err(e);
     }
@@ -225,8 +292,8 @@ fn process_region(
     logfile::info(&format!(
         "slab #{} {}-{} ({:.1}s in {:.1}s rtf={:.2}, {} segs{})",
         st.slab_index,
-        format_hms(std::time::Duration::from_secs_f64(region.start_sec)),
-        format_hms(std::time::Duration::from_secs_f64(region.end_sec)),
+        start_label,
+        end_label,
         region_dur_sec,
         elapsed,
         slab_rtf,
