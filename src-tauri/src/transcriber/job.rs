@@ -39,7 +39,7 @@ const DEFAULT_SLAB_SEC: f64 = 60.0;
 const ANDROID_WHISPER_CPP_SLAB_SEC: f64 = 15.0;
 const EPSILON_SEC: f64 = 1e-3;
 
-fn default_slab_sec(config: &Config) -> f64 {
+const fn default_slab_sec(config: &Config) -> f64 {
     if cfg!(target_os = "android") && matches!(config.engine, Engine::WhisperCpp) {
         ANDROID_WHISPER_CPP_SLAB_SEC
     } else {
