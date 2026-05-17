@@ -43,6 +43,7 @@ const emit = defineEmits<{
   (e: "auto-rename", entry: DirEntry): void;
   (e: "rename", entry: DirEntry): void;
   (e: "share", entry: DirEntry): void;
+  (e: "copy", entry: DirEntry): void;
   (e: "export", entry: DirEntry): void;
   (e: "redo-diarize", entry: DirEntry): void;
   (e: "reveal", entry: DirEntry): void;
@@ -111,7 +112,7 @@ function toggleMenu(path: string, event: MouseEvent) {
   }
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const width = 184;
-  const height = 392;
+  const height = 440;
   const margin = 8;
   const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
   let top = rect.bottom + 4;
@@ -290,6 +291,16 @@ defineExpose({
           "
         >
           Share
+        </MenuItem>
+        <MenuItem
+          icon="content_copy"
+          :disabled="!activeMenuEntry.cache_key"
+          @click="
+            closeMenu();
+            emit('copy', activeMenuEntry);
+          "
+        >
+          Copy
         </MenuItem>
         <MenuItem
           icon="file_save"

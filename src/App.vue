@@ -771,6 +771,40 @@ function isAndroid(): boolean {
   return /Android/i.test(navigator.userAgent);
 }
 
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const el = document.createElement("textarea");
+  el.value = text;
+  el.style.position = "fixed";
+  el.style.left = "-9999px";
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand("copy");
+  el.remove();
+}
+
+async function onCopy(entry?: DirEntry) {
+  const target = entry ?? selectedEntry.value;
+  if (!target) return;
+  const t = await loadTranscriptFor(target);
+  if (!t) {
+    await message("Transcribe this file first to enable copy.", {
+      title: "Copy",
+      kind: "info",
+    });
+    return;
+  }
+  try {
+    const text = await api.formatTranscript(t, "txt");
+    await copyTextToClipboard(text);
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
 async function onShare(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
   if (!target) return;
@@ -953,6 +987,7 @@ const selectedProgress = computed(() =>
                   @auto-rename="autoRename"
                   @rename="openRename"
                   @share="onShare"
+                  @copy="onCopy"
                   @export="openExport"
                   @redo-diarize="openRedoDiarize"
                   @reveal="revealEntry"
