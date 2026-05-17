@@ -31,9 +31,14 @@ struct CtxCell {
 }
 
 static CTX: OnceLock<Mutex<Option<CtxCell>>> = OnceLock::new();
+static LOG_HOOKS: OnceLock<()> = OnceLock::new();
 
 fn ctx_slot() -> &'static Mutex<Option<CtxCell>> {
     CTX.get_or_init(|| Mutex::new(None))
+}
+
+fn install_log_hooks() {
+    LOG_HOOKS.get_or_init(whisper_rs::install_logging_hooks);
 }
 
 fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
@@ -65,6 +70,7 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
 }
 
 fn ensure_state(model_path: &std::path::Path, use_gpu: bool) -> Result<()> {
+    install_log_hooks();
     let mut slot = ctx_slot()
         .lock()
         .map_err(|e| Error::Transcribe(format!("whisper-cpp ctx lock: {e}")))?;
@@ -234,6 +240,7 @@ pub fn run(
     params.set_print_realtime(false);
     params.set_print_special(false);
     params.set_print_timestamps(false);
+    params.set_debug_mode(false);
     params.set_translate(false);
     params.set_single_segment(false);
 

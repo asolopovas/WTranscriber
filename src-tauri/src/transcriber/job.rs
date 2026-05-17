@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::{
     audio,
     audio_toolkit::stream::stream_slabs,
-    config::Config,
+    config::{Config, Engine},
     diarizer::{self, Segment as DiarSegment},
     engine,
     error::Result,
@@ -32,14 +32,23 @@ use crate::{
 };
 
 const DEFAULT_SLAB_SEC: f64 = 60.0;
+const ANDROID_WHISPER_CPP_SLAB_SEC: f64 = 15.0;
 const EPSILON_SEC: f64 = 1e-3;
 
-fn slab_sec() -> f64 {
+fn default_slab_sec(config: &Config) -> f64 {
+    if cfg!(target_os = "android") && matches!(config.engine, Engine::WhisperCpp) {
+        ANDROID_WHISPER_CPP_SLAB_SEC
+    } else {
+        DEFAULT_SLAB_SEC
+    }
+}
+
+fn slab_sec(config: &Config) -> f64 {
     std::env::var("WT_SLAB_SEC")
         .ok()
         .and_then(|s| s.parse::<f64>().ok())
         .filter(|v| *v > 0.0)
-        .unwrap_or(DEFAULT_SLAB_SEC)
+        .unwrap_or_else(|| default_slab_sec(config))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,7 +258,7 @@ fn run_streaming_phase(
         total_elapsed: 0.0,
         detected_language: String::new(),
     };
-    let slab = slab_sec();
+    let slab = slab_sec(config);
     if st.state.segments.is_empty() {
         logfile::info(&format!(
             "streaming start: slab={slab:.0}s engine={} model={}",
@@ -616,19 +625,20 @@ mod tests {
     fn slab_sec_env_handling() {
         let _g = ENV_LOCK.lock().unwrap();
 
+        let config = Config::default();
         unset_env("WT_SLAB_SEC");
-        assert!((slab_sec() - DEFAULT_SLAB_SEC).abs() < f64::EPSILON);
+        assert!((slab_sec(&config) - DEFAULT_SLAB_SEC).abs() < f64::EPSILON);
 
         for invalid in ["0", "-5", "not-a-number"] {
             set_env("WT_SLAB_SEC", invalid);
             assert!(
-                (slab_sec() - DEFAULT_SLAB_SEC).abs() < f64::EPSILON,
+                (slab_sec(&config) - DEFAULT_SLAB_SEC).abs() < f64::EPSILON,
                 "input {invalid:?} should fall back to default"
             );
         }
 
         set_env("WT_SLAB_SEC", "30");
-        assert!((slab_sec() - 30.0).abs() < f64::EPSILON);
+        assert!((slab_sec(&config) - 30.0).abs() < f64::EPSILON);
 
         unset_env("WT_SLAB_SEC");
     }

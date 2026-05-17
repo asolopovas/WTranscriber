@@ -147,6 +147,7 @@ impl LogStreamer {
         let handle = thread::spawn(move || {
             let mut offsets: Vec<u64> = vec![0; paths.len()];
             let mut shown = HashSet::<String>::new();
+            let mut signature_mismatch_seen = false;
             for (i, p) in paths.iter().enumerate() {
                 offsets[i] = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
             }
@@ -168,7 +169,16 @@ impl LogStreamer {
                     let chunk = &raw[from..];
                     if let Ok(text) = std::str::from_utf8(chunk) {
                         for line in text.lines() {
-                            if let Some(display) = console_log_line(line)
+                            let cleaned = strip_ansi(line);
+                            let trimmed = cleaned.trim();
+                            if is_signature_mismatch_line(trimmed) {
+                                signature_mismatch_seen = true;
+                                continue;
+                            }
+                            if signature_mismatch_seen && is_signature_mismatch_followup(trimmed) {
+                                continue;
+                            }
+                            if let Some(display) = console_log_line(trimmed)
                                 && shown.insert(display.clone())
                             {
                                 eprintln!("  │ {display}");
@@ -304,6 +314,15 @@ fn is_error_line(line: &str) -> bool {
         && !is_noise_line(line)
 }
 
+fn is_signature_mismatch_line(line: &str) -> bool {
+    line.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") || line.contains("signatures do not match")
+}
+
+fn is_signature_mismatch_followup(line: &str) -> bool {
+    line.contains("error: script \"tauri\" exited with code 1")
+        || line.contains("Error: bun [\"run\", \"tauri\", \"android\", \"dev\"")
+}
+
 fn is_noise_line(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     [
@@ -323,6 +342,7 @@ fn is_noise_line(line: &str) -> bool {
         "couldn't find an opengl es implementation",
         "failed to load pipeline blob cache",
         "failed to open file for reading seed",
+        "variations_seed_loader",
         "http cache size is",
         "page_load_metrics_update_dispatcher",
         "invalid first_paint",
