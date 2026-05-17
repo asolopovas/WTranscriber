@@ -216,6 +216,8 @@ pub(super) fn pid_alive(pid: u32) -> bool {
     } else {
         Command::new("kill")
             .args(["-0", &pid_text])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .is_ok_and(|s| s.success())
     }
@@ -252,22 +254,53 @@ pub(crate) fn kill_pid(pid: u32) {
 }
 
 pub(super) fn reap_tauri_logcat_orphans() {
-    if !cfg!(windows) {
+    if cfg!(windows) {
+        let root_text = root().to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "$root = '{root_text}'; Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -and ($_.Name -in @('cmd.exe','adb.exe','bun.exe','node.exe','vite.exe','cargo.exe','java.exe')) -and ($_.CommandLine.Contains($root + '\\tmp\\logcat.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\dev-vital.out.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-dev.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-tauri.cmd') -or $_.CommandLine.Contains('scripts/dev-vital.ts') -or ($_.Name -eq 'adb.exe' -and $_.CommandLine.Contains('logcat') -and $_.CommandLine.Contains('RustStdoutStderr')) -or ($_.Name -eq 'java.exe' -and ($_.CommandLine.Contains('GradleDaemon') -or $_.CommandLine.Contains('KotlinCompileDaemon')))) }} | ForEach-Object {{ $_.ProcessId }}"
+        );
+        let Some(out) = capture_timeout(
+            "powershell",
+            &["-NoProfile", "-Command", &script],
+            Duration::from_secs(3),
+        ) else {
+            return;
+        };
+        for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
+            kill_pid(pid);
+            eprintln!("reaped orphan android dev pid={pid}");
+        }
         return;
     }
-    let root_text = root().to_string_lossy().replace('\'', "''");
-    let script = format!(
-        "$root = '{root_text}'; Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -and ($_.Name -in @('cmd.exe','adb.exe','bun.exe','node.exe','vite.exe','cargo.exe','java.exe')) -and ($_.CommandLine.Contains($root + '\\tmp\\logcat.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\dev-vital.out.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-dev.cmd') -or $_.CommandLine.Contains($root + '\\tmp\\android-tauri.cmd') -or $_.CommandLine.Contains('scripts/dev-vital.ts') -or ($_.Name -eq 'adb.exe' -and $_.CommandLine.Contains('logcat') -and $_.CommandLine.Contains('RustStdoutStderr')) -or ($_.Name -eq 'java.exe' -and ($_.CommandLine.Contains('GradleDaemon') -or $_.CommandLine.Contains('KotlinCompileDaemon')))) }} | ForEach-Object {{ $_.ProcessId }}"
-    );
-    let Some(out) = capture_timeout(
-        "powershell",
-        &["-NoProfile", "-Command", &script],
-        Duration::from_secs(3),
-    ) else {
+
+    let root_text = root().to_string_lossy().to_string();
+    let Some(out) = capture_timeout("ps", &["-eo", "pid=,args="], Duration::from_secs(3)) else {
         return;
     };
-    for pid in out.lines().filter_map(|l| l.trim().parse::<u32>().ok()) {
-        kill_pid(pid);
-        eprintln!("reaped orphan android dev pid={pid}");
+    let current_pid = std::process::id();
+    for line in out.lines() {
+        let line = line.trim_start();
+        let Some((pid_text, command)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        let Some(pid) = pid_text
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|pid| *pid != current_pid)
+        else {
+            continue;
+        };
+        let project_scoped = command.contains(&root_text)
+            && (command.contains("tauri android dev")
+                || command.contains("tmp/xtask-android-dev-target")
+                || command.contains("node_modules/.bin/vite"));
+        let android_dev = project_scoped
+            || command.contains("scripts/dev-vital.ts")
+            || (command.contains("adb logcat") && command.contains("RustStdoutStderr"));
+        if android_dev {
+            kill_pid(pid);
+            eprintln!("reaped orphan android dev pid={pid}");
+        }
     }
 }
