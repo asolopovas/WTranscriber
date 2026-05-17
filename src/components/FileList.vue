@@ -95,13 +95,35 @@ function onRowClick(entry: DirEntry) {
 }
 
 const openMenuPath = ref<string | null>(null);
-function toggleMenu(path: string) {
-  openMenuPath.value = openMenuPath.value === path ? null : path;
+const menuPosition = ref({ left: 0, top: 0 });
+const activeMenuEntry = computed(
+  () => props.entries.find((entry) => entry.path === openMenuPath.value) ?? null,
+);
+
+function closeMenu() {
+  openMenuPath.value = null;
 }
+
+function toggleMenu(path: string, event: MouseEvent) {
+  if (openMenuPath.value === path) {
+    closeMenu();
+    return;
+  }
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const width = 336;
+  const height = 392;
+  const margin = 8;
+  const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
+  let top = rect.bottom + 4;
+  if (top + height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - height - 4);
+  }
+  menuPosition.value = { left, top };
+  openMenuPath.value = path;
+}
+
 defineExpose({
-  closeMenus: () => {
-    openMenuPath.value = null;
-  },
+  closeMenus: closeMenu,
 });
 </script>
 
@@ -209,112 +231,116 @@ defineExpose({
             title="Transcript ready — view"
             @click="emit('view', entry)"
           />
-          <div class="relative">
-            <Button
-              variant="ghost"
-              shape="circle"
-              size="md"
-              icon="more_vert"
-              :icon-size="20"
-              title="More"
-              @click="toggleMenu(entry.path)"
-            />
-            <div
-              v-if="openMenuPath === entry.path"
-              class="absolute right-0 top-full mt-unit z-30 min-w-45 bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit"
-            >
-              <MenuItem
-                icon="content_cut"
-                @click="
-                  openMenuPath = null;
-                  emit('trim', entry);
-                "
-              >
-                {{
-                  entry.trim_start_ms || entry.trim_end_ms
-                    ? `Cut: ${fmtMs(entry.trim_start_ms ?? 0)} – ${fmtMs(
-                        entry.trim_end_ms ?? entry.duration_ms ?? 0,
-                      )}`
-                    : "Cut / select range"
-                }}
-              </MenuItem>
-              <MenuItem
-                class="md:hidden"
-                :disabled="autoRenamingPath === entry.path"
-                @click="
-                  openMenuPath = null;
-                  emit('auto-rename', entry);
-                "
-              >
-                <template #icon>
-                  <Spinner v-if="autoRenamingPath === entry.path" :size="18" />
-                  <Icon v-else name="auto_awesome" :size="18" />
-                </template>
-                {{ autoRenamingPath === entry.path ? "Renaming…" : "Auto-rename" }}
-              </MenuItem>
-              <MenuItem
-                icon="ios_share"
-                :disabled="!entry.cache_key"
-                @click="
-                  openMenuPath = null;
-                  emit('share', entry);
-                "
-              >
-                Share
-              </MenuItem>
-              <MenuItem
-                icon="file_save"
-                :disabled="!entry.cache_key"
-                @click="
-                  openMenuPath = null;
-                  emit('export', entry);
-                "
-              >
-                Export…
-              </MenuItem>
-              <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
-              <MenuItem
-                icon="groups"
-                :disabled="!entry.cache_key"
-                @click="
-                  openMenuPath = null;
-                  emit('redo-diarize', entry);
-                "
-              >
-                Re-diarize…
-              </MenuItem>
-              <MenuItem
-                icon="drive_file_rename_outline"
-                @click="
-                  openMenuPath = null;
-                  emit('rename', entry);
-                "
-              >
-                Rename
-              </MenuItem>
-              <MenuItem
-                icon="folder_open"
-                @click="
-                  openMenuPath = null;
-                  emit('reveal', entry);
-                "
-              >
-                Reveal in folder
-              </MenuItem>
-              <MenuItem
-                icon="delete"
-                tone="danger"
-                @click="
-                  openMenuPath = null;
-                  emit('delete', entry);
-                "
-              >
-                Delete
-              </MenuItem>
-            </div>
-          </div>
+          <Button
+            variant="ghost"
+            shape="circle"
+            size="md"
+            icon="more_vert"
+            :icon-size="20"
+            title="More"
+            @click="toggleMenu(entry.path, $event)"
+          />
         </div>
       </div>
     </li>
   </ul>
+
+  <Teleport to="body">
+    <div v-if="activeMenuEntry" class="fixed inset-0 z-[1000]" @click="closeMenu">
+      <div
+        class="absolute w-84 max-w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] overflow-y-auto bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit scroll-thin"
+        :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }"
+        @click.stop
+      >
+        <MenuItem
+          icon="content_cut"
+          @click="
+            closeMenu();
+            emit('trim', activeMenuEntry);
+          "
+        >
+          {{
+            activeMenuEntry.trim_start_ms || activeMenuEntry.trim_end_ms
+              ? `Cut: ${fmtMs(activeMenuEntry.trim_start_ms ?? 0)} – ${fmtMs(
+                  activeMenuEntry.trim_end_ms ?? activeMenuEntry.duration_ms ?? 0,
+                )}`
+              : "Cut / select range"
+          }}
+        </MenuItem>
+        <MenuItem
+          class="md:hidden"
+          :disabled="autoRenamingPath === activeMenuEntry.path"
+          @click="
+            closeMenu();
+            emit('auto-rename', activeMenuEntry);
+          "
+        >
+          <template #icon>
+            <Spinner v-if="autoRenamingPath === activeMenuEntry.path" :size="18" />
+            <Icon v-else name="auto_awesome" :size="18" />
+          </template>
+          {{ autoRenamingPath === activeMenuEntry.path ? "Renaming…" : "Auto-rename" }}
+        </MenuItem>
+        <MenuItem
+          icon="ios_share"
+          :disabled="!activeMenuEntry.cache_key"
+          @click="
+            closeMenu();
+            emit('share', activeMenuEntry);
+          "
+        >
+          Share
+        </MenuItem>
+        <MenuItem
+          icon="file_save"
+          :disabled="!activeMenuEntry.cache_key"
+          @click="
+            closeMenu();
+            emit('export', activeMenuEntry);
+          "
+        >
+          Export…
+        </MenuItem>
+        <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
+        <MenuItem
+          icon="groups"
+          :disabled="!activeMenuEntry.cache_key"
+          @click="
+            closeMenu();
+            emit('redo-diarize', activeMenuEntry);
+          "
+        >
+          Re-diarize…
+        </MenuItem>
+        <MenuItem
+          icon="drive_file_rename_outline"
+          @click="
+            closeMenu();
+            emit('rename', activeMenuEntry);
+          "
+        >
+          Rename
+        </MenuItem>
+        <MenuItem
+          icon="folder_open"
+          @click="
+            closeMenu();
+            emit('reveal', activeMenuEntry);
+          "
+        >
+          Reveal in folder
+        </MenuItem>
+        <MenuItem
+          icon="delete"
+          tone="danger"
+          @click="
+            closeMenu();
+            emit('delete', activeMenuEntry);
+          "
+        >
+          Delete
+        </MenuItem>
+      </div>
+    </div>
+  </Teleport>
 </template>
