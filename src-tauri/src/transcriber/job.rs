@@ -37,6 +37,7 @@ use crate::{
 
 const DEFAULT_SLAB_SEC: f64 = 60.0;
 const ANDROID_WHISPER_CPP_SLAB_SEC: f64 = 15.0;
+const CALIBRATION_SLAB_SEC: f64 = 10.0;
 const EPSILON_SEC: f64 = 1e-3;
 
 const fn default_slab_sec(config: &Config) -> f64 {
@@ -53,6 +54,20 @@ fn slab_sec(config: &Config) -> f64 {
         .and_then(|s| s.parse::<f64>().ok())
         .filter(|v| *v > 0.0)
         .unwrap_or_else(|| default_slab_sec(config))
+}
+
+fn first_slab_sec(config: &Config, total_sec: f64) -> f64 {
+    let normal = slab_sec(config);
+    let calibration = std::env::var("WT_FIRST_SLAB_SEC")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(CALIBRATION_SLAB_SEC);
+    if total_sec <= calibration * 1.5 {
+        normal
+    } else {
+        calibration.min(normal)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,9 +341,10 @@ fn run_streaming_phase(
         detected_language: String::new(),
     };
     let slab = slab_sec(config);
+    let first_slab = first_slab_sec(config, window.trimmed_dur_sec);
     if st.state.segments.is_empty() {
         logfile::info(&format!(
-            "streaming start: slab={slab:.0}s engine={} model={}",
+            "streaming start: slab={slab:.0}s first={first_slab:.0}s engine={} model={}",
             config.engine.as_str(),
             config.model,
         ));
@@ -354,6 +370,7 @@ fn run_streaming_phase(
         window.start_ms,
         window.end_ms_opt,
         slab,
+        first_slab,
         cancel_for_stream,
         |region| process_region(&ctx, &mut st, &region, &cancel_flag).map(|()| true),
     )?;
@@ -708,6 +725,16 @@ mod tests {
         assert!((slab_sec(&config) - 30.0).abs() < f64::EPSILON);
 
         unset_env("WT_SLAB_SEC");
+    }
+
+    #[test]
+    fn first_slab_uses_short_calibration_for_long_audio() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let config = Config::default();
+        unset_env("WT_SLAB_SEC");
+        unset_env("WT_FIRST_SLAB_SEC");
+        assert!((first_slab_sec(&config, 120.0) - CALIBRATION_SLAB_SEC).abs() < f64::EPSILON);
+        assert!((first_slab_sec(&config, 12.0) - DEFAULT_SLAB_SEC).abs() < f64::EPSILON);
     }
 
     #[test]

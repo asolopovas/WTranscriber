@@ -204,6 +204,7 @@ pub fn stream_slabs<F>(
     trim_start_ms: u64,
     trim_end_ms: Option<u64>,
     slab_sec: f64,
+    first_slab_sec: f64,
     cancel: Arc<AtomicBool>,
     mut on_slab: F,
 ) -> Result<f64>
@@ -211,12 +212,20 @@ where
     F: FnMut(crate::audio_toolkit::vad::Region) -> Result<bool>,
 {
     let mut src = ffmpeg_stream(input, trim_start_ms, trim_end_ms, cancel)?;
-    let slab_samples = (slab_sec * f64::from(WHISPER_SAMPLE_RATE)) as usize;
-    let mut buf = vec![0.0_f32; slab_samples];
+    let normal_slab_samples = (slab_sec * f64::from(WHISPER_SAMPLE_RATE)) as usize;
+    let first_slab_samples = (first_slab_sec * f64::from(WHISPER_SAMPLE_RATE)) as usize;
+    let mut buf = vec![0.0_f32; normal_slab_samples.max(first_slab_samples).max(1)];
     let trim_offset_sec = trim_start_ms as f64 / 1000.0;
     let mut cursor_samples: usize = 0;
+    let mut first = true;
     loop {
-        let n = src.read_into(&mut buf)?;
+        let limit = if first {
+            first_slab_samples.max(1).min(buf.len())
+        } else {
+            normal_slab_samples.max(1).min(buf.len())
+        };
+        first = false;
+        let n = src.read_into(&mut buf[..limit])?;
         if n == 0 {
             break;
         }

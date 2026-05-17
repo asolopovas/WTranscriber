@@ -163,17 +163,24 @@ impl Smoother {
             rtf = 1.0;
         }
 
-        let elapsed_since_tick = Instant::now().duration_since(self.last_tick).as_secs_f64();
-        let mut sec_per_pct = self.audio_dur_sec / 100.0 / rtf;
-        if sec_per_pct <= 0.0 {
-            sec_per_pct = 0.1;
-        }
-        let mut predicted = elapsed_since_tick / sec_per_pct;
-        let max_jump = DISPLAY_MAX_ADVANCE * 100.0;
-        if predicted > max_jump {
-            predicted = max_jump;
-        }
-        let mut display = f64::from(self.last_pct) + predicted;
+        let now = Instant::now();
+        let elapsed_since_tick = now.duration_since(self.last_tick).as_secs_f64();
+        let mut display = if self.total_samples == 0 && self.last_pct == 0 {
+            let elapsed = now.duration_since(self.start_time).as_secs_f64();
+            let total = self.total_wall_sec().max(0.1);
+            (elapsed / total * 100.0).min(95.0)
+        } else {
+            let mut sec_per_pct = self.audio_dur_sec / 100.0 / rtf;
+            if sec_per_pct <= 0.0 {
+                sec_per_pct = 0.1;
+            }
+            let mut predicted = elapsed_since_tick / sec_per_pct;
+            let max_jump = DISPLAY_MAX_ADVANCE * 100.0;
+            if predicted > max_jump {
+                predicted = max_jump;
+            }
+            f64::from(self.last_pct) + predicted
+        };
         if display > 99.0 {
             display = 99.0;
         }
@@ -485,6 +492,16 @@ mod tests {
         s.report(50);
         let (_, eta) = s.snapshot();
         assert!(eta >= 0.0);
+    }
+
+    #[test]
+    fn transcribe_without_engine_reports_keeps_advancing() {
+        let mut s = Smoother::new(60.0, 1.0);
+        std::thread::sleep(Duration::from_millis(20));
+        let (pct, eta) = s.snapshot();
+        assert!(pct > 0.0, "pct should advance from elapsed time, got {pct}");
+        assert!(pct < 95.0);
+        assert!(eta > 0.0);
     }
 
     #[test]
