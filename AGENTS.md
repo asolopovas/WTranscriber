@@ -26,7 +26,7 @@ docs/            android · dev-loop · release · rust-build-speed · tmp · as
 
 ## Task contract
 
-Every `just` recipe runs through `scripts/run.ts` (Bun + TypeScript): line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. The long-running `just dev` and Android bootstrap `just android` use `--idle 0 --max 0` so live/dev setup is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
+Most `just` recipes run through `scripts/run.ts` (Bun + TypeScript): line-prefixed output, heartbeat after 10 s of silence, kill on idle (default 90 s) or hard timeout (default 600 s), final `OK in X.Ys` / `FAIL exit=N in X.Ys`. Long-running `just dev` uses `--idle 0 --max 0`. `just android` runs xtask directly so Android bootstrap is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
 
 ## Commands
 

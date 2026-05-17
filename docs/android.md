@@ -39,7 +39,7 @@ The keystore-properties path is regenerated per-host by `xtask/src/release/build
 9. Auto-recovers signature mismatch (uninstall + retry once).
 10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
 
-Outer harness budget: `--idle 0 --max 0`; Android dev bootstrap is not killed during quiet cargo/Gradle phases.
+`just android` runs xtask directly; there is no outer idle/max harness around Android dev bootstrap.
 
 ## Headless emulator
 

@@ -2,7 +2,7 @@
 
 ## Task contract
 
-Every `just` recipe runs through `scripts/run.ts`:
+Most `just` recipes run through `scripts/run.ts`:
 
 - Output line-prefixed with `[tag]`.
 - Heartbeat after 10 s of silence: `… still running, Xs elapsed, Ys without output`.
@@ -10,7 +10,7 @@ Every `just` recipe runs through `scripts/run.ts`:
 - Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
 - Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
 
-`just dev` and `just android` use `--idle 0 --max 0` so live/dev setup is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
+`just dev` uses `--idle 0 --max 0`. `just android` runs xtask directly so Android bootstrap is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
 
 `just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. Pass job tags for focused runs, e.g. `just check typecheck js-test`.
 

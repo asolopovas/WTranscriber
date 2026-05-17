@@ -175,7 +175,6 @@ fn cmd_bootstrap_attempt(
             &[&vite_log, &vite_err],
             "vite ready on :1420",
             |s| (s.contains("Local:") || s.contains("Network:")) && s.contains(":1420"),
-            None,
             healthy,
         )?;
         eprintln!("[stage 5/7] waiting for cargo+gradle build, install, and app launch");
@@ -189,7 +188,6 @@ fn cmd_bootstrap_attempt(
                     || (s.contains("RustStdoutStderr:")
                         && s.contains("renderer error bridge installed"))
             },
-            None,
             healthy,
         )?;
         eprintln!("[stage 6/7] attaching WebView DevTools and probing Tauri IPC (≤90s)");
