@@ -110,7 +110,7 @@ function toggleMenu(path: string, event: MouseEvent) {
     return;
   }
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const width = 336;
+  const width = 184;
   const height = 392;
   const margin = 8;
   const left = Math.min(Math.max(margin, rect.right - width), window.innerWidth - width - margin);
@@ -248,8 +248,8 @@ defineExpose({
   <Teleport to="body">
     <div v-if="activeMenuEntry" class="fixed inset-0 z-[1000]" @click="closeMenu">
       <div
-        class="absolute w-84 max-w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] overflow-y-auto bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit scroll-thin"
-        :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px` }"
+        class="absolute max-w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] overflow-y-auto bg-surface-container-high border border-outline-variant/60 rounded-lg shadow-2xl py-unit scroll-thin"
+        :style="{ left: `${menuPosition.left}px`, top: `${menuPosition.top}px`, width: '184px' }"
         @click.stop
       >
         <MenuItem

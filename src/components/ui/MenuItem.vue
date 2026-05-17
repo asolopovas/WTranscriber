@@ -16,7 +16,7 @@ withDefaults(
   <button
     type="button"
     :disabled="disabled"
-    class="w-full px-md py-xs flex items-center gap-xs text-bodyMedium text-left whitespace-nowrap transition-colors disabled:opacity-50"
+    class="w-full h-11 px-md flex items-center gap-xs text-bodyMedium text-left whitespace-nowrap transition-colors disabled:opacity-50"
     :class="
       tone === 'danger'
         ? 'text-error hover:bg-error-container/40'
