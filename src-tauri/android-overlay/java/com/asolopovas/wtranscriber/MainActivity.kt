@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.PowerManager
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.WebView
@@ -221,12 +222,30 @@ class MainActivity : TauriActivity() {
           input.copyTo(output, 1024 * 1024)
         }
       } ?: return false
+      sharedModifiedMs(uri)?.let { dest.setLastModified(it) }
       true
     } catch (e: Exception) {
       android.util.Log.e("WTranscriber", "copy shared audio failed: $uri -> ${dest.absolutePath}", e)
       dest.delete()
       false
     }
+  }
+
+  private fun sharedModifiedMs(uri: Uri): Long? {
+    val columns = arrayOf(MediaStore.MediaColumns.DATE_MODIFIED, MediaStore.MediaColumns.DATE_ADDED)
+    runCatching {
+      contentResolver.query(uri, columns, null, null, null)?.use { cursor ->
+        if (!cursor.moveToFirst()) return null
+        for (column in columns) {
+          val idx = cursor.getColumnIndex(column)
+          if (idx >= 0) {
+            val seconds = cursor.getLong(idx)
+            if (seconds > 0) return seconds * 1000
+          }
+        }
+      }
+    }
+    return null
   }
 
   private fun safeSharedName(name: String): String {

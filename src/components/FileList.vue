@@ -26,12 +26,35 @@ const props = withDefaults(
   { selectedPaths: () => new Set<string>() },
 );
 
+function withModifiedTime(
+  timestampPretty: string | null,
+  timestamp: string | null,
+  modifiedMs: number,
+) {
+  if (!timestampPretty || !timestamp?.match(/^\d{6}$/) || modifiedMs <= 0) return timestampPretty;
+  const d = new Date(modifiedMs);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${hh}:${mm}:${ss} ${timestampPretty}`;
+}
+
 const rows = computed(() =>
-  props.entries.map((entry) => ({
-    entry,
-    pretty: prettyName(entry.name),
-    title: decodeName(entry.name),
-  })),
+  props.entries.map((entry) => {
+    const pretty = prettyName(entry.name);
+    return {
+      entry,
+      pretty: {
+        ...pretty,
+        timestampPretty: withModifiedTime(
+          pretty.timestampPretty,
+          pretty.timestamp,
+          entry.modified_ms,
+        ),
+      },
+      title: decodeName(entry.name),
+    };
+  }),
 );
 
 const emit = defineEmits<{
