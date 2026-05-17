@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.WebView
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.Keep
 import androidx.core.app.ActivityCompat
@@ -25,9 +26,16 @@ class MainActivity : TauriActivity() {
     }
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    handleSharedAudio(intent)
     runCatching { wtSetActivity(this) }
     requestPostNotificationsIfNeeded()
     requestIgnoreBatteryOptimizationsIfNeeded()
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleSharedAudio(intent)
   }
 
   @Keep
@@ -165,6 +173,79 @@ class MainActivity : TauriActivity() {
       dest.delete()
       false
     }
+  }
+
+  private fun handleSharedAudio(intent: Intent?) {
+    if (intent == null) return
+    val uris = when (intent.action) {
+      Intent.ACTION_SEND -> listOfNotNull(streamUri(intent))
+      Intent.ACTION_SEND_MULTIPLE -> streamUris(intent)
+      else -> emptyList()
+    }
+    if (uris.isEmpty()) return
+    var copied = 0
+    for (uri in uris) {
+      if (copySharedAudio(uri)) copied += 1
+    }
+    if (copied > 0) {
+      Toast.makeText(this, "Added $copied audio file${if (copied == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
+    }
+  }
+
+  @Suppress("DEPRECATION")
+  private fun streamUri(intent: Intent): Uri? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    } else {
+      intent.getParcelableExtra(Intent.EXTRA_STREAM)
+    }
+  }
+
+  @Suppress("DEPRECATION")
+  private fun streamUris(intent: Intent): List<Uri> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) ?: emptyList()
+    } else {
+      intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM) ?: emptyList()
+    }
+  }
+
+  private fun copySharedAudio(uri: Uri): Boolean {
+    val name = safeSharedName(displayNameForUri(uri.toString()).ifBlank { uri.lastPathSegment ?: "shared-audio" })
+    val dir = java.io.File(Environment.getExternalStorageDirectory(), "WTranscriber/transcripts")
+    dir.mkdirs()
+    val dest = uniqueFile(dir, name)
+    return try {
+      contentResolver.openInputStream(uri)?.use { input ->
+        dest.outputStream().use { output ->
+          input.copyTo(output, 1024 * 1024)
+        }
+      } ?: return false
+      true
+    } catch (e: Exception) {
+      android.util.Log.e("WTranscriber", "copy shared audio failed: $uri -> ${dest.absolutePath}", e)
+      dest.delete()
+      false
+    }
+  }
+
+  private fun safeSharedName(name: String): String {
+    val cleaned = name.substringAfterLast('/').replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+    val withExt = if (cleaned.contains('.')) cleaned else "$cleaned.opus"
+    return withExt.ifBlank { "shared-audio.opus" }
+  }
+
+  private fun uniqueFile(dir: java.io.File, name: String): java.io.File {
+    val dot = name.lastIndexOf('.')
+    val base = if (dot > 0) name.substring(0, dot) else name
+    val ext = if (dot > 0) name.substring(dot) else ""
+    var candidate = java.io.File(dir, name)
+    var i = 1
+    while (candidate.exists()) {
+      candidate = java.io.File(dir, "$base-$i$ext")
+      i += 1
+    }
+    return candidate
   }
 
   @Keep

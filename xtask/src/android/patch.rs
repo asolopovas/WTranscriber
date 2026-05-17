@@ -210,6 +210,24 @@ pub(super) fn patch_manifest() -> Result<()> {
             1,
         );
     }
+    if !raw.contains("android.intent.action.SEND") {
+        let share_filters = concat!(
+            "            <intent-filter>\n",
+            "                <action android:name=\"android.intent.action.SEND\" />\n",
+            "                <category android:name=\"android.intent.category.DEFAULT\" />\n",
+            "                <data android:mimeType=\"audio/*\" />\n",
+            "                <data android:mimeType=\"application/ogg\" />\n",
+            "            </intent-filter>\n",
+            "            <intent-filter>\n",
+            "                <action android:name=\"android.intent.action.SEND_MULTIPLE\" />\n",
+            "                <category android:name=\"android.intent.category.DEFAULT\" />\n",
+            "                <data android:mimeType=\"audio/*\" />\n",
+            "                <data android:mimeType=\"application/ogg\" />\n",
+            "            </intent-filter>\n",
+            "        </activity>"
+        );
+        raw = raw.replacen("        </activity>", share_filters, 1);
+    }
     if !raw.contains(".TranscriptionService") {
         let service = concat!(
             "        <service\n",

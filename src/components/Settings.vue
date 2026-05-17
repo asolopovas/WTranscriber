@@ -42,7 +42,9 @@ async function refreshPersistentState() {
   if (!isAndroid.value) return;
   try {
     persistentGranted.value = await api.hasPersistentStorage();
-    if (config.value) persistentEnabled.value = config.value.use_persistent_models;
+    if (config.value && persistentBusy.value === "idle") {
+      persistentEnabled.value = config.value.use_persistent_models;
+    }
   } catch (e) {
     persistentMessage.value = String(e);
   }
@@ -51,13 +53,20 @@ async function refreshPersistentState() {
 async function togglePersistent(next: boolean) {
   if (!isAndroid.value) return;
   if (next) {
-    persistentBusy.value = "requesting";
-    persistentMessage.value =
-      "Opening system settings\u2026 toggle \u201cAllow access to manage all files\u201d, then return to WTranscriber.";
-    await api.requestPersistentStorage();
+    persistentGranted.value = await api.hasPersistentStorage();
+    persistentBusy.value = persistentGranted.value ? "enabling" : "requesting";
+    persistentMessage.value = persistentGranted.value
+      ? "Backing up models to shared storage…"
+      : "Opening system settings… toggle “Allow access to manage all files”, then return to WTranscriber.";
+    if (persistentGranted.value) {
+      await applyPersistentGrantIfReady();
+    } else {
+      await api.requestPersistentStorage();
+    }
   } else {
     await api.disablePersistentStorage();
     persistentEnabled.value = false;
+    persistentBusy.value = "idle";
     persistentMessage.value =
       "Persistent storage disabled. Existing files in /storage/emulated/0/WTranscriber/ are kept; the app will not restore from them on next launch.";
     if (config.value) config.value.use_persistent_models = false;
@@ -67,10 +76,10 @@ async function togglePersistent(next: boolean) {
 async function applyPersistentGrantIfReady() {
   if (!isAndroid.value) return;
   await refreshPersistentState();
-  if (persistentBusy.value !== "requesting") return;
+  if (persistentBusy.value !== "requesting" && persistentBusy.value !== "enabling") return;
   if (!persistentGranted.value) return;
   persistentBusy.value = "enabling";
-  persistentMessage.value = "Permission granted. Backing up models to shared storage\u2026";
+  persistentMessage.value = "Permission granted. Backing up models to shared storage…";
   try {
     const ok = await api.enablePersistentStorage();
     if (ok) {
@@ -79,6 +88,9 @@ async function applyPersistentGrantIfReady() {
       persistentMessage.value =
         "Done. Models are now mirrored to /storage/emulated/0/WTranscriber/models and will survive uninstall.";
       if (config.value) config.value.use_persistent_models = true;
+      setTimeout(() => {
+        if (persistentBusy.value === "saved") persistentBusy.value = "idle";
+      }, 1500);
     } else {
       persistentBusy.value = "idle";
       persistentMessage.value = "Permission not yet granted. Try again from system settings.";

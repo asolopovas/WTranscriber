@@ -76,6 +76,20 @@ describe("prettyName", () => {
     expect(out.timestamp).toBe("260501_094242");
   });
 
+  it("extracts WhatsApp dotted timestamps", () => {
+    const out = prettyName("WhatsApp Audio 2026-05-17 at 14.36.09.opus");
+    expect(out.display).toBe("WhatsApp Audio");
+    expect(out.timestamp).toBe("260517_143609");
+    expect(out.timestampPretty).toBe("14:36:09 17/May/26");
+  });
+
+  it("extracts date-only WhatsApp AUD names", () => {
+    const out = prettyName("AUD-20260517-WA0001.opus");
+    expect(out.display).toBe("AUD WA0001");
+    expect(out.timestamp).toBe("260517");
+    expect(out.timestampPretty).toBe("17/May/26");
+  });
+
   it("returns null timestamp when no pattern matches", () => {
     const out = prettyName("plain-name.wav");
     expect(out.display).toBe("plain-name");

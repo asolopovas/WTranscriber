@@ -19,7 +19,7 @@ use crate::{error::Result, paths};
 const RTF_WINDOW_SIZE: usize = 8;
 const RTF_PRIOR_WEIGHT: f64 = 0.7;
 const RTF_SAMPLE_ALPHA: f64 = 0.20;
-const DISPLAY_MAX_ADVANCE: f64 = 0.10;
+const DISPLAY_MAX_ADVANCE: f64 = 0.40;
 const ETA_CORRECTION_ALPHA: f64 = 0.30;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -168,7 +168,7 @@ impl Smoother {
         let mut display = if self.total_samples == 0 && self.last_pct == 0 {
             let elapsed = now.duration_since(self.start_time).as_secs_f64();
             let total = self.total_wall_sec().max(0.1);
-            (elapsed / total * 100.0).min(95.0)
+            (elapsed / total * 100.0).min(15.0)
         } else {
             let mut sec_per_pct = self.audio_dur_sec / 100.0 / rtf;
             if sec_per_pct <= 0.0 {
@@ -500,8 +500,19 @@ mod tests {
         std::thread::sleep(Duration::from_millis(20));
         let (pct, eta) = s.snapshot();
         assert!(pct > 0.0, "pct should advance from elapsed time, got {pct}");
-        assert!(pct < 95.0);
+        assert!(pct <= 15.0);
         assert!(eta > 0.0);
+    }
+
+    #[test]
+    fn transcribe_without_engine_reports_never_jumps_near_done() {
+        let mut s = Smoother::new(60.0, 100.0);
+        std::thread::sleep(Duration::from_millis(20));
+        let (pct, _) = s.snapshot();
+        assert!(
+            pct <= 15.0,
+            "unmeasured progress should stay conservative, got {pct}"
+        );
     }
 
     #[test]

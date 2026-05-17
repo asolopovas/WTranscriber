@@ -87,10 +87,15 @@ export function decodeName(name: string): string {
   }
 }
 
-const NAME_PATTERNS: { re: RegExp; full4: boolean }[] = [
-  { re: /(?:^|[-_\s])(\d{4})-(\d{2})-(\d{2})[-_T\s](\d{2})-(\d{2})-(\d{2})/, full4: true },
+const NAME_PATTERNS: { re: RegExp; full4: boolean; dateOnly?: boolean }[] = [
+  {
+    re: /(?:^|[-_\s])(\d{4})-(\d{2})-(\d{2})(?:\s+at\s+|[-_T\s])(\d{2})[.-](\d{2})[.-](\d{2})/i,
+    full4: true,
+  },
   { re: /(?:^|[-_\s])(\d{4})(\d{2})(\d{2})[-_\s](\d{2})(\d{2})(\d{2})/, full4: true },
   { re: /(?:^|[-_\s])(\d{2})(\d{2})(\d{2})[-_\s](\d{2})(\d{2})(\d{2})/, full4: false },
+  { re: /(?:^|[-_\s])(\d{4})(\d{2})(\d{2})(?:[-_\s]|$)/, full4: true, dateOnly: true },
+  { re: /(?:^|[-_\s])(\d{4})-(\d{2})-(\d{2})(?:[-_\s]|$)/, full4: true, dateOnly: true },
 ];
 
 const MONTH_NAMES = [
@@ -110,6 +115,13 @@ const MONTH_NAMES = [
 
 export function formatTimestampPretty(ts: string | null): string | null {
   if (!ts) return null;
+  const dateOnly = ts.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if (dateOnly) {
+    const [, yy, mm, dd] = dateOnly;
+    const monthIdx = Number(mm) - 1;
+    const month = monthIdx >= 0 && monthIdx < 12 ? MONTH_NAMES[monthIdx] : mm;
+    return `${dd}/${month}/${yy}`;
+  }
   const m = ts.match(/^(\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
   if (!m) return ts;
   const [, yy, mm, dd, hh, mi, ss] = m;
@@ -125,7 +137,7 @@ export function prettyName(name: string): {
 } {
   const decoded = basenameOf(decodeName(name));
   const noExt = decoded.replace(/\.[^.]+$/, "");
-  for (const { re, full4 } of NAME_PATTERNS) {
+  for (const { re, full4, dateOnly } of NAME_PATTERNS) {
     const m = noExt.match(re);
     if (m && m.index !== undefined) {
       const before = noExt.slice(0, m.index).replace(/[-_\s]+$/, "");
@@ -133,7 +145,7 @@ export function prettyName(name: string): {
       const display = [before, after].filter(Boolean).join(" ") || noExt;
       const [, a, b, c, d, e, f] = m;
       const yy = full4 ? a.slice(2) : a;
-      const timestamp = `${yy}${b}${c}_${d}${e}${f}`;
+      const timestamp = dateOnly ? `${yy}${b}${c}` : `${yy}${b}${c}_${d}${e}${f}`;
       return { display, timestamp, timestampPretty: formatTimestampPretty(timestamp) };
     }
   }

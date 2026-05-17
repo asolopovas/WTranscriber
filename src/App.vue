@@ -388,6 +388,16 @@ onMounted(async () => {
   document.addEventListener("keydown", onKeyDown);
   unlisten.push(() => document.removeEventListener("keydown", onKeyDown));
 
+  const refreshOnFocus = () => {
+    if (sys.value?.os === "android" && tab.value === "transcribe") void refreshListing();
+  };
+  window.addEventListener("focus", refreshOnFocus);
+  document.addEventListener("visibilitychange", refreshOnFocus);
+  unlisten.push(() => {
+    window.removeEventListener("focus", refreshOnFocus);
+    document.removeEventListener("visibilitychange", refreshOnFocus);
+  });
+
   sys.value = await api.systemInfo();
   await reload();
   if (config.value) {

@@ -42,7 +42,9 @@ pub fn probe_duration_ms(input: &Path) -> Option<u64> {
             &MetadataOptions::default(),
         )
         .ok()?;
-    let track = probed.format.default_track()?;
+    let mut format = probed.format;
+    let track = format.default_track()?;
+    let track_id = track.id;
     let sr = track.codec_params.sample_rate? as u64;
     if let Some(frames) = track.codec_params.n_frames
         && sr > 0
@@ -55,7 +57,24 @@ pub fn probe_duration_ms(input: &Path) -> Option<u64> {
         let secs = (n_ts as f64) * (tb.numer as f64) / (tb.denom as f64);
         return Some((secs * 1000.0) as u64);
     }
-    None
+
+    let mut last_ts = 0_u64;
+    let mut last_dur = 0_u64;
+    loop {
+        match format.next_packet() {
+            Ok(packet) if packet.track_id() == track_id => {
+                last_ts = packet.ts;
+                last_dur = packet.dur;
+            }
+            Ok(_) => {}
+            Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                break;
+            }
+            Err(_) => break,
+        }
+    }
+    let frames = last_ts.saturating_add(last_dur);
+    (sr > 0 && frames > 0).then_some(frames * 1000 / sr)
 }
 
 pub fn decode_to_wav(input: &Path, output: &Path) -> Result<()> {
