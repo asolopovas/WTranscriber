@@ -52,7 +52,7 @@ The `.vscode/tasks.json` entries "android: build + install APK" and "android: bu
 
 Full `tmp/` artefact contract: [`tmp.md`](tmp.md).
 
-`just android` is repeatable but not a no-op: it stops any existing Android dev session before starting a new one.
+`just android` is repeatable but not a no-op: it stops any existing Android dev session and force-stops the app before starting a new one.
 
 ## HMR rule
 

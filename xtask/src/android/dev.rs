@@ -35,8 +35,10 @@ fn cmd_bootstrap_attempt(
     let pids_path = tmp.join("_pids.json");
     if pids_path.exists() || tcp_open(1420) {
         eprintln!("[stage 0/7] previous session detected — stopping for clean restart");
-        cmd_stop(false, device)?;
+    } else {
+        eprintln!("[stage 0/7] stopping app for clean restart");
     }
+    cmd_stop(false, device)?;
     reap_tauri_logcat_orphans();
     eprintln!("[stage 1/7] preflight (node_modules, device)");
     preflight_node_modules()?;
