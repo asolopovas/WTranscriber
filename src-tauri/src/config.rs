@@ -178,22 +178,6 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
             dirty = true;
         }
     }
-    if let Some(saved) = by_id(&cfg.model)
-        && !saved.android_default
-        && let Some(target_id) = default_id(Family::Asr)
-        && target_id != cfg.model
-        && let Some(target) = by_id(target_id)
-    {
-        let installed =
-            crate::models::paths_for(target).is_ok_and(|paths| paths.iter().all(|p| p.exists()));
-        if installed {
-            cfg.model = target_id.to_string();
-            if let Some(engine) = target.engine_kind() {
-                cfg.engine = engine;
-            }
-            dirty = true;
-        }
-    }
     dirty
 }
 

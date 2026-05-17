@@ -14,9 +14,9 @@ use rubato::{
 };
 use symphonia::core::{
     audio::{AudioBufferRef, Signal},
-    codecs::DecoderOptions,
+    codecs::{CODEC_TYPE_OPUS, DecoderOptions},
     errors::Error as SymphoniaError,
-    formats::FormatOptions,
+    formats::{FormatOptions, FormatReader},
     io::{MediaSourceStream, MediaSourceStreamOptions},
     meta::MetadataOptions,
     probe::Hint,
@@ -111,6 +111,10 @@ fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
         .map_or(1, symphonia::core::audio::Channels::count)
         .max(1);
 
+    if codec_params.codec == CODEC_TYPE_OPUS {
+        return decode_opus_to_mono_f32(format, track_id, channels, codec_params.delay);
+    }
+
     let mut decoder = symphonia::default::get_codecs()
         .make(&codec_params, &DecoderOptions::default())
         .map_err(|e| Error::Transcribe(format!("decoder: {e}")))?;
@@ -139,6 +143,58 @@ fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
     }
 
     Ok((samples, sample_rate))
+}
+
+fn decode_opus_to_mono_f32(
+    mut format: Box<dyn FormatReader>,
+    track_id: u32,
+    channels: usize,
+    delay: Option<u32>,
+) -> Result<(Vec<f32>, u32)> {
+    let channels = channels.clamp(1, 2);
+    crate::logfile::info(&format!(
+        "audio decoder: using built-in opus decoder channels={channels}"
+    ));
+    let mut decoder = opus_decoder::OpusDecoder::new(48_000, channels)
+        .map_err(|e| Error::Transcribe(format!("opus decoder: {e}")))?;
+    let mut pcm = vec![0.0_f32; decoder.max_frame_size_per_channel() * channels];
+    let mut samples = Vec::<f32>::new();
+    let mut pending_skip = delay.unwrap_or_default() as usize;
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(p) => p,
+            Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                break;
+            }
+            Err(SymphoniaError::ResetRequired) => break,
+            Err(e) => return Err(Error::Transcribe(format!("opus packet: {e}"))),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let frames = decoder
+            .decode_float(&packet.data, &mut pcm, false)
+            .map_err(|e| Error::Transcribe(format!("opus decode: {e}")))?;
+        let trim_start = pending_skip.saturating_add(packet.trim_start as usize);
+        pending_skip = 0;
+        let trim_end = packet.trim_end as usize;
+        if trim_start >= frames {
+            continue;
+        }
+        let end = frames.saturating_sub(trim_end);
+        if trim_start >= end {
+            continue;
+        }
+        for frame in trim_start..end {
+            let offset = frame * channels;
+            let sum = pcm[offset..offset + channels].iter().copied().sum::<f32>();
+            samples.push(sum / channels as f32);
+        }
+    }
+
+    Ok((samples, 48_000))
 }
 
 fn append_samples(out: &mut Vec<f32>, buf: AudioBufferRef<'_>, channels: usize) {
