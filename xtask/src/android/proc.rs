@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -164,15 +164,36 @@ pub(super) fn spawn_with_env(prog: &str, args: &[&str], env: &[(String, String)]
 }
 
 pub(crate) fn port_owner(port: u16) -> Option<u32> {
-    if !cfg!(windows) {
-        return None;
+    if cfg!(windows) {
+        let pattern = format!(":{port}");
+        let out = capture_timeout("netstat", &["-ano"], Duration::from_secs(2))?;
+        return out
+            .lines()
+            .find(|line| line.contains(&pattern) && line.contains("LISTENING"))
+            .and_then(|line| line.split_whitespace().last())
+            .and_then(|pid| pid.parse::<u32>().ok());
     }
-    let pattern = format!(":{port}");
-    let out = capture_timeout("netstat", &["-ano"], Duration::from_secs(2))?;
-    out.lines()
-        .find(|line| line.contains(&pattern) && line.contains("LISTENING"))
-        .and_then(|line| line.split_whitespace().last())
-        .and_then(|pid| pid.parse::<u32>().ok())
+
+    let port_filter = format!("sport = :{port}");
+    if let Some(pid) = capture_timeout("ss", &["-H", "-ltnp", &port_filter], Duration::from_secs(2))
+        .and_then(|out| out.split("pid=").nth(1).map(str::to_string))
+        .and_then(|tail| {
+            tail.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse::<u32>()
+                .ok()
+        })
+    {
+        return Some(pid);
+    }
+
+    capture_timeout(
+        "lsof",
+        &["-nP", "-tiTCP", &format!(":{port}"), "-sTCP:LISTEN"],
+        Duration::from_secs(2),
+    )
+    .and_then(|out| out.lines().find_map(|line| line.trim().parse::<u32>().ok()))
 }
 
 pub(super) fn tcp_open(port: u16) -> bool {
@@ -208,13 +229,26 @@ pub(crate) fn kill_pid(pid: u32) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
-    } else {
-        let _ = Command::new("kill")
-            .args(["-TERM", &pid_text])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        return;
     }
+
+    let _ = Command::new("kill")
+        .args(["-TERM", &pid_text])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if !pid_alive(pid) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = Command::new("kill")
+        .args(["-KILL", &pid_text])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 pub(super) fn reap_tauri_logcat_orphans() {

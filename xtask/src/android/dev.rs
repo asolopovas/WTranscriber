@@ -248,7 +248,7 @@ fn cmd_bootstrap_attempt(
                 return cmd_bootstrap_attempt(mode, device, true);
             }
             eprintln!("bootstrap failed: {err:#}");
-            eprintln!("--- last 10 lines of android-dev.err.log ---");
+            eprintln!("--- last 10 lines of android-tauri.err.log ---");
             if let Ok(raw) = fs::read_to_string(&dev_err) {
                 for line in raw.lines().rev().take(10).collect::<Vec<_>>().iter().rev() {
                     eprintln!("  {line}");
