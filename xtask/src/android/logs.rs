@@ -29,11 +29,11 @@ pub(super) fn wait_for_log_line_with_guard(
     paths: &[&Path],
     label: &str,
     f: impl Fn(&str) -> bool,
-    timeout: Duration,
+    timeout: Option<Duration>,
     guard: impl Fn() -> bool,
 ) -> Result<()> {
     let start = Instant::now();
-    let deadline = start + timeout;
+    let deadline = timeout.map(|timeout| start + timeout);
     if tail_any(paths, &f) {
         eprintln!("  ✓ {label} (0s)");
         return Ok(());
@@ -47,10 +47,14 @@ pub(super) fn wait_for_log_line_with_guard(
     let mut last_progress = Instant::now();
     let result = loop {
         let now = Instant::now();
-        if now >= deadline {
+        if let Some(deadline) = deadline
+            && now >= deadline
+        {
             break Err(());
         }
-        let slice = (deadline - now).min(Duration::from_secs(1));
+        let slice = deadline
+            .map(|deadline| (deadline - now).min(Duration::from_secs(1)))
+            .unwrap_or_else(|| Duration::from_secs(1));
         match rx.recv_timeout(slice) {
             Ok(line) => {
                 if f(&line) {
@@ -71,10 +75,6 @@ pub(super) fn wait_for_log_line_with_guard(
                 if !guard() {
                     break Err(());
                 }
-                if last_progress.elapsed() >= Duration::from_secs(30) {
-                    eprintln!("  [{:>3}s] waiting for {label}…", start.elapsed().as_secs());
-                    last_progress = Instant::now();
-                }
             }
             Err(RecvTimeoutError::Disconnected) => break Err(()),
         }
@@ -86,10 +86,15 @@ pub(super) fn wait_for_log_line_with_guard(
         Err(()) if !guard() => {
             bail!("{label} aborted — child process exited; see {paths:?} for details")
         }
-        Err(()) => bail!(
-            "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
-            timeout.as_secs()
-        ),
+        Err(()) => match timeout {
+            Some(timeout) => bail!(
+                "{label} not seen in {paths:?} within {}s — check adb reverse / TAURI_DEV_HOST / device app launch",
+                timeout.as_secs()
+            ),
+            None => bail!(
+                "{label} not seen in {paths:?} — check adb reverse / TAURI_DEV_HOST / device app launch"
+            ),
+        },
     }
 }
 

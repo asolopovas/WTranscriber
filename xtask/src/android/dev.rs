@@ -170,18 +170,18 @@ fn cmd_bootstrap_attempt(
         true
     };
     let bring_up = || -> Result<Option<lldb::LldbInfo>> {
-        eprintln!("[stage 4/7] waiting for Vite HMR on :1420 (≤90s)");
+        eprintln!("[stage 4/7] waiting for Vite HMR on :1420");
         wait_for_log_line_with_guard(
             &[&vite_log, &vite_err],
             "vite ready on :1420",
             |s| (s.contains("Local:") || s.contains("Network:")) && s.contains(":1420"),
-            Duration::from_secs(90),
+            None,
             healthy,
         )?;
-        eprintln!("[stage 5/7] waiting for cargo+gradle build, install, and app launch (≤1800s)");
+        eprintln!("[stage 5/7] waiting for cargo+gradle build, install, and app launch");
         wait_for_log_line_with_guard(
             &[&dev_log, &dev_err, &logcat_log],
-            "app launch",
+            "Android build/install/app launch",
             |s| {
                 s.contains("Info Opening ")
                     || (s.contains("Starting: Intent") && s.contains("wtranscriber"))
@@ -189,7 +189,7 @@ fn cmd_bootstrap_attempt(
                     || (s.contains("RustStdoutStderr:")
                         && s.contains("renderer error bridge installed"))
             },
-            Duration::from_secs(1800),
+            None,
             healthy,
         )?;
         eprintln!("[stage 6/7] attaching WebView DevTools and probing Tauri IPC (≤90s)");
