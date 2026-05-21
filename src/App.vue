@@ -468,6 +468,10 @@ watch(tab, (t) => {
   if (t === "transcribe") void refreshListing();
 });
 
+function onSettingsConfigChanged(next: Config) {
+  config.value = next;
+}
+
 async function onAppDataReset() {
   transcript.value = null;
   selectedPath.value = "";
@@ -1038,7 +1042,11 @@ const selectedProgress = computed(() =>
         />
       </template>
 
-      <Settings v-else-if="tab === 'settings'" @app-data-reset="onAppDataReset" />
+      <Settings
+        v-else-if="tab === 'settings'"
+        @app-data-reset="onAppDataReset"
+        @config-changed="onSettingsConfigChanged"
+      />
       <LogViewer
         v-else-if="tab === 'logs'"
         ref="logViewerRef"

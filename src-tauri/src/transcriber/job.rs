@@ -167,7 +167,7 @@ impl SlabHeartbeat {
                         if cancel.as_ref().is_some_and(CancellationToken::is_cancelled) {
                             break;
                         }
-                        logfile::info(&format!(
+                        logfile::debug(&format!(
                             "slab #{index} processing {start}-{end} ({:.0}s elapsed)",
                             t0.elapsed().as_secs_f64()
                         ));
@@ -245,12 +245,14 @@ fn process_region(
         "slab #{} start {}-{} ({region_dur_sec:.1}s audio)",
         st.slab_index, start_label, end_label
     ));
-    let heartbeat = SlabHeartbeat::start(
-        st.slab_index,
-        start_label.clone(),
-        end_label.clone(),
-        ctx.sink.cancellation_token(),
-    );
+    let heartbeat = ctx.config.debug_logging.then(|| {
+        SlabHeartbeat::start(
+            st.slab_index,
+            start_label.clone(),
+            end_label.clone(),
+            ctx.sink.cancellation_token(),
+        )
+    });
     let resume_floor = st.state.last_done_sec;
     let t0 = std::time::Instant::now();
     let mut acc = ChunkAcc {
@@ -270,9 +272,9 @@ fn process_region(
         let abs_end = region.start_sec + region_dur_sec * pct / 100.0;
         emit_pct(ctx.sink, abs_end, ctx.trimmed_dur_sec);
         let step = ((pct / 25.0).floor() as i32) * 25;
-        if step > last_progress_log && step < 100 {
+        if ctx.config.debug_logging && step > last_progress_log && step < 100 {
             last_progress_log = step;
-            logfile::info(&format!("slab #{} progress {step}%", st.slab_index));
+            logfile::debug(&format!("slab #{} progress {step}%", st.slab_index));
         }
     };
     let cancelled = || ctx.sink.is_cancelled();
@@ -284,7 +286,9 @@ fn process_region(
         &cancelled,
         &mut |segs, end| acc.on_chunk(segs, end),
     );
-    heartbeat.stop();
+    if let Some(heartbeat) = heartbeat {
+        heartbeat.stop();
+    }
     let (slab_detected, _rtf) = run_result?;
     if let Some(e) = acc.save_err.take() {
         return Err(e);
@@ -472,6 +476,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         !config.diarize,
         trim.trim_start_ms,
         trim.trim_end_ms.unwrap_or(0),
+        matches!(config.engine, Engine::WhisperCpp) && config.precise_word_timestamps,
     )?;
     let key = compute_key(&key_params);
 

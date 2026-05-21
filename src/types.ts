@@ -33,6 +33,8 @@ export interface Config {
   last_dir?: string | null;
   use_persistent_models: boolean;
   has_seen_persistent_prompt: boolean;
+  debug_logging: boolean;
+  precise_word_timestamps: boolean;
 }
 
 export type ExportFormat = "txt" | "csv" | "json" | "srt" | "vtt";

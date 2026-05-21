@@ -15,7 +15,7 @@ struct RuntimeProgress {
 
 pub async fn ensure_runtimes(app: &tauri::AppHandle) {
     if cfg!(target_os = "android") {
-        logfile::info("runtime install skipped (android: jniLibs bundled in APK)");
+        logfile::debug("runtime install skipped (android: jniLibs bundled in APK)");
         return;
     }
     let cfg = config::Config::load().unwrap_or_default();

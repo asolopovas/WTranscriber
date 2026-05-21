@@ -177,7 +177,7 @@ fn run_cuda_worker(
         .arg("--language")
         .arg(&config.language)
         .arg("--threads")
-        .arg(config.threads.to_string())
+        .arg(crate::engine::threads(config).to_string())
         .output()
         .map_err(|e| Error::Transcribe(format!("launch CUDA worker {}: {e}", worker.display())))?;
     if cancelled() {
@@ -234,11 +234,14 @@ pub fn run(
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(lang_arg);
-    params.set_token_timestamps(true);
-    params.set_split_on_word(true);
-    params.set_max_len(1);
+    if config.precise_word_timestamps {
+        params.set_token_timestamps(true);
+        params.set_split_on_word(true);
+        params.set_max_len(1);
+    }
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    params.set_n_threads(i32::try_from(config.threads).unwrap_or(4));
+    params.set_n_threads(i32::try_from(crate::engine::threads(config)).unwrap_or(4));
+    params.set_no_context(true);
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_special(false);
@@ -247,22 +250,24 @@ pub fn run(
     params.set_translate(false);
     params.set_single_segment(false);
 
-    let last_progress_step = Arc::new(AtomicI32::new(0));
-    let progress_step = Arc::clone(&last_progress_step);
-    params.set_progress_callback_safe(move |pct| {
-        let step = (pct / 10) * 10;
-        if step <= 0 || step >= 100 {
-            return;
-        }
-        let previous = progress_step.load(Ordering::Relaxed);
-        if step > previous
-            && progress_step
-                .compare_exchange(previous, step, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-        {
-            crate::logfile::info(&format!("whisper-cpp progress {step}%"));
-        }
-    });
+    if config.debug_logging {
+        let last_progress_step = Arc::new(AtomicI32::new(0));
+        let progress_step = Arc::clone(&last_progress_step);
+        params.set_progress_callback_safe(move |pct| {
+            let step = (pct / 10) * 10;
+            if step <= 0 || step >= 100 {
+                return;
+            }
+            let previous = progress_step.load(Ordering::Relaxed);
+            if step > previous
+                && progress_step
+                    .compare_exchange(previous, step, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_ok()
+            {
+                crate::logfile::debug(&format!("whisper-cpp progress {step}%"));
+            }
+        });
+    }
 
     if cancelled() {
         return Err(Error::Cancelled);

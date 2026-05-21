@@ -31,6 +31,10 @@ pub struct Config {
     pub use_persistent_models: bool,
     #[serde(default)]
     pub has_seen_persistent_prompt: bool,
+    #[serde(default)]
+    pub debug_logging: bool,
+    #[serde(default)]
+    pub precise_word_timestamps: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ValueEnum)]
@@ -136,6 +140,8 @@ impl Default for Config {
             last_dir: None,
             use_persistent_models: cfg!(target_os = "android"),
             has_seen_persistent_prompt: false,
+            debug_logging: false,
+            precise_word_timestamps: false,
         }
     }
 }
@@ -217,6 +223,7 @@ impl Config {
         if migrate_for_platform(&mut cfg) {
             let _ = cfg.save();
         }
+        logfile::set_debug_enabled(cfg.debug_logging);
         Ok(cfg)
     }
 
@@ -224,6 +231,7 @@ impl Config {
         let path = paths::config_file()?;
         let raw = serde_json::to_string_pretty(self)?;
         std::fs::write(path, raw)?;
+        logfile::set_debug_enabled(self.debug_logging);
         Ok(())
     }
 }

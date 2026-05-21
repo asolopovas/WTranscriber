@@ -17,9 +17,11 @@ import ModelTable from "@components/ModelTable.vue";
 import Card from "@components/ui/Card.vue";
 import DefRow from "@components/ui/DefRow.vue";
 import Button from "@components/ui/Button.vue";
+import Toggle from "@components/ui/Toggle.vue";
 
 const emit = defineEmits<{
   (e: "app-data-reset"): void;
+  (e: "config-changed", config: Config): void;
 }>();
 
 const config = ref<Config | null>(null);
@@ -29,7 +31,10 @@ const maintenanceStatus = ref<string | null>(null);
 const modelProgress = ref<Record<string, FileProgress>>({});
 const unlisten: (() => void)[] = [];
 
-const { error } = useDebouncedSave(config, (next) => api.saveConfig(next));
+const { error } = useDebouncedSave(config, async (next) => {
+  await api.saveConfig(next);
+  emit("config-changed", { ...next });
+});
 
 const isAndroid = computed(() => sys.value?.os === "android");
 const persistentEnabled = ref(false);
@@ -210,7 +215,7 @@ async function resetAppData() {
                 :class="fieldClass"
               />
               <span class="text-bodyMedium text-on-surface-variant">
-                CPU worker threads (1–{{ sys?.cpu_threads ?? 32 }}). 0 = auto.
+                CPU worker threads (1–{{ sys?.cpu_threads ?? 32 }}).
               </span>
             </label>
           </div>
@@ -224,6 +229,31 @@ async function resetAppData() {
           @install="installModel"
           @select="onSelectDefault"
         />
+
+        <Card icon="bug_report" icon-color="text-tertiary" title="Diagnostics">
+          <div class="p-margin flex flex-col gap-lg">
+            <div class="flex items-center justify-between gap-md">
+              <div>
+                <div class="text-titleSmall text-on-surface">Debug logging</div>
+                <p class="text-bodyMedium text-on-surface-variant">
+                  Include slab heartbeats and engine progress in Logs. Leave off for quieter logs
+                  and less work during transcription.
+                </p>
+              </div>
+              <Toggle v-model="config.debug_logging" aria-label="Debug logging" />
+            </div>
+            <div class="flex items-center justify-between gap-md">
+              <div>
+                <div class="text-titleSmall text-on-surface">Precise word timings</div>
+                <p class="text-bodyMedium text-on-surface-variant">
+                  Ask Whisper for token-level timestamps. This can be much slower on mobile; leave
+                  off for faster large-v3-turbo transcription.
+                </p>
+              </div>
+              <Toggle v-model="config.precise_word_timestamps" aria-label="Precise word timings" />
+            </div>
+          </div>
+        </Card>
 
         <Card icon="cleaning_services" icon-color="text-tertiary" title="Storage">
           <div class="p-margin flex flex-col gap-md">

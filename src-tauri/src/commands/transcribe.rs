@@ -435,6 +435,7 @@ pub async fn transcribe_file(
     input: PathBuf,
     mut config: Config,
 ) -> Result<Transcript> {
+    apply_saved_runtime_settings(&mut config);
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
     let input_key = input.to_string_lossy().into_owned();
@@ -611,6 +612,14 @@ fn finish_successful_transcribe(
     transcript
 }
 
+fn apply_saved_runtime_settings(config: &mut Config) {
+    if let Ok(saved) = Config::load() {
+        config.threads = saved.threads;
+        config.debug_logging = saved.debug_logging;
+        config.precise_word_timestamps = saved.precise_word_timestamps;
+    }
+}
+
 fn log_preflight(input: &Path, config: &Config) {
     use std::fmt::Write as _;
     let mut buf = String::new();
@@ -699,6 +708,7 @@ pub async fn redo_diarization(
     old_cache_key: String,
     mut config: Config,
 ) -> Result<Transcript> {
+    apply_saved_runtime_settings(&mut config);
     sync_engine(&mut config);
     let label = format!("redo_diarization {}", input.display());
     logfile::process_start(&label);
@@ -827,6 +837,8 @@ async fn redo_diarization_inner(
             !config.diarize,
             trim.trim_start_ms,
             trim.trim_end_ms.unwrap_or(0),
+            matches!(config.engine, crate::config::Engine::WhisperCpp)
+                && config.precise_word_timestamps,
         )?;
         let new_key = cache::compute_key(&key_params);
 

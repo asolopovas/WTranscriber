@@ -2,7 +2,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use chrono::Local;
@@ -13,6 +16,7 @@ const MAX_BYTES: u64 = constants::LOG_FILE_MAX_BYTES;
 const MAX_BACKUPS: usize = 48;
 
 static LOG: Mutex<Option<File>> = Mutex::new(None);
+static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 pub fn log_path() -> Result<PathBuf> {
     Ok(paths::data_dir()?.join("wt.log"))
@@ -79,6 +83,22 @@ fn write_line(level: &str, msg: &str) {
         drop(guard);
         Ok(())
     })();
+}
+
+pub fn set_debug_enabled(enabled: bool) {
+    DEBUG_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+#[must_use]
+pub fn debug_enabled() -> bool {
+    DEBUG_ENABLED.load(Ordering::Relaxed)
+}
+
+pub fn debug(msg: &str) {
+    if debug_enabled() {
+        eprintln!("DEBUG {msg}");
+        write_line("DEBUG", msg);
+    }
 }
 
 pub fn info(msg: &str) {

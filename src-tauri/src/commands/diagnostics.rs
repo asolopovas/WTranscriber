@@ -37,7 +37,7 @@ pub fn log_renderer(
     let entry = format!("[renderer/{level}] {message}{loc}{trace}");
     match level.as_str() {
         "error" | "warn" => logfile::warn(&entry),
-        _ => logfile::info(&entry),
+        _ => logfile::debug(&entry),
     }
 }
 

@@ -481,6 +481,7 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
             !config.diarize,
             0,
             0,
+            matches!(config.engine, Engine::WhisperCpp) && config.precise_word_timestamps,
         )?;
         let key = api::transcript_cache::compute_key(&key_params);
         let _ = api::transcript_cache::invalidate(&key);

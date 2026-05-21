@@ -39,6 +39,8 @@ const config = (): Config => ({
   last_dir: null,
   use_persistent_models: false,
   has_seen_persistent_prompt: false,
+  debug_logging: false,
+  precise_word_timestamps: false,
 });
 
 describe("model helpers", () => {

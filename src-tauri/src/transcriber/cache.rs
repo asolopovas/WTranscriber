@@ -50,6 +50,7 @@ pub struct KeyParams {
     pub no_diarize: bool,
     pub trim_start_ms: u64,
     pub trim_end_ms: u64,
+    pub precise_word_timestamps: bool,
 }
 
 fn cache_root() -> Result<PathBuf> {
@@ -74,6 +75,7 @@ pub fn build_key_params(
     no_diarize: bool,
     trim_start_ms: u64,
     trim_end_ms: u64,
+    precise_word_timestamps: bool,
 ) -> Result<KeyParams> {
     let abs = std::path::absolute(source_path)?;
     let meta = std::fs::metadata(&abs)?;
@@ -90,13 +92,14 @@ pub fn build_key_params(
         no_diarize,
         trim_start_ms,
         trim_end_ms,
+        precise_word_timestamps,
     })
 }
 
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.source_path.display(),
         p.mtime_ns,
         p.model,
@@ -105,6 +108,7 @@ pub fn compute_key(p: &KeyParams) -> String {
         p.no_diarize,
         p.trim_start_ms,
         p.trim_end_ms,
+        p.precise_word_timestamps,
     );
     let hash = Sha256::digest(s.as_bytes());
     hex::encode(&hash[..16])
@@ -273,6 +277,7 @@ mod tests {
             no_diarize: false,
             trim_start_ms: 0,
             trim_end_ms: 0,
+            precise_word_timestamps: false,
         };
         let k1 = compute_key(&p);
         let k2 = compute_key(&p);
@@ -285,7 +290,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         std::fs::write(&path, b"hello").unwrap();
-        let params = build_key_params(&path, "whisper", "en", 0, false, 0, 0).unwrap();
+        let params = build_key_params(&path, "whisper", "en", 0, false, 0, 0, false).unwrap();
         assert_eq!(params.model, "whisper");
         assert!(params.source_path.is_absolute());
         assert!(params.mtime_ns > 0);
@@ -295,7 +300,7 @@ mod tests {
     fn build_key_params_errors_when_file_missing() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("missing.wav");
-        assert!(build_key_params(&p, "m", "en", 0, false, 0, 0).is_err());
+        assert!(build_key_params(&p, "m", "en", 0, false, 0, 0, false).is_err());
     }
 
     #[test]
@@ -309,6 +314,7 @@ mod tests {
             no_diarize: false,
             trim_start_ms: 0,
             trim_end_ms: 0,
+            precise_word_timestamps: false,
         };
         let base = compute_key(&p);
         p.trim_start_ms = 1000;
@@ -329,12 +335,16 @@ mod tests {
             no_diarize: false,
             trim_start_ms: 0,
             trim_end_ms: 0,
+            precise_word_timestamps: false,
         };
         let base = compute_key(&p);
         p.language = "fr".into();
         assert_ne!(compute_key(&p), base);
         p.language = "en".into();
         p.speakers = 2;
+        assert_ne!(compute_key(&p), base);
+        p.speakers = 0;
+        p.precise_word_timestamps = true;
         assert_ne!(compute_key(&p), base);
     }
 }
