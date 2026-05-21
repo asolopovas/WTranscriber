@@ -12,9 +12,7 @@ Most `just` recipes run through `scripts/run.ts`:
 
 `just dev` uses `--idle 0 --max 0`. `just android` runs xtask directly so Android bootstrap is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
 
-`just check` runs `cargo xtask check`, which fans out **11 gates** in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All gates complete before the first failure is reported. Pass job tags for focused runs, e.g. `just check typecheck js-test`.
-
-CI runs `just check-changed --base …` on every push and PR so only checks selected by changed files run there. Use full `just check` locally before releases or wider refactors.
+Verification gates, pre-commit behaviour, and the change-type matrix live in [`verification.md`](verification.md).
 
 ## Desktop
 
