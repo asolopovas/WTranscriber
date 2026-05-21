@@ -96,7 +96,7 @@ clean-logs:
 # Full release matrix: Windows host + Linux .deb + Android APK → releases/dev/.
 [windows]
 build: bootstrap-if-stale clean-logs
-    {{_run}} --tag build --idle 600 --max 3600 -- cargo xtask release --dev
+    {{_run}} --tag build --idle 1800 --max 7200 -- cargo xtask release --dev
 
 # Windows host only: small NSIS installer → releases/dev/.
 [windows]
@@ -115,4 +115,4 @@ release-cuda *args:
 
 # Release flow: default publishes releases/dev/; --stable runs the stable flow; --bump implies --stable.
 release *args:
-    {{_run}} --tag release --idle 600 --max 7200 -- bun scripts/release.ts {{args}}
+    {{_run}} --tag release --idle 1800 --max 7200 -- bun scripts/release.ts {{args}}

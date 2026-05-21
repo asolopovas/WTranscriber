@@ -1,11 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use anyhow::Result;
 
 use crate::util::{SharedOut, root, run_streamed};
 
 const WINDOWS_CUDA_ARCHITECTURES: &str = "61;75;80;86;89";
+
+static DOCKER_BUILDER_IMAGE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 fn cargo_incremental_env() -> Vec<(&'static str, &'static str)> {
     // sccache wraps cmake-launched cl.exe (CMAKE_{C,CXX}_COMPILER_LAUNCHER is
@@ -224,6 +227,9 @@ fn docker_parallel_env_args() -> Vec<String> {
 }
 
 fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
+    let _guard = DOCKER_BUILDER_IMAGE_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("docker builder image lock poisoned"))?;
     let rebuild = std::env::var("WT_BUILDER_REBUILD").ok().as_deref() == Some("1");
     let need_build = rebuild
         || std::process::Command::new("docker")

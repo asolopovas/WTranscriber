@@ -16,6 +16,17 @@
 `just release --stable` defaults to `--bump patch`. `level`: `patch` (default when `--bump` is present without a value), `minor`, `major`, or explicit `X.Y.Z`.
 `xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
+## Docker Desktop preflight on Windows
+
+`just build` uses Docker Desktop's Linux engine for the Linux `.deb` and, unless `WT_ANDROID_NATIVE=1` is set, the Android APK. Start Docker Desktop before the full matrix and verify:
+
+```powershell
+docker info
+docker run --rm hello-world
+```
+
+If Docker reports `dockerDesktopLinuxEngine/_ping` with `500 Internal Server Error`, restart Docker Desktop or WSL, then rerun `just build`. For a host-only installer while Docker is unavailable, use `just build-host`.
+
 ## Windows VM preflight
 
 When `cargo xtask release` runs from Linux, it builds the Windows NSIS installer by SSH-driving the VM configured in `release.config.json` (`windowsVm`). The default config uses the `windows-vm` SSH alias and starts/restarts `/home/andrius/vms/win11` through its Makefile. Override the config path with `WT_RELEASE_CONFIG`.

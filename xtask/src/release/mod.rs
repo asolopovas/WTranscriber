@@ -75,7 +75,7 @@ pub fn run(args: Args) -> Result<()> {
         let skip = args.skip_rebuild;
         tasks.push((
             "host",
-            Box::new(move |_| build_host(skip, &l).unwrap_or(127)),
+            Box::new(move |_| build_task_rc("host", build_host(skip, &l), &l)),
         ));
     }
     if !args.no_android {
@@ -84,7 +84,7 @@ pub fn run(args: Args) -> Result<()> {
         let dev = args.dev;
         tasks.push((
             "and",
-            Box::new(move |_| build_android(skip, dev, &l).unwrap_or(127)),
+            Box::new(move |_| build_task_rc("and", build_android(skip, dev, &l), &l)),
         ));
     }
     let skip = args.skip_rebuild;
@@ -94,7 +94,7 @@ pub fn run(args: Args) -> Result<()> {
             let l = lock.clone();
             tasks.push((
                 "deb",
-                Box::new(move |_| build_deb_docker(skip, &l).unwrap_or(127)),
+                Box::new(move |_| build_task_rc("deb", build_deb_docker(skip, &l), &l)),
             ));
         }
         (false, _, false) => {
@@ -296,6 +296,17 @@ pub fn run(args: Args) -> Result<()> {
     )?;
     println!("✓ release-build done ({} files)", artifacts.len());
     Ok(())
+}
+
+fn build_task_rc(name: &str, result: Result<i32>, lock: &SharedOut) -> i32 {
+    match result {
+        Ok(rc) => rc,
+        Err(err) => {
+            let _guard = lock.lock().ok();
+            eprintln!("[{name}] error: {err:#}");
+            127
+        }
+    }
 }
 
 fn prewarm() -> Result<()> {
