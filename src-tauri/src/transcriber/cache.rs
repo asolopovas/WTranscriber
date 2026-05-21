@@ -53,6 +53,17 @@ pub struct KeyParams {
     pub precise_word_timestamps: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct KeyOptions<'a> {
+    pub model: &'a str,
+    pub language: &'a str,
+    pub speakers: u32,
+    pub no_diarize: bool,
+    pub trim_start_ms: u64,
+    pub trim_end_ms: u64,
+    pub precise_word_timestamps: bool,
+}
+
 fn cache_root() -> Result<PathBuf> {
     let d = paths::cache_dir()?.join("transcripts");
     std::fs::create_dir_all(&d)?;
@@ -67,16 +78,7 @@ pub fn transcript_path(key: &str) -> Result<PathBuf> {
     Ok(cache_root()?.join(format!("{key}.json")))
 }
 
-pub fn build_key_params(
-    source_path: &Path,
-    model: &str,
-    language: &str,
-    speakers: u32,
-    no_diarize: bool,
-    trim_start_ms: u64,
-    trim_end_ms: u64,
-    precise_word_timestamps: bool,
-) -> Result<KeyParams> {
+pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<KeyParams> {
     let abs = std::path::absolute(source_path)?;
     let meta = std::fs::metadata(&abs)?;
     let mtime_ns = meta
@@ -86,13 +88,13 @@ pub fn build_key_params(
     Ok(KeyParams {
         source_path: abs,
         mtime_ns,
-        model: model.to_owned(),
-        language: language.to_owned(),
-        speakers,
-        no_diarize,
-        trim_start_ms,
-        trim_end_ms,
-        precise_word_timestamps,
+        model: options.model.to_owned(),
+        language: options.language.to_owned(),
+        speakers: options.speakers,
+        no_diarize: options.no_diarize,
+        trim_start_ms: options.trim_start_ms,
+        trim_end_ms: options.trim_end_ms,
+        precise_word_timestamps: options.precise_word_timestamps,
     })
 }
 
@@ -290,7 +292,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         std::fs::write(&path, b"hello").unwrap();
-        let params = build_key_params(&path, "whisper", "en", 0, false, 0, 0, false).unwrap();
+        let params = build_key_params(
+            &path,
+            KeyOptions {
+                model: "whisper",
+                language: "en",
+                speakers: 0,
+                no_diarize: false,
+                trim_start_ms: 0,
+                trim_end_ms: 0,
+                precise_word_timestamps: false,
+            },
+        )
+        .unwrap();
         assert_eq!(params.model, "whisper");
         assert!(params.source_path.is_absolute());
         assert!(params.mtime_ns > 0);
@@ -300,7 +314,21 @@ mod tests {
     fn build_key_params_errors_when_file_missing() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("missing.wav");
-        assert!(build_key_params(&p, "m", "en", 0, false, 0, 0, false).is_err());
+        assert!(
+            build_key_params(
+                &p,
+                KeyOptions {
+                    model: "m",
+                    language: "en",
+                    speakers: 0,
+                    no_diarize: false,
+                    trim_start_ms: 0,
+                    trim_end_ms: 0,
+                    precise_word_timestamps: false,
+                },
+            )
+            .is_err()
+        );
     }
 
     #[test]

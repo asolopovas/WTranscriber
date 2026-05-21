@@ -50,6 +50,39 @@ pub struct Manager {
     in_flight: Mutex<HashSet<String>>,
 }
 
+struct InFlightGuard<'a> {
+    id: String,
+    in_flight: &'a Mutex<HashSet<String>>,
+}
+
+impl<'a> InFlightGuard<'a> {
+    fn acquire(in_flight: &'a Mutex<HashSet<String>>, id: &str) -> Result<Self> {
+        {
+            let mut guard = in_flight
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if !guard.insert(id.to_owned()) {
+                return Err(crate::error::Error::Config(format!(
+                    "model {id} is already downloading"
+                )));
+            }
+        }
+        Ok(Self {
+            id: id.to_owned(),
+            in_flight,
+        })
+    }
+}
+
+impl Drop for InFlightGuard<'_> {
+    fn drop(&mut self) {
+        self.in_flight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.id);
+    }
+}
+
 static MANAGER: OnceLock<Manager> = OnceLock::new();
 
 pub fn manager() -> &'static Manager {
@@ -103,16 +136,8 @@ impl Manager {
         let entry = catalog::by_id(id)
             .ok_or_else(|| crate::error::Error::Config(format!("unknown model id {id}")))?;
 
-        self.in_flight
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(id.to_owned());
-        let result = self.install_inner(entry, on_progress).await;
-        self.in_flight
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(id);
-        result
+        let _in_flight = InFlightGuard::acquire(&self.in_flight, id)?;
+        self.install_inner(entry, on_progress).await
     }
 
     async fn install_inner(
@@ -178,5 +203,14 @@ mod tests {
     fn status_serialises_to_snake_case() {
         let raw = serde_json::to_string(&ModelStatus::NotInstalled).unwrap();
         assert_eq!(raw, "\"not_installed\"");
+    }
+
+    #[test]
+    fn in_flight_guard_rejects_duplicates_and_cleans_up() {
+        let in_flight = Mutex::new(HashSet::new());
+        let guard = InFlightGuard::acquire(&in_flight, "model-a").unwrap();
+        assert!(InFlightGuard::acquire(&in_flight, "model-a").is_err());
+        drop(guard);
+        assert!(InFlightGuard::acquire(&in_flight, "model-a").is_ok());
     }
 }

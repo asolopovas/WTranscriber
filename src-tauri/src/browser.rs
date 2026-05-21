@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
@@ -45,6 +48,10 @@ pub fn list(path: &Path) -> Result<DirListing> {
     }
 
     let cache_index: Vec<cache::Entry> = cache::list();
+    let cache_by_path: HashMap<&Path, &cache::Entry> = cache_index
+        .iter()
+        .map(|entry| (entry.source_path.as_path(), entry))
+        .collect();
 
     let mut entries = Vec::new();
     for raw in std::fs::read_dir(&abs)? {
@@ -81,13 +88,10 @@ pub fn list(path: &Path) -> Result<DirListing> {
         let mut trim_start_ms = None;
         let mut trim_end_ms = None;
         if is_audio {
-            for c in &cache_index {
-                if c.source_path == path {
-                    cache_key = Some(c.key.clone());
-                    utterances = Some(c.utterances);
-                    duration_ms = Some(c.duration_ms);
-                    break;
-                }
+            if let Some(c) = cache_by_path.get(path.as_path()) {
+                cache_key = Some(c.key.clone());
+                utterances = Some(c.utterances);
+                duration_ms = Some(c.duration_ms);
             }
             if let Some(m) = audio::meta::load(&path) {
                 if m.trim_start_ms > 0 {

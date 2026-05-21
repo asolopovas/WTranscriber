@@ -12,6 +12,7 @@ const tail = ref<string>("");
 const error = ref<string | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
+let refreshing = false;
 
 const displayed = computed(() => {
   if (!tail.value) return "";
@@ -26,6 +27,8 @@ const displayed = computed(() => {
 });
 
 async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
   try {
     tail.value = await api.logTail(256 * 1024);
     if (auto.value && scroller.value) {
@@ -33,6 +36,8 @@ async function refresh() {
     }
   } catch (e) {
     error.value = String(e);
+  } finally {
+    refreshing = false;
   }
 }
 
@@ -69,6 +74,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer);
+  if (copiedTimer) clearTimeout(copiedTimer);
 });
 
 defineExpose({ refresh, clear });

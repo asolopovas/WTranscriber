@@ -11,6 +11,7 @@ const emit = defineEmits<{
 
 const polling = ref(false);
 const checking = ref(false);
+const error = ref<string | null>(null);
 
 async function pollGrant() {
   if (checking.value) return;
@@ -22,6 +23,8 @@ async function pollGrant() {
       stopPolling();
       emit("granted");
     }
+  } catch (e) {
+    error.value = String(e);
   } finally {
     checking.value = false;
   }
@@ -31,7 +34,7 @@ let intervalId: ReturnType<typeof setInterval> | null = null;
 function startPolling() {
   if (polling.value) return;
   polling.value = true;
-  intervalId = setInterval(pollGrant, 1500);
+  intervalId = setInterval(() => void pollGrant(), 1500);
 }
 function stopPolling() {
   polling.value = false;
@@ -46,8 +49,13 @@ function onVisibility() {
 }
 
 async function onContinue() {
-  await api.requestPersistentStorage();
-  startPolling();
+  try {
+    error.value = null;
+    await api.requestPersistentStorage();
+    startPolling();
+  } catch (e) {
+    error.value = String(e);
+  }
 }
 
 function onSkip() {
@@ -94,6 +102,9 @@ onUnmounted(() => {
         class="text-labelSmall font-mono text-on-surface-variant text-center leading-tight"
       >
         Allow “Manage all files”, then return.
+      </p>
+      <p v-if="error" class="text-labelSmall text-error text-center leading-tight">
+        {{ error }}
       </p>
     </div>
   </div>

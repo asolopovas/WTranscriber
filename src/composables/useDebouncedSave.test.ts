@@ -70,4 +70,30 @@ describe("useDebouncedSave", () => {
     await flush();
     expect(wrapper.text()).toBe("error");
   });
+
+  it("serialises overlapping saves and writes the latest value last", async () => {
+    const source: Ref<{ v: number } | null> = ref(null);
+    const releaseFirst: Array<() => void> = [];
+    const saved: Array<{ v: number }> = [];
+    const save = vi.fn(async (value: { v: number }) => {
+      saved.push(value);
+      if (value.v === 1) await new Promise<void>((resolve) => releaseFirst.push(resolve));
+    });
+    mount(harness(source, save));
+
+    source.value = { v: 1 };
+    await nextTick();
+    vi.advanceTimersByTime(50);
+    await flush();
+
+    source.value = { v: 2 };
+    await nextTick();
+    vi.advanceTimersByTime(50);
+    await flush();
+    expect(save).toHaveBeenCalledOnce();
+
+    releaseFirst[0]?.();
+    await flush();
+    expect(saved).toEqual([{ v: 1 }, { v: 2 }]);
+  });
 });

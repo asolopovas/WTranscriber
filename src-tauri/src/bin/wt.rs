@@ -475,13 +475,16 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
         let speakers = config.speakers.unwrap_or(0);
         let key_params = api::transcript_cache::build_key_params(
             &canonical,
-            &config.model,
-            &config.language,
-            speakers,
-            !config.diarize,
-            0,
-            0,
-            matches!(config.engine, Engine::WhisperCpp) && config.precise_word_timestamps,
+            api::transcript_cache::KeyOptions {
+                model: &config.model,
+                language: &config.language,
+                speakers,
+                no_diarize: !config.diarize,
+                trim_start_ms: 0,
+                trim_end_ms: 0,
+                precise_word_timestamps: matches!(config.engine, Engine::WhisperCpp)
+                    && config.precise_word_timestamps,
+            },
         )?;
         let key = api::transcript_cache::compute_key(&key_params);
         let _ = api::transcript_cache::invalidate(&key);

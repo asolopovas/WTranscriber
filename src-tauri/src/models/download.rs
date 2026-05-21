@@ -134,8 +134,10 @@ pub async fn download_file(
                 });
                 if let Some(expected) = expected_sha256
                     && !expected.is_empty()
+                    && let Err(e) = verify_sha256(&tmp, expected).await
                 {
-                    verify_sha256(&tmp, expected).await?;
+                    let _ = tokio::fs::remove_file(&tmp).await;
+                    return Err(e);
                 }
                 tokio::fs::rename(&tmp, dst).await?;
                 return Ok(());

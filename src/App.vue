@@ -152,7 +152,11 @@ function trackedProbe(stub: DirEntry, path: string) {
   probeQueue.push(async () => {
     try {
       const ms = await api.probeDuration(path);
-      if (ms != null && stub.duration_ms == null) stub.duration_ms = ms;
+      if (ms != null) {
+        if (stub.path === path && stub.duration_ms == null) stub.duration_ms = ms;
+        const current = listing.value?.entries.find((entry) => entry.path === path);
+        if (current && current.duration_ms == null) current.duration_ms = ms;
+      }
     } catch {
     } finally {
       probingPaths.delete(path);
@@ -224,7 +228,12 @@ function addPathsToWorkdir(paths: string[]) {
   const dir = listing.value.path;
   const entries = listing.value.entries;
 
-  const audioPaths = paths.filter(hasAudioExt).filter((p) => !entries.some((e) => e.path === p));
+  const seen = new Set<string>();
+  const audioPaths = paths.filter(hasAudioExt).filter((p) => {
+    if (seen.has(p) || entries.some((e) => e.path === p)) return false;
+    seen.add(p);
+    return true;
+  });
   if (audioPaths.length > 200) {
     audioPaths.splice(200);
     error.value = "only the first 200 files were queued";
@@ -249,7 +258,8 @@ function addPathsToWorkdir(paths: string[]) {
     entries.push(stub);
     return stub;
   });
-  selectedPath.value = stubs[stubs.length - 1].path;
+  const selectedSource = stubs[stubs.length - 1].path;
+  selectedPath.value = selectedSource;
 
   if (!sys.value?.is_mobile) {
     for (const stub of stubs) trackedProbe(stub, stub.path);
@@ -268,6 +278,7 @@ function addPathsToWorkdir(paths: string[]) {
 
   void (async () => {
     let lastDest: string | null = null;
+    let selectedDest: string | null = null;
     const concurrency = sys.value?.is_mobile ? 1 : 3;
     for (let i = 0; i < stubs.length; i += concurrency) {
       const batch = stubs.slice(i, i + concurrency);
@@ -280,6 +291,7 @@ function addPathsToWorkdir(paths: string[]) {
             stub.name = basenameOf(destPath);
             stub.path = destPath;
             lastDest = destPath;
+            if (source === selectedSource) selectedDest = destPath;
             if (stub.duration_ms == null) trackedProbe(stub, destPath);
           } catch (e) {
             error.value = String(e);
@@ -289,8 +301,8 @@ function addPathsToWorkdir(paths: string[]) {
         }),
       );
     }
-    if (lastDest !== null && selectedPath.value === stubs[stubs.length - 1].path) {
-      selectedPath.value = lastDest;
+    if (selectedPath.value === selectedSource) {
+      selectedPath.value = selectedDest ?? lastDest ?? "";
     }
     await refreshListing();
   })();

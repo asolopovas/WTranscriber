@@ -119,7 +119,7 @@ impl Backend for SherpaDiarizer {
         let samples = decode::decode_to_pcm_f32(wav, sd.sample_rate())?;
 
         if cancelled() {
-            return Err(Error::Transcribe("cancelled".into()));
+            return Err(Error::Cancelled);
         }
 
         let result = sd

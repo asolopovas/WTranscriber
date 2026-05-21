@@ -831,14 +831,16 @@ async fn redo_diarization_inner(
         let trim = audio::meta::load(&input).unwrap_or_default();
         let key_params = cache::build_key_params(
             &input,
-            &cached.model,
-            &cached.language,
-            speakers,
-            !config.diarize,
-            trim.trim_start_ms,
-            trim.trim_end_ms.unwrap_or(0),
-            matches!(config.engine, crate::config::Engine::WhisperCpp)
-                && config.precise_word_timestamps,
+            cache::KeyOptions {
+                model: &cached.model,
+                language: &cached.language,
+                speakers,
+                no_diarize: !config.diarize,
+                trim_start_ms: trim.trim_start_ms,
+                trim_end_ms: trim.trim_end_ms.unwrap_or(0),
+                precise_word_timestamps: matches!(config.engine, crate::config::Engine::WhisperCpp)
+                    && config.precise_word_timestamps,
+            },
         )?;
         let new_key = cache::compute_key(&key_params);
 

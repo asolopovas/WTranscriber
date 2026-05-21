@@ -35,8 +35,10 @@ pub async fn probe_duration(path: PathBuf) -> Option<u64> {
 }
 
 #[tauri::command]
-pub fn audio_waveform(path: PathBuf, bins: usize) -> Result<Vec<f32>> {
-    audio::waveform_peaks(&path, bins)
+pub async fn audio_waveform(path: PathBuf, bins: usize) -> Result<Vec<f32>> {
+    tokio::task::spawn_blocking(move || audio::waveform_peaks(&path, bins))
+        .await
+        .map_err(|e| Error::Transcribe(format!("audio_waveform join: {e}")))?
 }
 
 #[tauri::command]
@@ -72,9 +74,13 @@ pub async fn apply_trim(path: PathBuf) -> Result<Option<u64>> {
 }
 
 #[tauri::command]
-pub fn read_audio_bytes(path: PathBuf) -> Result<tauri::ipc::Response> {
-    let bytes = std::fs::read(&path)?;
-    Ok(tauri::ipc::Response::new(bytes))
+pub async fn read_audio_bytes(path: PathBuf) -> Result<tauri::ipc::Response> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = std::fs::read(&path)?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
+    .map_err(|e| Error::Transcribe(format!("read_audio_bytes join: {e}")))?
 }
 
 fn safe_filename(filename: &str) -> String {

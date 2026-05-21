@@ -27,7 +27,7 @@ use crate::{
     logfile,
     progress::{self, NoopSink, Phase, Sink},
     transcriber::{
-        cache::{self, Entry as CacheEntry, build_key_params, compute_key},
+        cache::{self, Entry as CacheEntry, KeyOptions, build_key_params, compute_key},
         dedup,
         format::format_hms,
         partial,
@@ -38,6 +38,8 @@ use crate::{
 const DEFAULT_SLAB_SEC: f64 = 60.0;
 const ANDROID_WHISPER_CPP_SLAB_SEC: f64 = 15.0;
 const CALIBRATION_SLAB_SEC: f64 = 10.0;
+const MIN_SLAB_SEC: f64 = 0.25;
+const MAX_SLAB_SEC: f64 = 600.0;
 const EPSILON_SEC: f64 = 1e-3;
 
 const fn default_slab_sec(config: &Config) -> f64 {
@@ -48,11 +50,17 @@ const fn default_slab_sec(config: &Config) -> f64 {
     }
 }
 
+fn bounded_slab_seconds(raw: &str) -> Option<f64> {
+    raw.parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .map(|v| v.clamp(MIN_SLAB_SEC, MAX_SLAB_SEC))
+}
+
 fn slab_sec(config: &Config) -> f64 {
     std::env::var("WT_SLAB_SEC")
         .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .filter(|v| *v > 0.0)
+        .and_then(|s| bounded_slab_seconds(&s))
         .unwrap_or_else(|| default_slab_sec(config))
 }
 
@@ -60,8 +68,7 @@ fn first_slab_sec(config: &Config, total_sec: f64) -> f64 {
     let normal = slab_sec(config);
     let calibration = std::env::var("WT_FIRST_SLAB_SEC")
         .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .filter(|v| *v > 0.0)
+        .and_then(|s| bounded_slab_seconds(&s))
         .unwrap_or(CALIBRATION_SLAB_SEC);
     if total_sec <= calibration * 1.5 {
         normal
@@ -470,13 +477,16 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let trim = audio::meta::load(input).unwrap_or_default();
     let key_params = build_key_params(
         input,
-        &config.model,
-        &config.language,
-        speakers,
-        !config.diarize,
-        trim.trim_start_ms,
-        trim.trim_end_ms.unwrap_or(0),
-        matches!(config.engine, Engine::WhisperCpp) && config.precise_word_timestamps,
+        KeyOptions {
+            model: &config.model,
+            language: &config.language,
+            speakers,
+            no_diarize: !config.diarize,
+            trim_start_ms: trim.trim_start_ms,
+            trim_end_ms: trim.trim_end_ms.unwrap_or(0),
+            precise_word_timestamps: matches!(config.engine, Engine::WhisperCpp)
+                && config.precise_word_timestamps,
+        },
     )?;
     let key = compute_key(&key_params);
 
@@ -667,8 +677,12 @@ fn rebuild_from_tokens(seg: &mut Segment) {
         .map(|t| t.text.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    seg.start_ms = seg.tokens.first().unwrap().start_ms;
-    seg.end_ms = seg.tokens.last().unwrap().end_ms;
+    let (Some(first), Some(last)) = (seg.tokens.first(), seg.tokens.last()) else {
+        seg.text.clear();
+        return;
+    };
+    seg.start_ms = first.start_ms;
+    seg.end_ms = last.end_ms;
 }
 
 #[cfg(test)]
@@ -718,13 +732,19 @@ mod tests {
         unset_env("WT_SLAB_SEC");
         assert!((slab_sec(&config) - DEFAULT_SLAB_SEC).abs() < f64::EPSILON);
 
-        for invalid in ["0", "-5", "not-a-number"] {
+        for invalid in ["not-a-number", "inf", "NaN"] {
             set_env("WT_SLAB_SEC", invalid);
             assert!(
                 (slab_sec(&config) - DEFAULT_SLAB_SEC).abs() < f64::EPSILON,
                 "input {invalid:?} should fall back to default"
             );
         }
+
+        set_env("WT_SLAB_SEC", "0");
+        assert!((slab_sec(&config) - MIN_SLAB_SEC).abs() < f64::EPSILON);
+
+        set_env("WT_SLAB_SEC", "999999");
+        assert!((slab_sec(&config) - MAX_SLAB_SEC).abs() < f64::EPSILON);
 
         set_env("WT_SLAB_SEC", "30");
         assert!((slab_sec(&config) - 30.0).abs() < f64::EPSILON);
