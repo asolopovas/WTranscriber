@@ -87,7 +87,7 @@ fn jobs() -> Vec<Job> {
     vec![
         Job {
             tag: "fmt-check",
-            command: "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo fmt --manifest-path xtask/Cargo.toml --all -- --check && bun x prettier --check src/**/*.{ts,vue} scripts/**/*.ts *.{json,html,md} docs/**/*.md",
+            command: "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo fmt --manifest-path xtask/Cargo.toml --all -- --check && bun x prettier --check src/**/*.{ts,vue} scripts/**/*.ts *.{json,html,md} docs/**/*.md && bun run lint-docs",
         },
         Job {
             tag: "clippy",

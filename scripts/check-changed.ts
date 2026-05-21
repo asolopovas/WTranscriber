@@ -84,6 +84,9 @@ const needsJsTest =
 const needsXtaskCompile = xtaskRust.length > 0 || has(/^xtask\/(Cargo\.toml|Cargo\.lock)$/);
 const needsCargoAudit = has(/^src-tauri\/Cargo\.lock$/);
 const needsBunAudit = has(/^(package\.json|bun\.lock)$/);
+const needsDocLint = has(
+  /^(AGENTS\.md|docs\/.*\.md|docs\/plans\/(active|completed|abandoned)\/\.gitkeep|scripts\/lint-docs\.ts)$/,
+);
 
 if (prettierFiles.length > 0)
   run("prettier changed files", "bun", ["x", "prettier", "--check", ...prettierFiles]);
@@ -108,6 +111,7 @@ if (xtaskRust.length > 0)
 if (needsTypecheck) run("typecheck", "bun", ["run", "typecheck"]);
 if (vueFiles.length > 0)
   run("lint-vue changed files", "bun", ["run", "scripts/lint-vue.ts", ...vueFiles]);
+if (needsDocLint) run("lint-docs", "bun", ["run", "lint-docs"]);
 if (needsJsTest) run("js tests", "bun", ["run", "test"]);
 if (needsXtaskCompile) {
   run("xtask clippy", "cargo", [

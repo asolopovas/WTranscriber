@@ -22,10 +22,11 @@ just check                 # full local gate; accepts job tags
 just check typecheck js-test
 just check-changed --staged
 bun run typecheck
+bun run lint-docs
 bun run test
 ```
 
-`just check` runs `cargo xtask check`, which fans out 11 jobs in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported.
+`just check` runs `cargo xtask check`, which fans out 11 jobs in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. The `fmt-check` job also runs `bun run lint-docs` so the documentation map, local links, and execution-plan structure stay mechanically enforced.
 
 CI runs `just check-changed --base …`: formatting, lint, typecheck, tests, and audits are selected from changed files. Full native Rust/Tauri gates are local/release-only.
 
@@ -33,15 +34,15 @@ CI runs `just check-changed --base …`: formatting, lint, typecheck, tests, and
 
 ## Change-type matrix
 
-| Change                        | Touch                                                  | Verify                                                   | Session action               |
-| ----------------------------- | ------------------------------------------------------ | -------------------------------------------------------- | ---------------------------- |
-| Vue / TS / CSS                | `src/**`                                               | `bun run typecheck`; UI/CDP probe when behaviour changes | No restart; confirm HMR line |
-| Rust command / IPC shape      | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts` | Focused Rust test/check + typecheck                      | Android: restart bootstrap   |
-| Rust native / long-running    | `src-tauri/src/**`                                     | Focused Rust test/check; inspect `RustStdoutStderr`      | Android: restart bootstrap   |
-| Tauri config / capability     | `tauri.conf.json`, `capabilities/*.json`               | Reproduce exact invoke; check IPC errors                 | Restart bootstrap            |
-| Android scaffold / manifest   | `src-tauri/gen/android/**`                             | `bun scripts/android-install.ts` + manual probe          | Restart bootstrap            |
-| Release / build orchestration | `xtask/**`, `justfile`, `scripts/install-*`            | Targeted command, then `just check`                      | Stop live dev first          |
-| Docs only                     | `docs/**`, `AGENTS.md`                                 | `bun x prettier --check <changed docs>` or pre-commit    | No restart                   |
+| Change                        | Touch                                                                | Verify                                                        | Session action               |
+| ----------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------- |
+| Vue / TS / CSS                | `src/**`                                                             | `bun run typecheck`; UI/CDP probe when behaviour changes      | No restart; confirm HMR line |
+| Rust command / IPC shape      | `commands/<domain>.rs`, `lib.rs`, `api.ts`, `types.ts`, `schemas.ts` | Focused Rust test/check + typecheck                           | Android: restart bootstrap   |
+| Rust native / long-running    | `src-tauri/src/**`                                                   | Focused Rust test/check; inspect `RustStdoutStderr`           | Android: restart bootstrap   |
+| Tauri config / capability     | `tauri.conf.json`, `capabilities/*.json`                             | Reproduce exact invoke; check IPC errors                      | Restart bootstrap            |
+| Android scaffold / manifest   | `src-tauri/gen/android/**`                                           | `bun scripts/android-install.ts` + manual probe               | Restart bootstrap            |
+| Release / build orchestration | `xtask/**`, `justfile`, `scripts/install-*`                          | Targeted command, then `just check`                           | Stop live dev first          |
+| Docs only                     | `docs/**`, `AGENTS.md`                                               | `bun x prettier --check <changed docs>` + `bun run lint-docs` | No restart                   |
 
 ## Live-session review loop
 

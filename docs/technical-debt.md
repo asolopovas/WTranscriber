@@ -16,8 +16,8 @@ Drop these once Tauri 2.12 publishes the fixed plugin Gradle and activity migrat
 
 Promote these to mechanical checks when they become recurring review feedback:
 
-- Command mirror check: detect Tauri commands or IPC structs changed without corresponding `src/api.ts` / `src/types.ts` updates.
-- Documentation link/freshness check: validate `docs/README.md` links and optional `Verified by` references.
+- Command mirror check: detect Tauri commands or IPC structs changed without corresponding `src/api.ts` / `src/types.ts` / `src/schemas.ts` updates.
+- Documentation freshness metadata: add owner/last-verified fields if docs become stale despite `scripts/lint-docs.ts` link/catalogue checks.
 - UI smoke probes: automate critical flows through CDP/Playwright for transcribe/settings/logs.
 - Cache-key regression fixtures for engine/timestamp/diarization settings.
 

@@ -33,7 +33,7 @@ Key Rust entry points: `src-tauri/src/lib.rs`, `src-tauri/src/bin/wt.rs`, `api.r
 
 - Frontend talks to Rust through typed Tauri commands and events only.
 - Errors crossing JS use `error::Error` and must be serializable.
-- `src/types.ts` mirrors Rust structs. Keep shape changes synchronized with `src/api.ts` wrappers and command return types.
+- `src/types.ts` mirrors Rust structs. `src/schemas.ts` mirrors the same IPC shapes as Zod schemas so `src/api.ts` can parse untrusted command/event payloads at the boundary. Keep all three synchronized with command return types.
 - Use frontend aliases `@/`, `@components/`, `@composables/`, `@utils/`, `@styles/`.
 - Capability permissions are least-privilege. If IPC fails, inspect console plus `RustStdoutStderr` before widening permissions.
 - Large binary payloads cross IPC as raw bodies (`tauri::ipc::Request<'_>` / `Response`), not base64 strings. See `commands/audio_files.rs::save_recording`.
@@ -46,15 +46,16 @@ Touch all relevant layers in one change:
 2. `src-tauri/src/lib.rs` `invoke_handler![…]` entry with the full path.
 3. `src/api.ts` wrapper.
 4. `src/types.ts` mirror for changed request/response shapes.
-5. `src-tauri/capabilities/default.json` permission when a plugin/API permission is involved.
-6. Focused Rust check/test plus frontend typecheck.
+5. `src/schemas.ts` Zod schema update for changed request/response/event shapes.
+6. `src-tauri/capabilities/default.json` permission when a plugin/API permission is involved.
+7. Focused Rust check/test plus frontend typecheck.
 
 ## Taste invariants
 
 - Rust edition 2024; use current idioms such as `LazyLock` and `let-else`.
 - No comments in code. Prefer clearer names, smaller functions, tests, and docs.
 - No `sleep` in scripts; poll with bounded timeouts.
-- Prefer boring, inspectable abstractions that agents can reason about from repository-local code.
+- Parse data at process boundaries. Use Zod on frontend IPC/event boundaries and serde types on Rust boundaries.
 - Keep platform-specific behaviour explicit and documented in `docs/android.md`, `docs/release.md`, or `docs/technical-debt.md`.
 
 ## Mechanical guardrails
