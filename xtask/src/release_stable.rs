@@ -53,21 +53,37 @@ fn sync_current_version_tag() -> Result<()> {
     let ver = pkg_version()?;
     let version_tag = format!("v{ver}");
     let head = capture("git", &["rev-parse", "HEAD"])?;
-    sync_tag_to_head(&version_tag, &format!("Release {version_tag}"), &head)?;
-    sync_tag_to_head("latest", &format!("Latest release ({version_tag})"), &head)
+    sync_version_tag_to_head(&version_tag, &format!("Release {version_tag}"), &head)?;
+    sync_latest_tag_to_head(&version_tag, &head)
 }
 
-fn sync_tag_to_head(tag: &str, message: &str, head: &str) -> Result<()> {
+fn sync_version_tag_to_head(tag: &str, message: &str, head: &str) -> Result<()> {
     let tag_commit = tag_commit(tag)?;
     match tag_commit.as_deref() {
         Some(commit) if commit == head => println!("release-stable: {tag} already points at HEAD"),
-        Some(commit) => {
-            println!("release-stable: moving {tag} from {commit} to HEAD ({head})");
-            retag_head(tag, message)?;
-        }
+        Some(commit) => bail!(
+            "stable tag {tag} already points to {commit}, not HEAD {head}; bump the version instead"
+        ),
         None => {
             println!("release-stable: creating {tag} at HEAD ({head})");
             retag_head(tag, message)?;
+        }
+    }
+    Ok(())
+}
+
+fn sync_latest_tag_to_head(version_tag: &str, head: &str) -> Result<()> {
+    let message = format!("Latest release ({version_tag})");
+    let tag_commit = tag_commit("latest")?;
+    match tag_commit.as_deref() {
+        Some(commit) if commit == head => println!("release-stable: latest already points at HEAD"),
+        Some(commit) => {
+            println!("release-stable: moving latest from {commit} to HEAD ({head})");
+            retag_head("latest", &message)?;
+        }
+        None => {
+            println!("release-stable: creating latest at HEAD ({head})");
+            retag_head("latest", &message)?;
         }
     }
     Ok(())

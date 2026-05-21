@@ -121,7 +121,7 @@ fn publish_stable(artifacts: &[PathBuf]) -> Result<()> {
         .context("spawn git")?;
     if !tag_commit.status.success() {
         bail!(
-            "tag {tag} does not exist locally — run `xtask release-stable` or `xtask bump` first"
+            "tag {tag} does not exist locally — run `just release --stable` or `cargo xtask bump` first"
         );
     }
     let tag_commit = String::from_utf8_lossy(&tag_commit.stdout)
@@ -129,7 +129,7 @@ fn publish_stable(artifacts: &[PathBuf]) -> Result<()> {
         .to_string();
     if tag_commit != head {
         bail!(
-            "tag {tag} points to {tag_commit}, not HEAD {head} — run `xtask release-stable` to sync the current version tag"
+            "tag {tag} points to {tag_commit}, not HEAD {head} — bump the version before publishing stable"
         );
     }
     let latest_commit = std::process::Command::new("git")
@@ -138,14 +138,16 @@ fn publish_stable(artifacts: &[PathBuf]) -> Result<()> {
         .output()
         .context("spawn git")?;
     if !latest_commit.status.success() {
-        bail!("tag latest does not exist locally — run `xtask release-stable` to sync stable tags");
+        bail!(
+            "tag latest does not exist locally — run `just release --stable` to sync stable tags"
+        );
     }
     let latest_commit = String::from_utf8_lossy(&latest_commit.stdout)
         .trim()
         .to_string();
     if latest_commit != head {
         bail!(
-            "tag latest points to {latest_commit}, not HEAD {head} — run `xtask release-stable` to sync stable tags"
+            "tag latest points to {latest_commit}, not HEAD {head} — run `just release --stable` to sync stable tags"
         );
     }
     println!("--- pushing HEAD + tags {tag}, latest ---");

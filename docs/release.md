@@ -2,17 +2,18 @@
 
 ## Commands
 
-| Command                                       | What it does                                                         |
-| --------------------------------------------- | -------------------------------------------------------------------- |
-| `just build`                                  | Windows-only shortcut: build full dev matrix into `releases/dev/`    |
-| `just release`                                | Publish `releases/dev/*` to the rolling `dev` prerelease             |
-| `just release-stable [--bump [level]]`        | `check` + build + publish the current version; optionally bump first |
-| `cargo xtask bump [level]`                    | Bump version, commit, tag (no push, no build)                        |
-| `cargo xtask release [--dev …]`               | Build artifacts into `releases/[dev/]`; use directly outside `just`  |
-| `cargo xtask publish <dev\|stable>`           | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                       |
-| `cargo xtask release-stable [--bump [level]]` | Local stable flow: check + build + publish; optionally bump first    |
+| Command                                       | What it does                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| `just build`                                  | Windows-only shortcut: build full dev matrix into `releases/dev/`   |
+| `just release`                                | Publish `releases/dev/*` to the rolling `dev` prerelease            |
+| `just release --stable`                       | Stable patch release: check + bump + build + publish                |
+| `just release --bump [level]`                 | Stable release with chosen bump; `--bump` implies `--stable`        |
+| `cargo xtask bump [level]`                    | Bump version, commit, tag (no push, no build)                       |
+| `cargo xtask release [--dev …]`               | Build artifacts into `releases/[dev/]`; use directly outside `just` |
+| `cargo xtask publish <dev\|stable>`           | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                      |
+| `cargo xtask release-stable [--bump [level]]` | Lower-level stable flow; `just release --stable` is preferred       |
 
-`level`: `patch` (default when `--bump` is present without a value), `minor`, `major`, or explicit `X.Y.Z`.
+`just release --stable` defaults to `--bump patch`. `level`: `patch` (default when `--bump` is present without a value), `minor`, `major`, or explicit `X.Y.Z`.
 `xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
 
 ## Windows VM preflight
@@ -71,15 +72,15 @@ Bundle targets are pinned in `src-tauri/tauri.conf.json` (`bundle.targets = ["ns
 
 ## Gates
 
-| Stage                    | Gate                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| `xtask bump`             | Working tree clean; tag does not exist                                                 |
-| `just release-stable`    | `cargo xtask release-stable` runs the 11-job local check before tag sync/build/publish |
-| `xtask publish stable`   | Clean tree, local tag exists                                                           |
-| `xtask release` (stable) | Refuses unsigned APK                                                                   |
-| `xtask release --dev`    | Warns on unsigned APK and continues                                                    |
+| Stage                    | Gate                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| `xtask bump`             | Working tree clean; tag does not exist                                                     |
+| `just release --stable`  | `cargo xtask release-stable --bump patch` runs the 11-job local check before build/publish |
+| `xtask publish stable`   | Clean tree, local tag exists                                                               |
+| `xtask release` (stable) | Refuses unsigned APK                                                                       |
+| `xtask release --dev`    | Warns on unsigned APK and continues                                                        |
 
-Without `--bump`, `release-stable` creates or moves the current `vX.Y.Z` tag and the rolling `latest` tag to `HEAD` before building, so patched same-version releases point at the code that produced the artifacts. Stable publish pushes both tags and marks the `vX.Y.Z` GitHub release as Latest. With `--bump`, the bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
+Stable releases use a new immutable `vX.Y.Z` tag. `just release --stable` bumps patch by default; `just release --bump minor`, `major`, or an explicit `X.Y.Z` chooses another version. Direct `cargo xtask release-stable` without a bump is only for first-publish or retry cases: it may create the current version tag when missing, but refuses to move an existing stable tag. Stable publish pushes the version tag and rolling `latest` tag, and marks the `vX.Y.Z` GitHub release as Latest. The bump commit uses `--no-verify` because `just check` already ran. The clean-tree gate runs **before** the version sync writes its files; otherwise the bump itself would dirty the tree.
 
 ## Version sync (on bump)
 

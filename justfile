@@ -113,10 +113,6 @@ build-cuda *args: bootstrap-if-stale clean-logs
 release-cuda *args:
     {{_run}} --tag release-cuda --idle 180 --max 1800 -- cargo xtask cuda-workers publish {{args}}
 
-# Publish releases/dev/ to the rolling gh `dev` prerelease.
-release:
-    {{_run}} --tag publish-dev --idle 180 --max 1800 -- cargo xtask publish dev
-
-# Stable release: check + build + publish current version. Add `--bump [level]` to bump first.
-release-stable *args:
-    {{_run}} --tag release-stable --idle 180 --max 7200 -- cargo xtask release-stable {{args}}
+# Release flow: default publishes releases/dev/; --stable runs the stable flow; --bump implies --stable.
+release *args:
+    {{_run}} --tag release --idle 600 --max 7200 -- bun scripts/release.ts {{args}}

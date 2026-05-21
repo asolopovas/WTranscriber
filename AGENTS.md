@@ -28,8 +28,7 @@ just android           # Android USB/host HMR session (clean restart)
 just check             # full local gate; accepts job tags
 just check-changed     # changed-file gate for hooks/CI
 just build             # Windows-only dev release matrix -> releases/dev/
-just release           # publish releases/dev/ to rolling gh `dev` prerelease
-just release-stable    # check + build + publish current version
+just release           # publish dev; --stable bumps patch; --bump selects stable version
 just bootstrap         # Windows host toolchain install + dependency prewarm
 just setup             # bun install + git hooks
 ```

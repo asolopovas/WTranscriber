@@ -24,12 +24,13 @@ Desktop development works on Windows and Linux. `just build` is a Windows shortc
 ## Quick start
 
 ```bash
-just setup        # install JS deps and git hooks
-just dev          # desktop HMR
-just android      # clean-start an Android USB HMR session
-just check        # full local quality gate
-just build        # Windows-only: build releases/dev/
-just release      # publish releases/dev/ to the rolling dev prerelease
+just setup             # install JS deps and git hooks
+just dev               # desktop HMR
+just android           # clean-start an Android USB HMR session
+just check             # full local quality gate
+just build             # Windows-only: build releases/dev/
+just release           # publish releases/dev/ to the rolling dev prerelease
+just release --stable  # bump patch, check, build, publish stable
 ```
 
 Use `just --list` for all recipes. Developer workflow details live in [`AGENTS.md`](AGENTS.md) and [`docs/dev-loop.md`](docs/dev-loop.md).
@@ -43,7 +44,7 @@ Use `just --list` for all recipes. Developer workflow details live in [`AGENTS.m
 | Reinstall Android APK | `bun scripts/android-install.ts --force`                                 |
 | Headless emulator     | `bun scripts/android-emu.ts`                                             |
 | Changed-file checks   | `just check-changed --staged`                                            |
-| Stable release        | `just release-stable`                                                    |
+| Stable release        | `just release --stable`                                                  |
 | CLI model catalogue   | `cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- models list` |
 
 ## Optional Windows CUDA setup
