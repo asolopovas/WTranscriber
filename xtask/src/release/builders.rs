@@ -196,7 +196,7 @@ pub(super) fn build_deb_docker(skip: bool, lock: &SharedOut) -> Result<i32> {
 }
 
 fn builder_image() -> String {
-    std::env::var("WT_BUILDER_IMAGE").unwrap_or_else(|_| "wt-builder:debian12".into())
+    std::env::var("WT_BUILDER_IMAGE").unwrap_or_else(|_| "asolopovas/wt-builder:debian12".into())
 }
 
 fn builder_volumes() -> (String, String, String, String) {
@@ -231,27 +231,36 @@ fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
         .lock()
         .map_err(|_| anyhow::anyhow!("docker builder image lock poisoned"))?;
     let rebuild = std::env::var("WT_BUILDER_REBUILD").ok().as_deref() == Some("1");
-    let need_build = rebuild
-        || std::process::Command::new("docker")
-            .args(["image", "inspect", image])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| !s.success())
-            .unwrap_or(true);
-    if !need_build {
+    let exists = std::process::Command::new("docker")
+        .args(["image", "inspect", image])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if exists && !rebuild {
         return Ok(());
     }
-    println!("[docker] building image {image} from Dockerfile.builder");
-    let rc = run_streamed(
-        "docker",
-        "docker",
-        &["build", "-f", "Dockerfile.builder", "-t", image, "."],
-        &[],
-        lock,
-    )?;
+    if rebuild {
+        println!("[docker] building image {image} from Dockerfile.builder");
+        let rc = run_streamed(
+            "docker",
+            "docker",
+            &["build", "-f", "Dockerfile.builder", "-t", image, "."],
+            &[],
+            lock,
+        )?;
+        if rc != 0 {
+            anyhow::bail!("docker build failed (exit {rc})");
+        }
+        return Ok(());
+    }
+    println!("[docker] pulling image {image}");
+    let rc = run_streamed("docker", "docker", &["pull", image], &[], lock)?;
     if rc != 0 {
-        anyhow::bail!("docker build failed (exit {rc})");
+        anyhow::bail!(
+            "docker pull {image} failed (exit {rc}); set WT_BUILDER_REBUILD=1 to build Dockerfile.builder locally"
+        );
     }
     Ok(())
 }

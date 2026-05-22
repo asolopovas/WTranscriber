@@ -27,6 +27,8 @@ docker run --rm hello-world
 
 If Docker reports `dockerDesktopLinuxEngine/_ping` with `500 Internal Server Error`, restart Docker Desktop or WSL, then rerun `just build`. For a host-only installer while Docker is unavailable, use `just build-host`.
 
+Docker-backed release steps use `asolopovas/wt-builder:debian12` by default and pull it from Docker Hub when it is not present locally. Set `WT_BUILDER_REBUILD=1` to rebuild `Dockerfile.builder` locally, or `WT_BUILDER_IMAGE=...` to use another image tag.
+
 ## Windows VM preflight
 
 When `cargo xtask release` runs from Linux, it builds the Windows NSIS installer by SSH-driving the VM configured in `release.config.json` (`windowsVm`). The default config uses the `windows-vm` SSH alias and starts/restarts `/home/andrius/vms/win11` through its Makefile. Override the config path with `WT_RELEASE_CONFIG`.

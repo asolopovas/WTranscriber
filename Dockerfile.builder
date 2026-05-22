@@ -32,11 +32,16 @@ apt-get install -y --no-install-recommends \
     cuda-minimal-build-${CUDA_APT_VERSION} \
     libcudnn9-dev-cuda-12
 EOF
-# Bundle cuDNN's dpkg-installed files into a tarball so the final stage can
-# extract them at their original paths without inheriting dpkg state.
-RUN dpkg -L libcudnn9-cuda-12 libcudnn9-headers-cuda-12 libcudnn9-dev-cuda-12 \
-        | grep -E '^/(usr/include|usr/lib)' \
-        | tar -czf /tmp/cudnn.tar.gz --no-recursion -T -
+RUN <<EOF
+mkdir -p /tmp/cudnn-root
+while IFS= read -r path; do
+    if [[ -f "$path" || -L "$path" ]]; then
+        mkdir -p "/tmp/cudnn-root$(dirname "$path")"
+        cp -a "$path" "/tmp/cudnn-root$path"
+    fi
+done < <(dpkg -L libcudnn9-cuda-12 libcudnn9-headers-cuda-12 libcudnn9-dev-cuda-12 \
+    | grep -E '^/(usr/include|usr/lib)')
+EOF
 
 # ─── Rust toolchain (parallel) ───────────────────────────────────────────
 FROM base AS rust
@@ -149,10 +154,8 @@ apt-get install -y --no-install-recommends \
 EOF
 
 COPY --from=cuda /usr/local/cuda-12.9 /usr/local/cuda-12.9
-COPY --from=cuda /tmp/cudnn.tar.gz /tmp/cudnn.tar.gz
-RUN tar -xzf /tmp/cudnn.tar.gz -C / \
-    && rm /tmp/cudnn.tar.gz \
-    && ln -sfn /usr/local/cuda-12.9 /usr/local/cuda \
+COPY --from=cuda /tmp/cudnn-root/ /
+RUN ln -sfn /usr/local/cuda-12.9 /usr/local/cuda \
     && ldconfig
 
 COPY --from=rust /cache/cargo /cache/cargo
