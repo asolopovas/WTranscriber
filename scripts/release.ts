@@ -5,11 +5,13 @@ const usage = `usage:
   just release
   just release --stable
   just release --bump [patch|minor|major|X.Y.Z]
-  just release --stable --bump [patch|minor|major|X.Y.Z]
+  just release --stable [--no-android] [--no-deb] [--no-windows-vm] [--skip-rebuild]
 
 Default publishes releases/dev/* to the rolling dev prerelease.
 --stable runs the stable patch release flow.
---bump implies --stable and selects the stable version bump.`;
+--bump implies --stable and selects the stable version bump.
+Matrix flags are forwarded to cargo xtask release-stable, which preflights
+gh auth, upstream sync, Android signing, and Docker before bumping anything.`;
 
 const rawArgs = process.argv.slice(2);
 

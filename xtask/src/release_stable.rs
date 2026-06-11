@@ -12,10 +12,21 @@ pub struct Args {
     pub bump: Option<String>,
     #[arg(long)]
     pub skip_check: bool,
+    #[arg(long)]
+    pub no_android: bool,
+    #[arg(long)]
+    pub no_deb: bool,
+    #[arg(long)]
+    pub no_windows_vm: bool,
+    #[arg(long)]
+    pub skip_rebuild: bool,
+    #[arg(long)]
+    pub sequential: bool,
 }
 
 pub fn run(args: Args) -> Result<()> {
     ensure_clean()?;
+    preflight(&args)?;
     if !args.skip_check {
         check::run(check::Args {
             sequential: false,
@@ -29,11 +40,11 @@ pub fn run(args: Args) -> Result<()> {
     release::run(release::Args {
         dev: false,
         no_host: false,
-        no_android: false,
-        no_deb: false,
-        no_windows_vm: false,
-        skip_rebuild: false,
-        sequential: false,
+        no_android: args.no_android,
+        no_deb: args.no_deb,
+        no_windows_vm: args.no_windows_vm,
+        skip_rebuild: args.skip_rebuild,
+        sequential: args.sequential,
     })?;
     publish::run(publish::Args {
         channel: "stable".into(),
@@ -47,6 +58,81 @@ fn ensure_clean() -> Result<()> {
         bail!("working tree is dirty; commit or stash first");
     }
     Ok(())
+}
+
+fn preflight(args: &Args) -> Result<()> {
+    ensure_gh_authenticated()?;
+    ensure_not_behind_upstream()?;
+    if !args.no_android {
+        let keystore = root()
+            .join("src-tauri")
+            .join("gen")
+            .join("android")
+            .join("keystore.properties");
+        if !keystore.exists() {
+            bail!(
+                "stable releases require a signed APK but {} is missing; \
+                 configure Android signing (docs/release.md) or pass --no-android",
+                keystore.display()
+            );
+        }
+    }
+    let android_needs_docker = !args.no_android && std::env::var_os("WT_ANDROID_NATIVE").is_none();
+    if (!args.no_deb || android_needs_docker) && !docker_ready() {
+        let needs: Vec<&str> = [
+            (!args.no_deb).then_some("linux .deb"),
+            android_needs_docker.then_some("android apk"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        bail!(
+            "docker engine is not reachable (needed for: {}); \
+             start Docker Desktop, or pass --no-deb / --no-android",
+            needs.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn ensure_gh_authenticated() -> Result<()> {
+    let status = Command::new("gh")
+        .args(["auth", "status"])
+        .current_dir(root())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(_) => bail!("gh CLI is not authenticated; run `gh auth login` before releasing"),
+        Err(_) => bail!("gh CLI not found; install GitHub CLI before releasing"),
+    }
+}
+
+fn ensure_not_behind_upstream() -> Result<()> {
+    sh("git", &["fetch", "origin", "--quiet"])?;
+    let Ok(behind) = capture("git", &["rev-list", "--count", "HEAD..@{upstream}"]) else {
+        println!("release-stable: no upstream configured; skipping behind check");
+        return Ok(());
+    };
+    if behind.trim() != "0" {
+        bail!(
+            "branch is behind its upstream by {} commit(s); pull or rebase before releasing",
+            behind.trim()
+        );
+    }
+    Ok(())
+}
+
+fn docker_ready() -> bool {
+    Command::new("docker")
+        .args(["info", "--format", "{{.ServerVersion}}"])
+        .current_dir(root())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 fn sync_current_version_tag() -> Result<()> {

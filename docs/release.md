@@ -14,7 +14,9 @@
 | `cargo xtask release-stable [--bump [level]]` | Lower-level stable flow; `just release --stable` is preferred       |
 
 `just release --stable` defaults to `--bump patch`. `level`: `patch` (default when `--bump` is present without a value), `minor`, `major`, or explicit `X.Y.Z`.
-`xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
+`xtask release` flags: `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`. The same matrix flags work on `just release --stable` and are forwarded to `release-stable`.
+
+`release-stable` preflights before any mutation (check, bump, tag): gh CLI authenticated, branch not behind upstream, `keystore.properties` present unless `--no-android`, Docker engine reachable unless `--no-deb` and Android is skipped or native. A failed preflight exits before the version bump, so a misconfigured host never leaves a half-released tag.
 
 ## Docker Desktop preflight on Windows
 
