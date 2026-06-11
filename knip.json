@@ -3,5 +3,6 @@
   "entry": ["index.html", "e2e/**/*.spec.ts", "scripts/*.ts"],
   "project": ["src/**/*.{ts,vue}", "scripts/**/*.ts"],
   "ignoreDependencies": ["prettier", "tailwindcss", "@tailwindcss/forms"],
+  "ignoreBinaries": ["powershell.exe", "adb", "cargo-audit", "taskkill", "scripts/run.ts"],
   "ignoreExportsUsedInFile": true
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { platform } from "node:os";
 import path from "node:path";
 
@@ -74,7 +75,7 @@ add("cargo-audit", () =>
 
 add("sccache", () => {
   const p = which("sccache");
-  if (!p) return warn("missing — re-run `just bootstrap` for faster rebuilds");
+  if (!p) return warn("missing — re-run `just setup` for faster rebuilds");
   const wrapper = process.env.RUSTC_WRAPPER;
   if (wrapper !== "sccache") {
     return warn(`installed but RUSTC_WRAPPER=${wrapper ?? "unset"} (expected "sccache")`);
@@ -99,7 +100,7 @@ add("audit.toml", async () =>
 add("git hooks", () => {
   const r = run("git", ["config", "core.hooksPath"]);
   if (r.out === ".githooks") return ok(".githooks");
-  return fail(`core.hooksPath=${r.out || "unset"} (run \`just install-hooks\`)`);
+  return fail(`core.hooksPath=${r.out || "unset"} (run \`just setup\`)`);
 });
 
 add("node_modules", async () =>
@@ -111,23 +112,25 @@ add("node_modules", async () =>
 if (platform() === "win32") {
   add("lld-link", () => {
     const p = which("lld-link");
-    if (!p) return warn("missing — re-run `just bootstrap` for faster linking");
+    if (!p) return warn("missing — re-run `just setup` for faster linking");
     const v = process.env.CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER;
     if (v !== "lld-link.exe") {
       return warn(`installed but CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=${v ?? "unset"}`);
     }
     return ok(p);
   });
-  add("LIBCLANG_PATH", async () => {
+  add("LIBCLANG_PATH", () => {
     const p = process.env.LIBCLANG_PATH;
     if (!p) return warn("not set (needed for some Rust deps)");
-    return (await Bun.file(p).exists()) ? ok(p) : warn(`${p} (missing)`);
+    return existsSync(path.join(p, "libclang.dll")) ? ok(p) : warn(`${p} (no libclang.dll)`);
   });
-  add("cudart64_12.dll", async () => {
-    const dll = "C:\\Windows\\System32\\cudart64_12.dll";
-    return (await Bun.file(dll).exists())
-      ? ok(dll)
-      : warn("absent — GPU sidecar will fall back to CPU");
+  add("cudart64_12.dll", () => {
+    const candidates = ["C:\\Windows\\System32\\cudart64_12.dll"];
+    if (process.env.CUDA_PATH) {
+      candidates.push(path.join(process.env.CUDA_PATH, "bin", "cudart64_12.dll"));
+    }
+    const hit = candidates.find((c) => existsSync(c));
+    return hit ? ok(hit) : warn("absent — GPU sidecar will fall back to CPU");
   });
   add("CUDA Toolkit", async () => {
     const cudaPath = process.env.CUDA_PATH;

@@ -12,11 +12,9 @@ Main engines:
 
 ## Requirements
 
-- Rust 1.88 (pinned by `rust-toolchain.toml`)
-- Bun
 - [`just`](https://github.com/casey/just)
-- Tauri platform prerequisites
-- Windows release hosts: run `just bootstrap` once
+- Windows: `just setup` installs the rest (Rust, Bun, VS Build Tools, CMake, CUDA, …)
+- Linux: Rust 1.88 (`rust-toolchain.toml`), Bun, Tauri platform prerequisites
 - Android builds: Android Studio SDK/NDK and JDK 21
 
 Desktop development works on Windows and Linux. `just build` is a Windows shortcut for the full dev release matrix: Windows NSIS, Android APK, and Linux `.deb`. macOS is not in the release matrix.
@@ -24,7 +22,7 @@ Desktop development works on Windows and Linux. `just build` is a Windows shortc
 ## Quick start
 
 ```bash
-just setup             # install JS deps and git hooks
+just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
 just dev               # desktop HMR
 just android           # clean-start an Android USB HMR session
 just check             # full local quality gate
@@ -49,12 +47,12 @@ Use `just --list` for all recipes. Developer workflow details live in [`AGENTS.m
 
 ## Optional Windows CUDA setup
 
-`just bootstrap` installs or repairs the Windows host toolchain, CUDA Toolkit 12.x, cuDNN 9, and the sherpa-onnx CUDA runtime. The same pieces can be installed directly with:
+`just setup` installs or repairs the Windows host toolchain, CUDA Toolkit 12.x, cuDNN 9, and the sherpa-onnx CUDA runtime. The CUDA pieces can also be installed individually:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-cudnn.ps1
-powershell -ExecutionPolicy Bypass -File scripts/install-sherpa-cuda.ps1
-bun scripts/doctor.ts
+just cudnn         # cuDNN 9 (CUDA 12)
+just sherpa-cuda   # sherpa-onnx CUDA runtime
+just doctor        # verify prerequisites
 ```
 
 CUDA is optional. CPU builds and Android builds still work without a CUDA GPU.

@@ -23,6 +23,6 @@ Promote these to mechanical checks when they become recurring review feedback:
 
 ## Windows host setup
 
-`scripts/bootstrap-windows.ps1` (run by `just bootstrap`, which is a dependency of `just build`) installs or repairs: VS 2022 Build Tools, rustup (msvc), Bun, Node, NSIS, CMake, Ninja, LLVM/libclang, MSYS2, just, CUDA Toolkit 12.x via `Nvidia.CUDA`, cuDNN 9 via `scripts/install-cudnn.ps1`, and sherpa-onnx CUDA runtime via `scripts/install-sherpa-cuda.ps1`.
+`scripts/bootstrap-windows.ps1` (run by `just setup`, which is a stale-checked dependency of `just build`) installs or repairs: VS 2022 Build Tools, rustup (msvc), Bun, Node, NSIS, CMake, Ninja, LLVM/libclang, MSYS2, just, CUDA Toolkit 12.x via `Nvidia.CUDA`, cuDNN 9 via `scripts/install-cudnn.ps1`, and sherpa-onnx CUDA runtime via `scripts/install-sherpa-cuda.ps1`.
 
-Subsequent runs are idempotent. `bun scripts/doctor.ts` validates the same prerequisites are reachable from the current shell.
+Subsequent runs are idempotent. `just doctor` validates the same prerequisites are reachable from the current shell.

@@ -30,7 +30,7 @@ bun run test
 
 CI runs `just check-changed --base …`: formatting, lint, typecheck, tests, and audits are selected from changed files. Full native Rust/Tauri gates are local/release-only.
 
-`just check` assumes C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built. `just bootstrap` pre-warms them via `cargo build` after the system-deps script. If `target/` is wiped, re-run `just bootstrap` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
+`just check` assumes C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built. `just setup` pre-warms them via `cargo build`. If `target/` is wiped, re-run `just setup` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
 
 ## Change-type matrix
 

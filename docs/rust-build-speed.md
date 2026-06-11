@@ -7,7 +7,7 @@
 - Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just check` runs both in parallel with the rest of the gate.
 - Profile with `cargo build --timings`; re-measure after each change.
 
-## Toolchain wrappers (committed, installed by `just bootstrap`)
+## Toolchain wrappers (committed, installed by `just setup`)
 
 - **sccache** wraps `rustc` (`RUSTC_WRAPPER`) and cmake-driven C/C++ via
   `CMAKE_{C,CXX}_COMPILER_LAUNCHER`. Survives `cargo clean` and shares

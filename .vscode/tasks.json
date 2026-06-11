@@ -99,30 +99,23 @@
     {
       "label": "release: stable (patch)",
       "type": "shell",
-      "command": "just release-stable",
+      "command": "just release --stable",
       "problemMatcher": ["$rustc"],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
       "label": "release: stable (minor)",
       "type": "shell",
-      "command": "just release-stable minor",
+      "command": "just release --bump minor",
       "problemMatcher": ["$rustc"],
       "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     },
     {
-      "label": "bootstrap (Windows host setup)",
-      "type": "shell",
-      "command": "just bootstrap",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
-    },
-    {
-      "label": "setup (bun install + git hooks)",
+      "label": "setup (toolchain + deps + hooks)",
       "type": "shell",
       "command": "just setup",
       "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true }
     }
   ]
 }

@@ -29,8 +29,8 @@ just check             # full local gate; accepts job tags
 just check-changed     # changed-file gate for hooks/CI
 just build             # Windows-only dev release matrix -> releases/dev/
 just release           # publish dev; --stable bumps patch; --bump selects stable version
-just bootstrap         # Windows host toolchain install + dependency prewarm
-just setup             # bun install + git hooks
+just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
+just doctor            # diagnose host toolchain and prerequisites
 ```
 
 Run `just --list` for the complete command set. Prefer focused checks while iterating, then the verification matrix in [`docs/verification.md`](docs/verification.md) before handing off.

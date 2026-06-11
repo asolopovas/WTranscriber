@@ -2,12 +2,12 @@
   "folders": [
     {
       "name": "WTranscriber",
-      "path": "."
+      "path": ".",
     },
     {
       "name": "src-tauri",
-      "path": "src-tauri"
-    }
+      "path": "src-tauri",
+    },
   ],
   "settings": {
     "rust-analyzer.linkedProjects": ["src-tauri/Cargo.toml"],
@@ -15,18 +15,18 @@
     "rust-analyzer.check.extraArgs": ["--", "-D", "warnings"],
     "[rust]": {
       "editor.defaultFormatter": "rust-lang.rust-analyzer",
-      "editor.formatOnSave": true
+      "editor.formatOnSave": true,
     },
     "[vue]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode",
-      "editor.formatOnSave": true
+      "editor.formatOnSave": true,
     },
     "[typescript]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode",
-      "editor.formatOnSave": true
+      "editor.formatOnSave": true,
     },
     "[json]": {
-      "editor.defaultFormatter": "esbenp.prettier-vscode"
+      "editor.defaultFormatter": "esbenp.prettier-vscode",
     },
     "files.exclude": {
       "**/node_modules": true,
@@ -35,9 +35,9 @@
       "**/node_modules": true,
       "**/dist": true,
       "**/target": true,
-      "**/bun.lock": true
+      "**/bun.lock": true,
     },
-    "terminal.integrated.defaultProfile.windows": "PowerShell"
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
   },
   "extensions": {
     "recommendations": [
@@ -47,18 +47,18 @@
       "dbaeumer.vscode-eslint",
       "skellock.just",
       "tamasfe.even-better-toml",
-      "vadimcn.vscode-lldb"
-    ]
+      "vadimcn.vscode-lldb",
+    ],
   },
   "tasks": {
     "version": "2.0.0",
     "tasks": [
       {
         "label": "setup",
-        "detail": "bun install",
+        "detail": "toolchain + deps + hooks",
         "type": "shell",
         "command": "just setup",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "dev",
@@ -67,7 +67,7 @@
         "command": "just dev",
         "isBackground": true,
         "group": { "kind": "build", "isDefault": true },
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "build",
@@ -75,7 +75,7 @@
         "type": "shell",
         "command": "just build",
         "group": "build",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "build-host",
@@ -83,32 +83,32 @@
         "type": "shell",
         "command": "just build-host",
         "group": "build",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "preview",
         "type": "shell",
         "command": "just preview",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "typecheck",
         "type": "shell",
         "command": "just typecheck",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "fmt",
         "detail": "Format Rust + TS/Vue",
         "type": "shell",
         "command": "just fmt",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "fmt-check",
         "type": "shell",
         "command": "just fmt-check",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "lint",
@@ -116,36 +116,36 @@
         "type": "shell",
         "command": "just lint",
         "group": "test",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "test",
         "type": "shell",
         "command": "just test",
         "group": { "kind": "test", "isDefault": true },
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "clean",
         "type": "shell",
         "command": "just clean",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "icons",
         "detail": "Regenerate icon set",
         "type": "shell",
         "command": "just icons",
-        "problemMatcher": []
+        "problemMatcher": [],
       },
       {
         "label": "check (fmt-check + lint + test)",
         "dependsOrder": "sequence",
         "dependsOn": ["fmt-check", "lint", "test"],
         "group": "test",
-        "problemMatcher": []
-      }
-    ]
+        "problemMatcher": [],
+      },
+    ],
   },
   "launch": {
     "version": "0.2.0",
@@ -155,30 +155,22 @@
         "type": "lldb",
         "request": "launch",
         "cargo": {
-          "args": [
-            "build",
-            "--manifest-path=src-tauri/Cargo.toml",
-            "--no-default-features"
-          ]
+          "args": ["build", "--manifest-path=src-tauri/Cargo.toml", "--no-default-features"],
         },
         "preLaunchTask": "dev",
-        "cwd": "${workspaceFolder:WTranscriber}"
+        "cwd": "${workspaceFolder:WTranscriber}",
       },
       {
         "name": "Debug wt CLI",
         "type": "lldb",
         "request": "launch",
         "cargo": {
-          "args": [
-            "build",
-            "--manifest-path=src-tauri/Cargo.toml",
-            "--bin=wt"
-          ],
-          "filter": { "name": "wt", "kind": "bin" }
+          "args": ["build", "--manifest-path=src-tauri/Cargo.toml", "--bin=wt"],
+          "filter": { "name": "wt", "kind": "bin" },
         },
         "args": [],
-        "cwd": "${workspaceFolder:WTranscriber}"
-      }
-    ]
-  }
+        "cwd": "${workspaceFolder:WTranscriber}",
+      },
+    ],
+  },
 }

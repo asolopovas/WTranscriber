@@ -12,19 +12,19 @@ Two separate scratch directories:
 
 ## Inventory
 
-| Path                          | Writer                                        | Reader                    | Lifetime                     |
-| ----------------------------- | --------------------------------------------- | ------------------------- | ---------------------------- |
-| `tmp/_pids.json`              | `cargo xtask android bootstrap`               | dev loop, humans          | Live Android session         |
-| `tmp/_platform`               | `cargo xtask android bootstrap`               | dev loop                  | Live Android session         |
-| `tmp/logcat.log`              | `adb logcat` (detached)                       | HMR liveness, dev loop    | Live Android session         |
-| `tmp/logcat.err.log`          | `adb logcat` (detached)                       | dev loop on failure       | Live Android session         |
-| `tmp/android-dev.log`         | detached Vite dev server                      | HMR liveness probe        | Live Android session         |
-| `tmp/android-dev.err.log`     | same                                          | dev loop on failure       | Live Android session         |
-| `tmp/android-tauri.log`       | `tauri android dev`                           | APK launch/build probe    | Live Android session         |
-| `tmp/android-tauri.err.log`   | same                                          | dev loop on failure       | Live Android session         |
-| `tmp/dev-vital.{out,err}.log` | `scripts/dev-vital.ts` (spawned by bootstrap) | dev-loop heartbeat        | Live Android session         |
-| `tmp/.bootstrap.stamp`        | `just bootstrap`                              | `just bootstrap-if-stale` | Persistent until rebootstrap |
-| `tmp/dev*.log`                | `just dev` (when redirected)                  | dev-loop desktop path     | Per dev session              |
+| Path                          | Writer                                        | Reader                 | Lifetime                  |
+| ----------------------------- | --------------------------------------------- | ---------------------- | ------------------------- |
+| `tmp/_pids.json`              | `cargo xtask android bootstrap`               | dev loop, humans       | Live Android session      |
+| `tmp/_platform`               | `cargo xtask android bootstrap`               | dev loop               | Live Android session      |
+| `tmp/logcat.log`              | `adb logcat` (detached)                       | HMR liveness, dev loop | Live Android session      |
+| `tmp/logcat.err.log`          | `adb logcat` (detached)                       | dev loop on failure    | Live Android session      |
+| `tmp/android-dev.log`         | detached Vite dev server                      | HMR liveness probe     | Live Android session      |
+| `tmp/android-dev.err.log`     | same                                          | dev loop on failure    | Live Android session      |
+| `tmp/android-tauri.log`       | `tauri android dev`                           | APK launch/build probe | Live Android session      |
+| `tmp/android-tauri.err.log`   | same                                          | dev loop on failure    | Live Android session      |
+| `tmp/dev-vital.{out,err}.log` | `scripts/dev-vital.ts` (spawned by bootstrap) | dev-loop heartbeat     | Live Android session      |
+| `tmp/.setup.stamp`            | `just setup`                                  | `just setup-if-stale`  | Persistent until re-setup |
+| `tmp/dev*.log`                | `just dev` (when redirected)                  | dev-loop desktop path  | Per dev session           |
 
 ## Rules
 

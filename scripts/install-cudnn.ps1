@@ -57,7 +57,10 @@ if ((Test-Path $dllPath) -and -not $Force) {
   if (-not (Test-Path $archivePath)) {
     Write-Step "Downloading $archive (~700 MB)"
     Write-Host "    $archiveUrl"
-    Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+    $tmpPath = "$archivePath.tmp"
+    if (Test-Path $tmpPath) { Remove-Item -Force $tmpPath }
+    Invoke-WebRequest -Uri $archiveUrl -OutFile $tmpPath -UseBasicParsing
+    Move-Item -Force $tmpPath $archivePath
     Write-Ok "Cached: $archivePath"
   } else {
     Write-Ok "Using cached archive: $archivePath"
@@ -67,18 +70,18 @@ if ((Test-Path $dllPath) -and -not $Force) {
   if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
   Expand-Archive -Path $archivePath -DestinationPath $stagingDir -Force
 
-  $srcRoot = Get-ChildItem $stagingDir -Directory |
-    Where-Object { Test-Path (Join-Path $_.FullName 'bin\cudnn64_9.dll') } |
-    Select-Object -First 1
-  if ($null -eq $srcRoot) {
-    Write-Error "Archive layout unexpected: no bin/cudnn64_9.dll under $stagingDir"
+  $dll = Get-ChildItem $stagingDir -Recurse -Filter 'cudnn64_9.dll' | Select-Object -First 1
+  if ($null -eq $dll) {
+    Write-Error "Archive layout unexpected: no cudnn64_9.dll under $stagingDir"
     exit 1
   }
 
   Write-Step "Installing to $installRoot"
   if (Test-Path $installRoot) { Remove-Item -Recurse -Force $installRoot }
-  New-Item -ItemType Directory -Path (Split-Path $installRoot -Parent) -Force | Out-Null
-  Move-Item -Path $srcRoot.FullName -Destination $installRoot
+  New-Item -ItemType Directory -Path $installBin -Force | Out-Null
+  # cuDNN <=9.x shipped DLLs in bin/; newer archives nest them in bin/x64/.
+  # Normalise to $installBin so PATH and the app's lookup stay version-proof.
+  Get-ChildItem $dll.DirectoryName -File | Move-Item -Destination $installBin
   Remove-Item -Recurse -Force $stagingDir
 
   if (-not (Test-Path $dllPath)) {

@@ -65,8 +65,11 @@ if ((Test-Path $libPath) -and -not $Force) {
   Write-Ok "sherpa-onnx CUDA already installed at $libPath"
   Write-Ok 'Use -Force to reinstall.'
 } else {
-  if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
-    Write-Error 'tar.exe not found on PATH'
+  # Pin to the Windows built-in bsdtar: PATH may resolve tar to GNU/Strawberry
+  # variants with incompatible flags and rsh-style "C:" host parsing.
+  $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+  if (-not (Test-Path $tar)) {
+    Write-Error "$tar not found"
     exit 1
   }
 
@@ -76,21 +79,19 @@ if ((Test-Path $libPath) -and -not $Force) {
   if (-not (Test-Path $archivePath)) {
     Write-Step "Downloading $archive"
     Write-Host "    $archiveUrl"
-    Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
+    $tmpPath = "$archivePath.tmp"
+    if (Test-Path $tmpPath) { Remove-Item -Force $tmpPath }
+    Invoke-WebRequest -Uri $archiveUrl -OutFile $tmpPath -UseBasicParsing
+    Move-Item -Force $tmpPath $archivePath
     Write-Ok "Cached: $archivePath"
   } else {
     Write-Ok "Using cached archive: $archivePath"
   }
 
   Write-Step "Extracting to $installRoot"
-  # GNU tar on Windows interprets "C:..." after -C as a remote host (foo:bar
-  # rsh syntax). Forward-slash the path and pass --force-local to disable that
-  # heuristic. -v keeps the output stream alive past the 120s idle watchdog
-  # in scripts/run.ts (the archive is ~300 MB bz2, several minutes to extract).
-  $extractTo = ($installRoot -replace '\\', '/')
-  tar --force-local -xvjf $archivePath -C $extractTo
+  & $tar -xf $archivePath -C $installRoot
   if ($LASTEXITCODE -ne 0) {
-    Write-Error "tar failed (exit $LASTEXITCODE) extracting $archivePath to $extractTo"
+    Write-Error "tar failed (exit $LASTEXITCODE) extracting $archivePath to $installRoot"
     exit 1
   }
 

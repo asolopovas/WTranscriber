@@ -93,6 +93,7 @@ if (-not (Have ninja)) {
     Write-Host '-> Ninja (CMAKE_GENERATOR=Ninja)' -ForegroundColor Cyan
     Winget-Install 'Ninja-build.Ninja'
     Add-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+    Add-Path 'C:\Program Files\WinGet\Links'
 }
 
 $llvmBin = 'C:\Program Files\LLVM\bin'
@@ -110,6 +111,7 @@ if (-not (Have sccache)) {
     Write-Host '-> sccache (rustc + cmake C/C++ compile cache)' -ForegroundColor Cyan
     Winget-Install 'Mozilla.sccache'
     Add-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Links"
+    Add-Path 'C:\Program Files\WinGet\Links'
 }
 $buildEnv = [ordered]@{}
 if (Have sccache) {
@@ -171,6 +173,7 @@ $sysDll   = 'C:\Windows\System32\cudnn64_9.dll'
 if (-not ((Test-Path $cudnnDll) -or (Test-Path $sysDll))) {
     Write-Host '-> cuDNN 9 (CUDA 12)' -ForegroundColor Cyan
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'install-cudnn.ps1')
+    if ($LASTEXITCODE -ne 0) { throw "install-cudnn.ps1 failed (exit $LASTEXITCODE)" }
 }
 
 $sherpaVerFile = Join-Path $PSScriptRoot '..\src-tauri\sherpa-version.txt'
@@ -180,6 +183,7 @@ if (Test-Path $sherpaVerFile) {
     if (-not (Test-Path (Join-Path $sherpaLib '*\lib\sherpa-onnx-c-api.lib'))) {
         Write-Host '-> sherpa-onnx CUDA runtime' -ForegroundColor Cyan
         & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'install-sherpa-cuda.ps1')
+        if ($LASTEXITCODE -ne 0) { throw "install-sherpa-cuda.ps1 failed (exit $LASTEXITCODE)" }
     }
 }
 
