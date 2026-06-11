@@ -117,6 +117,7 @@ function familyLabel(row: Row): string {
   if (row.family === "asr") return "Speech";
   if (row.family === "diarizer") return "Speakers";
   if (row.family === "llm") return "Naming";
+  if (row.family === "langid") return "Language";
   return row.family || "Model";
 }
 

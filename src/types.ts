@@ -70,7 +70,7 @@ export interface DirListing {
   entries: DirEntry[];
 }
 
-export type Family = "asr" | "diarizer" | "llm";
+export type Family = "asr" | "diarizer" | "llm" | "langid";
 
 export type ModelStatus = "not_installed" | "downloading" | "installed";
 

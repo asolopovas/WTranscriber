@@ -93,7 +93,7 @@ export const DirListingSchema: z.ZodType<DirListing> = z.object({
   entries: z.array(DirEntrySchema),
 });
 
-export const FamilySchema = z.enum(["asr", "diarizer", "llm"]);
+export const FamilySchema = z.enum(["asr", "diarizer", "llm", "langid"]);
 export const ModelStatusSchema = z.enum(["not_installed", "downloading", "installed"]);
 
 export const ModelInfoSchema: z.ZodType<ModelInfo> = z.object({
