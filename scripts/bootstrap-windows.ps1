@@ -54,8 +54,8 @@ if (-not (Have rustup)) {
 if (-not (Have bun)) {
     Write-Host '-> Bun' -ForegroundColor Cyan
     Winget-Install 'Oven-sh.Bun'
-    Add-Path "$env:USERPROFILE\.bun\bin"
 }
+Add-Path "$env:USERPROFILE\.bun\bin"
 
 if (-not (Have node)) {
     Write-Host '-> Node.js' -ForegroundColor Cyan
