@@ -1,6 +1,6 @@
 [package]
 name = "wtranscriber"
-version = "0.1.3"
+version = "0.1.4"
 description = "Audio transcription desktop app"
 authors = ["asolopovas"]
 edition = "2024"
