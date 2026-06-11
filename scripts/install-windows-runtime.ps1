@@ -221,17 +221,20 @@ function Install-SherpaOnnx {
     Download-FileChecked "https://github.com/k2-fsa/sherpa-onnx/releases/download/$version/$asset" $archive
     Reset-Dir $stage
     Write-SetupLog "Extracting $asset"
-    & tar -xjf $archive -C $stage
+    # Pin to the Windows built-in bsdtar: PATH may resolve tar to GNU/Strawberry
+    # variants with incompatible flags and rsh-style "C:" host parsing.
+    & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf $archive -C $stage
     if ($LASTEXITCODE -ne 0) {
         throw "tar failed extracting $archive"
     }
     Write-SetupLog "Extracted to $stage"
-    $offline = Get-ChildItem -Path $stage -Recurse -Filter 'sherpa-onnx-offline.exe' | Select-Object -First 1
-    if ($null -eq $offline) {
-        throw "sherpa-onnx archive layout unexpected"
+    # The CPU package keeps DLLs next to the exes in bin/; the CUDA package
+    # keeps them in lib/. Collect recursively so both layouts work.
+    $dlls = @(Get-ChildItem -Path $stage -Recurse -Filter '*.dll' |
+        Group-Object Name | ForEach-Object { $_.Group[0] })
+    if ($dlls.Name -notcontains 'sherpa-onnx-c-api.dll') {
+        throw "sherpa-onnx archive layout unexpected: sherpa-onnx-c-api.dll not found in $asset"
     }
-    $bin = $offline.Directory.FullName
-    $dlls = @(Get-ChildItem -Path $bin -Filter '*.dll')
     Write-SetupLog "Copying $($dlls.Count) sherpa-onnx DLLs"
     $dlls | ForEach-Object {
         Copy-Item -Force $_.FullName (Join-Path $InstallDir $_.Name)
