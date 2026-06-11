@@ -110,7 +110,7 @@ fn build_jobs() -> String {
 
 fn cargo_env(arch: &str, jobs: &str) -> Vec<(&'static str, String)> {
     unsafe { std::env::remove_var("CARGO_INCREMENTAL") };
-    vec![
+    let mut env = vec![
         ("CARGO_INCREMENTAL", "0".into()),
         ("CMAKE_CUDA_ARCHITECTURES", arch.into()),
         ("CMAKE_BUILD_PARALLEL_LEVEL", jobs.into()),
@@ -119,7 +119,32 @@ fn cargo_env(arch: &str, jobs: &str) -> Vec<(&'static str, String)> {
         ("RUSTC_WRAPPER", String::new()),
         ("SCCACHE_DISABLE", "1".into()),
         ("CL", "/FS".into()),
-    ]
+    ];
+    if let Some(path) = path_without_ccache() {
+        env.push(("PATH", path));
+    }
+    env
+}
+
+// ggml's CMake auto-detects ccache on PATH when no compiler launcher is set;
+// ccache + MSVC emits no object files and the build dies at lib.exe.
+fn path_without_ccache() -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    let dirs: Vec<_> = std::env::split_paths(&path).collect();
+    let kept: Vec<_> = dirs
+        .iter()
+        .filter(|dir| !dir.join("ccache.exe").exists() && !dir.join("ccache").exists())
+        .cloned()
+        .collect();
+    if kept.len() == dirs.len() {
+        return None;
+    }
+    Some(
+        std::env::join_paths(kept)
+            .ok()?
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 fn run_streamed_owned_heartbeat(
