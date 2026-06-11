@@ -16,6 +16,40 @@ use crate::{
     transcriber::Segment,
 };
 
+pub fn shutdown() {
+    #[cfg(not(target_os = "ios"))]
+    whisper_cpp::shutdown_worker();
+}
+
+pub fn resolve_device(config: &mut Config) -> Option<String> {
+    if !matches!(config.device, crate::config::Device::Cuda) || cfg!(feature = "cuda") {
+        return None;
+    }
+    match config.engine {
+        Engine::WhisperCpp => {
+            #[cfg(not(target_os = "ios"))]
+            if whisper_cpp::cuda_worker_available() {
+                return None;
+            }
+            config.device = crate::config::Device::Cpu;
+            Some(
+                "CUDA requested but no Whisper CUDA worker is installed; transcribing on CPU"
+                    .into(),
+            )
+        }
+        Engine::Parakeet | Engine::NemoCtc => {
+            if crate::runtimes::dependencies::onnx_provider(config.device) == "cuda" {
+                None
+            } else {
+                Some(
+                    "CUDA requested but this build has no ONNX CUDA runtime; transcribing on CPU"
+                        .into(),
+                )
+            }
+        }
+    }
+}
+
 pub fn preflight(config: &Config) -> Result<()> {
     if use_in_process(config) {
         return Ok(());

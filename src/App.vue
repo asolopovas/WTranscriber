@@ -54,6 +54,7 @@ const selectedPaths = selection.selected;
 const transcript = ref<Transcript | null>(null);
 const status = ref<"idle" | "running" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
+const warning = ref<string | null>(null);
 const dragOver = ref(false);
 const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
@@ -370,6 +371,9 @@ onMounted(async () => {
     await events.onTranscribeProgress((p) => {
       if (cancelledPaths.value.has(p.path)) return;
       recordSet(progressByPath, p.path, p);
+    }),
+    await events.onTranscribeWarning((w) => {
+      warning.value = w.message;
     }),
     ...(await essentials.attachListeners(refreshModels)),
     await getCurrentWebview().onDragDropEvent((event) => {
@@ -962,6 +966,20 @@ const selectedProgress = computed(() =>
             <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
             queue {{ queueDone + 1 }}/{{ queueTotal }}
           </div>
+
+          <ErrorBanner v-if="warning" icon="warning" layout="inline" class="m-margin">
+            <span class="wrap-break-word text-labelMedium">{{ warning }}</span>
+            <template #actions>
+              <Button
+                variant="ghost"
+                shape="icon"
+                icon="close"
+                :icon-size="18"
+                aria-label="Dismiss warning"
+                @click="warning = null"
+              />
+            </template>
+          </ErrorBanner>
 
           <ErrorBanner v-if="error" icon="error" layout="inline" class="m-margin">
             <span class="wrap-break-word text-labelMedium">{{ error }}</span>

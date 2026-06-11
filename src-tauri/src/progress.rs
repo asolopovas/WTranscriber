@@ -474,6 +474,9 @@ pub trait Sink: Send + Sync {
         None
     }
     fn set_diarize_backend(&self, _name: &str) {}
+    fn warn(&self, msg: &str) {
+        crate::logfile::warn(msg);
+    }
 }
 
 pub struct NoopSink;

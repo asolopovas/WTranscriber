@@ -7,6 +7,7 @@ mod config;
 mod constants;
 mod diarizer;
 mod engine;
+pub use engine::resolve_device;
 mod error;
 mod essentials;
 mod fs_utils;

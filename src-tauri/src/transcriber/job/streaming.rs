@@ -133,6 +133,16 @@ fn process_region(
     let region_dur_sec = region.end_sec - region.start_sec;
     let start_label = format_hms(std::time::Duration::from_secs_f64(region.start_sec));
     let end_label = format_hms(std::time::Duration::from_secs_f64(region.end_sec));
+    if !slab_has_speech(&region.samples) {
+        logfile::info(&format!(
+            "slab #{} {}-{} skipped (no speech detected)",
+            st.slab_index, start_label, end_label
+        ));
+        st.state.last_done_sec = region.end_sec;
+        partial::save(&st.state)?;
+        emit_pct(ctx.sink, region.end_sec, ctx.trimmed_dur_sec);
+        return Ok(());
+    }
     logfile::info(&format!(
         "slab #{} start {}-{} ({region_dur_sec:.1}s audio)",
         st.slab_index, start_label, end_label
@@ -292,6 +302,44 @@ pub(super) fn run_streaming_phase(
         pipeline_t0.elapsed().as_secs_f64(),
     ));
     Ok((st, scanned_end))
+}
+
+const VAD_SPEECH_FRAMES: usize = 3;
+
+fn slab_has_speech(samples: &[f32]) -> bool {
+    use crate::audio_toolkit::{
+        constants::FRAME_SAMPLES,
+        vad::{self, VoiceActivityDetector as _},
+    };
+    if std::env::var("WT_NO_VAD_GATE")
+        .ok()
+        .is_some_and(|v| v == "1")
+    {
+        return true;
+    }
+    let Ok(model) = vad::model::model_path() else {
+        return true;
+    };
+    if !model.exists() {
+        return true;
+    }
+    let Ok(mut detector) = vad::SileroVad::new(&model, 0.5) else {
+        return true;
+    };
+    let mut speech_frames = 0usize;
+    for frame in samples.chunks_exact(FRAME_SAMPLES) {
+        match detector.push_frame(frame) {
+            Ok(vad::VadFrame::Speech(_)) => {
+                speech_frames += 1;
+                if speech_frames >= VAD_SPEECH_FRAMES {
+                    return true;
+                }
+            }
+            Ok(vad::VadFrame::Noise) => {}
+            Err(_) => return true,
+        }
+    }
+    speech_frames > 0
 }
 
 fn emit_pct(sink: &dyn Sink, done_sec: f64, total_sec: f64) {

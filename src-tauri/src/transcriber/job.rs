@@ -46,6 +46,14 @@ pub struct Job {
     pub config: Config,
 }
 
+struct EngineShutdown;
+
+impl Drop for EngineShutdown {
+    fn drop(&mut self) {
+        engine::shutdown();
+    }
+}
+
 pub async fn run(job: &Job) -> Result<Transcript> {
     run_with_sink(job, Arc::new(NoopSink)).await
 }
@@ -100,6 +108,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let key = compute_key(&key_params);
 
     engine::preflight(config)?;
+    let _engine_guard = EngineShutdown;
 
     if let Some(cached) = try_serve_from_cache(&key, config, sink)? {
         return Ok(cached);

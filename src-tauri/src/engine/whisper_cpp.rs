@@ -5,11 +5,12 @@
 )]
 
 use std::{
-    io::Write,
+    io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process::{Child, ChildStdin, ChildStdout, Stdio},
     sync::{
         Arc, Mutex, OnceLock,
-        atomic::{AtomicI32, Ordering},
+        atomic::{AtomicBool, AtomicI32, Ordering},
     },
 };
 
@@ -118,6 +119,139 @@ struct WorkerOutput {
     rtf: f64,
 }
 
+pub fn cuda_worker_available() -> bool {
+    cuda_worker_path().is_ok()
+}
+
+struct WorkerProc {
+    child: Child,
+    stdin: ChildStdin,
+    reader: BufReader<ChildStdout>,
+    model_path: String,
+}
+
+static WORKER: OnceLock<Mutex<Option<WorkerProc>>> = OnceLock::new();
+static SERVE_UNSUPPORTED: AtomicBool = AtomicBool::new(false);
+
+fn worker_proc_slot() -> &'static Mutex<Option<WorkerProc>> {
+    WORKER.get_or_init(|| Mutex::new(None))
+}
+
+pub fn shutdown_worker() {
+    if let Ok(mut slot) = worker_proc_slot().lock() {
+        kill_worker(&mut slot);
+    }
+}
+
+fn kill_worker(slot: &mut Option<WorkerProc>) {
+    if let Some(mut w) = slot.take() {
+        let _ = w.child.kill();
+        let _ = w.child.wait();
+    }
+}
+
+struct ServeFailure {
+    handshake: bool,
+    msg: String,
+}
+
+fn spawn_serve_worker(
+    worker: &Path,
+    model_path: &str,
+) -> std::result::Result<WorkerProc, ServeFailure> {
+    let fail = |handshake: bool, msg: String| ServeFailure { handshake, msg };
+    let mut child = quiet_command(worker.as_os_str())
+        .arg("--model")
+        .arg(model_path)
+        .arg("--serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| fail(true, format!("spawn: {e}")))?;
+    let Some(stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(fail(true, "worker has no stdin".into()));
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(fail(true, "worker has no stdout".into()));
+    };
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    match reader.read_line(&mut line) {
+        Ok(n) if n > 0 && line.contains("\"ready\"") => Ok(WorkerProc {
+            child,
+            stdin,
+            reader,
+            model_path: model_path.to_owned(),
+        }),
+        _ => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(fail(true, "worker does not support serve mode".into()))
+        }
+    }
+}
+
+fn serve_request(
+    audio_path: &Path,
+    audio_dur_sec: f64,
+    config: &Config,
+    worker: &Path,
+    model_path: &str,
+) -> std::result::Result<(Vec<Segment>, String, f64), ServeFailure> {
+    let fail = |msg: String| ServeFailure {
+        handshake: false,
+        msg,
+    };
+    let mut slot = worker_proc_slot()
+        .lock()
+        .map_err(|e| fail(format!("worker lock: {e}")))?;
+    let reusable = slot.as_mut().is_some_and(|w| {
+        w.model_path == model_path && w.child.try_wait().map(|s| s.is_none()).unwrap_or(false)
+    });
+    if !reusable {
+        kill_worker(&mut slot);
+        *slot = Some(spawn_serve_worker(worker, model_path)?);
+    }
+    let w = slot
+        .as_mut()
+        .ok_or_else(|| fail("worker slot empty".into()))?;
+    let req = serde_json::json!({
+        "audio_f32le": audio_path,
+        "duration_sec": audio_dur_sec,
+        "language": config.language,
+        "threads": crate::engine::threads(config),
+    });
+    if let Err(e) = writeln!(w.stdin, "{req}").and_then(|()| w.stdin.flush()) {
+        kill_worker(&mut slot);
+        return Err(fail(format!("worker stdin: {e}")));
+    }
+    let mut line = String::new();
+    match w.reader.read_line(&mut line) {
+        Ok(n) if n > 0 => {}
+        _ => {
+            kill_worker(&mut slot);
+            return Err(fail("worker closed pipe mid-job".into()));
+        }
+    }
+    if let Ok(parsed) = serde_json::from_str::<WorkerOutput>(line.trim()) {
+        return Ok((parsed.segments, parsed.language, parsed.rtf));
+    }
+    #[derive(Deserialize)]
+    struct ServeErr {
+        error: String,
+    }
+    let msg = serde_json::from_str::<ServeErr>(line.trim()).map_or_else(
+        |_| format!("unparseable worker reply: {}", line.trim()),
+        |e| e.error,
+    );
+    Err(fail(msg))
+}
+
 fn cuda_worker_path() -> Result<PathBuf> {
     if let Some(p) = std::env::var_os("WT_CUDA_WORKER") {
         let p = PathBuf::from(p);
@@ -167,6 +301,29 @@ fn run_cuda_worker(
     }
     let worker = cuda_worker_path()?;
     let audio = write_samples(samples)?;
+    if !SERVE_UNSUPPORTED.load(Ordering::Relaxed) {
+        let model_str = model_path
+            .to_str()
+            .ok_or_else(|| Error::Config("whisper-cpp model path is not UTF-8".into()))?;
+        match serve_request(audio.path(), audio_dur_sec, config, &worker, model_str) {
+            Ok(out) => {
+                if cancelled() {
+                    return Err(Error::Cancelled);
+                }
+                on_progress(100.0);
+                return Ok(out);
+            }
+            Err(f) => {
+                if f.handshake {
+                    SERVE_UNSUPPORTED.store(true, Ordering::Relaxed);
+                }
+                crate::logfile::warn(&format!(
+                    "CUDA worker serve mode unavailable ({}); falling back to one-shot worker",
+                    f.msg
+                ));
+            }
+        }
+    }
     let output = quiet_command(worker.as_os_str())
         .arg("--model")
         .arg(model_path)
@@ -341,8 +498,8 @@ pub fn run(
         lang.to_owned()
     };
 
-    let rtf = if audio_dur_sec > 0.0 {
-        elapsed / audio_dur_sec
+    let rtf = if elapsed > 0.0 {
+        audio_dur_sec / elapsed
     } else {
         0.0
     };

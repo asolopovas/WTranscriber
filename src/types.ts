@@ -70,6 +70,11 @@ export interface DirListing {
   entries: DirEntry[];
 }
 
+export interface TranscribeWarning {
+  path: string;
+  message: string;
+}
+
 export type Family = "asr" | "diarizer" | "llm" | "langid";
 
 export type ModelStatus = "not_installed" | "downloading" | "installed";

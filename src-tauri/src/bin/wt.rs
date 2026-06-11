@@ -431,14 +431,9 @@ async fn run_transcribe(cli: Cli) -> Result<()> {
     }
     let _ = lang_explicit;
 
-    if matches!(config.device, Device::Cuda) && !cfg!(feature = "cuda") {
-        let msg = "this build does not ship CUDA; \
-             pass --device cpu, or install the CUDA build of WTranscriber";
-        logfile::warn(&format!(
-            "--device cuda requested on CPU-only build; falling back to CPU ({msg})",
-        ));
-        eprintln!("warning: {msg}; falling back to --device cpu");
-        config.device = Device::Cpu;
+    if let Some(note) = wtranscriber_lib::resolve_device(&mut config) {
+        logfile::warn(&note);
+        eprintln!("warning: {note}");
     }
 
     wtranscriber_lib::runtime_setup::ensure_for_cli(matches!(config.device, Device::Cuda)).await;

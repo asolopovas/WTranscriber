@@ -13,6 +13,7 @@ import {
   SuggestionSchema,
   SystemInfoSchema,
   TranscribeProgressSchema,
+  TranscribeWarningSchema,
   TranscriptSchema,
 } from "@/schemas";
 import type {
@@ -27,6 +28,7 @@ import type {
   Suggestion,
   SystemInfo,
   TranscribeProgress,
+  TranscribeWarning,
   Transcript,
 } from "@/types";
 import { utf8ToBase64 } from "@utils/base64";
@@ -147,6 +149,10 @@ export const events = {
   onTranscribeProgress: (cb: (p: TranscribeProgress) => void): Promise<UnlistenFn> =>
     listen<unknown>("transcribe:progress", (e) =>
       cb(parsePayload(TranscribeProgressSchema, e.payload)),
+    ),
+  onTranscribeWarning: (cb: (w: TranscribeWarning) => void): Promise<UnlistenFn> =>
+    listen<unknown>("transcribe:warning", (e) =>
+      cb(parsePayload(TranscribeWarningSchema, e.payload)),
     ),
   onEssentialsDone: (cb: (ok: boolean) => void): Promise<UnlistenFn> =>
     listen<unknown>("model:essentials_done", (e) => cb(parsePayload(BooleanSchema, e.payload))),

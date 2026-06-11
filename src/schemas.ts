@@ -13,6 +13,7 @@ import type {
   SystemInfo,
   TranscribePhase,
   TranscribeProgress,
+  TranscribeWarning,
   Transcript,
   Utterance,
   Word,
@@ -91,6 +92,11 @@ export const DirListingSchema: z.ZodType<DirListing> = z.object({
   path: z.string(),
   parent: z.string().nullable(),
   entries: z.array(DirEntrySchema),
+});
+
+export const TranscribeWarningSchema: z.ZodType<TranscribeWarning> = z.object({
+  path: z.string(),
+  message: z.string(),
 });
 
 export const FamilySchema = z.enum(["asr", "diarizer", "llm", "langid"]);

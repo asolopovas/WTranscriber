@@ -7,18 +7,19 @@ This document describes the current pipeline. It is not a migration plan.
 `transcriber/job.rs` drives every transcription (GUI and `wt` CLI):
 
 1. Cache probe — key over source mtime, model, language, speakers, trim, timestamp mode (`transcriber/cache.rs`); hit serves immediately.
-2. Slab streaming — `audio_toolkit/stream.rs` decodes via ffmpeg/symphonia into contiguous 60 s slabs (10 s calibration first slab); no overlap or VAD gating today.
-3. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`):
-   - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` subprocess, one spawn per slab.
+2. Slab streaming — `audio_toolkit/stream.rs` decodes via ffmpeg/symphonia into ~60 s slabs (10 s calibration first slab). Slab ends snap to the lowest-energy point within ±1.5 s of the nominal boundary so words are not cut mid-syllable.
+3. VAD gate — slabs with no speech (silero VAD, fail-open if the model is absent; `WT_NO_VAD_GATE=1` disables) are skipped before any engine runs (`job/streaming.rs`).
+4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` gives CLI and GUI the same cuda-fallback decision:
+   - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); pre-serve workers fall back to one-shot spawning per slab.
    - whisper-cpp + cpu → in-process whisper-rs.
-   - sherpa engines (parakeet, gigaam) → in-process when the `cuda` feature is on, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and says so in the log.
+   - sherpa engines (parakeet, gigaam) → in-process when the `cuda` feature is on, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and surfaces it as a `transcribe:warning` event.
    - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity.
-4. Dedup — per-segment and cross-segment token collapse (`job/postprocess.rs`, `dedup.rs`) against whisper repetition loops.
-5. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
-6. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcript/`).
-7. Cache store and JSON export.
+5. Dedup — per-segment and cross-segment token collapse (`job/postprocess.rs`, `dedup.rs`) against whisper repetition loops.
+6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
+7. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcript/`).
+8. Cache store and JSON export.
 
-Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`); CPU paths use the requested count.
+Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count. Engine warnings reach the UI through `Sink::warn` → `transcribe:warning`.
 
 ## Defaults
 

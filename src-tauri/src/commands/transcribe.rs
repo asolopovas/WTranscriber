@@ -52,6 +52,13 @@ struct ProgressEvent {
     total_sec: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WarningEvent {
+    path: String,
+    message: String,
+}
+
 #[derive(Clone, Copy)]
 struct OverallInputs {
     phase: Phase,
@@ -420,6 +427,17 @@ impl Sink for TranscribeSink {
     fn set_diarize_backend(&self, name: &str) {
         self.update_diarize_backend(name);
     }
+
+    fn warn(&self, msg: &str) {
+        logfile::warn(msg);
+        let _ = self.app.emit(
+            "transcribe:warning",
+            &WarningEvent {
+                path: self.file_path.clone(),
+                message: msg.to_string(),
+            },
+        );
+    }
 }
 
 struct TranscribeRunContext {
@@ -438,6 +456,7 @@ pub async fn transcribe_file(
     apply_saved_runtime_settings(&mut config);
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
+    let device_note = crate::engine::resolve_device(&mut config);
     let input_key = input.to_string_lossy().into_owned();
     let cancel = CancellationToken::new();
     register_cancel(&input_key, cancel.clone());
@@ -454,6 +473,9 @@ pub async fn transcribe_file(
         ));
     }
     let context = prepare_transcribe_run(app, &input, &config, input_key.clone(), cancel.clone());
+    if let Some(note) = device_note {
+        context.sink.warn(&note);
+    }
     let mut run_handle =
         spawn_transcribe_job(input, config, context.sink.clone(), context.label.clone());
     let raced = race_transcribe_job(&mut run_handle, cancel).await;
@@ -638,7 +660,18 @@ fn log_preflight(input: &Path, config: &Config) {
         crate::config::Device::Cuda => "GPU CUDA",
         crate::config::Device::Cpu => "CPU",
     };
-    let _ = writeln!(buf, "  Device    : {device_label}");
+    let resolved_cpu = matches!(config.device, crate::config::Device::Cuda)
+        && !matches!(config.engine, crate::config::Engine::WhisperCpp)
+        && crate::runtimes::dependencies::onnx_provider(config.device) != "cuda";
+    let _ = writeln!(
+        buf,
+        "  Device    : {device_label}{}",
+        if resolved_cpu {
+            " (ONNX resolves to CPU on this build)"
+        } else {
+            ""
+        }
+    );
     let _ = writeln!(buf, "  Language  : {}", config.language);
     let effective_threads = crate::engine::threads(config);
     if effective_threads == config.threads {

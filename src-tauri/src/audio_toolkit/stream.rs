@@ -199,6 +199,39 @@ fn sample_index(ms: u64, total: usize) -> usize {
     idx.min(total)
 }
 
+const SNAP_SEARCH_SEC: f64 = 1.5;
+const SNAP_WINDOW_SEC: f64 = 0.02;
+
+fn snap_samples(sec: f64) -> usize {
+    (sec * f64::from(WHISPER_SAMPLE_RATE)) as usize
+}
+
+fn snap_cut(samples: &[f32], target: usize) -> usize {
+    let search = snap_samples(SNAP_SEARCH_SEC);
+    let lo = target.saturating_sub(search).max(1).min(target);
+    let hi = (target + search).min(samples.len());
+    if lo >= hi {
+        return target.min(samples.len()).max(1);
+    }
+    let step = snap_samples(SNAP_WINDOW_SEC).max(1);
+    let stride = (step / 2).max(1);
+    let mut best_pos = target.min(samples.len());
+    let mut best_energy: Option<f64> = None;
+    let mut pos = lo;
+    while pos + step <= hi {
+        let energy: f64 = samples[pos..pos + step]
+            .iter()
+            .map(|v| f64::from(*v) * f64::from(*v))
+            .sum();
+        if best_energy.is_none_or(|b| energy < b) {
+            best_energy = Some(energy);
+            best_pos = pos + step / 2;
+        }
+        pos += stride;
+    }
+    best_pos.max(1)
+}
+
 pub fn stream_slabs<F>(
     input: &Path,
     trim_start_ms: u64,
@@ -214,35 +247,90 @@ where
     let mut src = ffmpeg_stream(input, trim_start_ms, trim_end_ms, cancel)?;
     let normal_slab_samples = (slab_sec * f64::from(WHISPER_SAMPLE_RATE)) as usize;
     let first_slab_samples = (first_slab_sec * f64::from(WHISPER_SAMPLE_RATE)) as usize;
-    let mut buf = vec![0.0_f32; normal_slab_samples.max(first_slab_samples).max(1)];
     let trim_offset_sec = trim_start_ms as f64 / 1000.0;
+    let lookahead = snap_samples(SNAP_SEARCH_SEC);
+    let mut pending: Vec<f32> = Vec::new();
     let mut cursor_samples: usize = 0;
     let mut first = true;
+    let mut eof = false;
     loop {
-        let limit = if first {
-            first_slab_samples.max(1).min(buf.len())
+        let target = if first {
+            first_slab_samples.max(1)
         } else {
-            normal_slab_samples.max(1).min(buf.len())
+            normal_slab_samples.max(1)
         };
-        first = false;
-        let n = src.read_into(&mut buf[..limit])?;
-        if n == 0 {
+        let want = target + lookahead;
+        while !eof && pending.len() < want {
+            let mut buf = vec![0.0_f32; want - pending.len()];
+            let n = src.read_into(&mut buf)?;
+            if n == 0 {
+                eof = true;
+                break;
+            }
+            pending.extend_from_slice(&buf[..n]);
+        }
+        if pending.is_empty() {
             break;
         }
+        first = false;
+        let cut = if eof {
+            pending.len()
+        } else {
+            snap_cut(&pending, target)
+        };
         let start_sec = cursor_samples as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec;
         let end_sec =
-            (cursor_samples + n) as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec;
+            (cursor_samples + cut) as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec;
         let region = crate::audio_toolkit::vad::Region {
             start_sec,
             end_sec,
-            samples: buf[..n].to_vec(),
+            samples: pending[..cut].to_vec(),
         };
-        cursor_samples += n;
+        cursor_samples += cut;
+        pending.drain(..cut);
         if !on_slab(region)? {
             break;
         }
     }
     Ok(cursor_samples as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snap_cut_prefers_silence_valley() {
+        let sr = WHISPER_SAMPLE_RATE as usize;
+        let mut samples = vec![0.5_f32; sr * 4];
+        let valley = sr * 2 + sr / 2;
+        for v in &mut samples[valley..valley + sr / 10] {
+            *v = 0.0;
+        }
+        let cut = snap_cut(&samples, sr * 2);
+        assert!(
+            cut >= valley && cut <= valley + sr / 10,
+            "cut {cut} should land in the silent valley {valley}..{}",
+            valley + sr / 10
+        );
+    }
+
+    #[test]
+    fn snap_cut_clamps_to_available_samples() {
+        let samples = vec![0.1_f32; 100];
+        let cut = snap_cut(&samples, 1_000);
+        assert!(cut >= 1 && cut <= samples.len());
+    }
+
+    #[test]
+    fn snap_cut_returns_target_on_flat_audio() {
+        let sr = WHISPER_SAMPLE_RATE as usize;
+        let samples = vec![0.3_f32; sr * 4];
+        let target = sr * 2;
+        let cut = snap_cut(&samples, target);
+        let search = snap_samples(SNAP_SEARCH_SEC);
+        assert!(cut >= target - search && cut <= target + search);
+    }
 }
 
 fn format_ms(ms: u64) -> String {

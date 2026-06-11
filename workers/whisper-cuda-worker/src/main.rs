@@ -6,10 +6,16 @@
     clippy::too_many_lines
 )]
 
-use std::{fs, path::PathBuf, process::ExitCode, time::Instant};
+use std::{
+    fs,
+    io::{BufRead, Write},
+    path::{Path, PathBuf},
+    process::ExitCode,
+    time::Instant,
+};
 
 use clap::Parser;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 #[derive(Parser, Debug)]
@@ -18,13 +24,40 @@ struct Cli {
     #[arg(long)]
     model: PathBuf,
     #[arg(long)]
-    audio_f32le: PathBuf,
-    #[arg(long)]
+    audio_f32le: Option<PathBuf>,
+    #[arg(long, default_value_t = 0.0)]
     duration_sec: f64,
     #[arg(long, default_value = "auto")]
     language: String,
     #[arg(long, default_value_t = 4)]
     threads: u32,
+    #[arg(long)]
+    serve: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct JobRequest {
+    audio_f32le: PathBuf,
+    #[serde(default)]
+    duration_sec: f64,
+    #[serde(default)]
+    language: String,
+    #[serde(default = "default_threads")]
+    threads: u32,
+}
+
+const fn default_threads() -> u32 {
+    4
+}
+
+#[derive(Debug, Serialize)]
+struct ServeReady {
+    ready: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ServeError {
+    error: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,7 +84,11 @@ struct Token {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let cli = Cli::parse();
+    if cli.serve {
+        return serve(&cli);
+    }
+    match run_oneshot(&cli) {
         Ok(out) => {
             println!(
                 "{}",
@@ -66,62 +103,119 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<WorkerOutput, String> {
-    if !cfg!(feature = "cuda") {
-        return Err("worker was built without CUDA support".into());
+fn serve(cli: &Cli) -> ExitCode {
+    let engine = match Engine::new(&cli.model) {
+        Ok(engine) => engine,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    println!(
+        "{}",
+        serde_json::to_string(&ServeReady { ready: true }).expect("serialise ready")
+    );
+    let _ = std::io::stdout().flush();
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        let Ok(line) = line else { break };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let reply = match serde_json::from_str::<JobRequest>(&line)
+            .map_err(|e| format!("bad request: {e}"))
+            .and_then(|job| engine.transcribe(&job))
+        {
+            Ok(out) => serde_json::to_string(&out).expect("serialise worker output"),
+            Err(error) => serde_json::to_string(&ServeError { error }).expect("serialise error"),
+        };
+        let mut out = std::io::stdout().lock();
+        let _ = writeln!(out, "{reply}");
+        let _ = out.flush();
     }
-    let samples = read_f32le(&cli.audio_f32le)?;
-    let model = cli
-        .model
-        .to_str()
-        .ok_or_else(|| "model path is not UTF-8".to_string())?;
-    let mut ctx_params = WhisperContextParameters::default();
-    ctx_params.use_gpu(true);
-    let ctx = WhisperContext::new_with_params(model, ctx_params)
-        .map_err(|e| format!("whisper-cpp init {model}: {e}"))?;
-    let mut state = ctx
-        .create_state()
-        .map_err(|e| format!("whisper-cpp state: {e}"))?;
+    ExitCode::SUCCESS
+}
 
-    let lang = cli.language.trim();
-    let lang_arg = (!lang.is_empty() && !lang.eq_ignore_ascii_case("auto")).then_some(lang);
-
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(lang_arg);
-    params.set_token_timestamps(true);
-    params.set_split_on_word(true);
-    params.set_max_len(1);
-    params.set_n_threads(i32::try_from(cli.threads).unwrap_or(4));
-    params.set_print_progress(false);
-    params.set_print_realtime(false);
-    params.set_print_special(false);
-    params.set_print_timestamps(false);
-    params.set_translate(false);
-    params.set_single_segment(false);
-    params.set_no_context(true);
-
-    let t0 = Instant::now();
-    state
-        .full(params, &samples)
-        .map_err(|e| format!("whisper-cpp full: {e}"))?;
-    let elapsed = t0.elapsed().as_secs_f64();
-    let segments = collect_segments(&state)?;
-    let detected_idx = state.full_lang_id_from_state();
-    let language = if detected_idx >= 0 {
-        whisper_rs::get_lang_str(detected_idx).map_or_else(|| lang.to_owned(), str::to_owned)
-    } else {
-        lang.to_owned()
-    };
-    let rtf = if cli.duration_sec > 0.0 {
-        elapsed / cli.duration_sec
-    } else {
-        0.0
-    };
-    Ok(WorkerOutput {
-        segments,
-        language,
-        rtf,
+fn run_oneshot(cli: &Cli) -> Result<WorkerOutput, String> {
+    let audio = cli
+        .audio_f32le
+        .clone()
+        .ok_or_else(|| "--audio-f32le is required without --serve".to_string())?;
+    let engine = Engine::new(&cli.model)?;
+    engine.transcribe(&JobRequest {
+        audio_f32le: audio,
+        duration_sec: cli.duration_sec,
+        language: cli.language.clone(),
+        threads: cli.threads,
     })
+}
+
+struct Engine {
+    ctx: WhisperContext,
+}
+
+impl Engine {
+    fn new(model: &Path) -> Result<Self, String> {
+        if !cfg!(feature = "cuda") {
+            return Err("worker was built without CUDA support".into());
+        }
+        let model = model
+            .to_str()
+            .ok_or_else(|| "model path is not UTF-8".to_string())?;
+        let mut ctx_params = WhisperContextParameters::default();
+        ctx_params.use_gpu(true);
+        let ctx = WhisperContext::new_with_params(model, ctx_params)
+            .map_err(|e| format!("whisper-cpp init {model}: {e}"))?;
+        Ok(Self { ctx })
+    }
+
+    fn transcribe(&self, job: &JobRequest) -> Result<WorkerOutput, String> {
+        let samples = read_f32le(&job.audio_f32le)?;
+        let mut state = self
+            .ctx
+            .create_state()
+            .map_err(|e| format!("whisper-cpp state: {e}"))?;
+
+        let lang = job.language.trim();
+        let lang_arg = (!lang.is_empty() && !lang.eq_ignore_ascii_case("auto")).then_some(lang);
+
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        params.set_language(lang_arg);
+        params.set_token_timestamps(true);
+        params.set_split_on_word(true);
+        params.set_max_len(1);
+        params.set_n_threads(i32::try_from(job.threads).unwrap_or(4));
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_special(false);
+        params.set_print_timestamps(false);
+        params.set_translate(false);
+        params.set_single_segment(false);
+        params.set_no_context(true);
+
+        let t0 = Instant::now();
+        state
+            .full(params, &samples)
+            .map_err(|e| format!("whisper-cpp full: {e}"))?;
+        let elapsed = t0.elapsed().as_secs_f64();
+        let segments = collect_segments(&state)?;
+        let detected_idx = state.full_lang_id_from_state();
+        let language = if detected_idx >= 0 {
+            whisper_rs::get_lang_str(detected_idx).map_or_else(|| lang.to_owned(), str::to_owned)
+        } else {
+            lang.to_owned()
+        };
+        let rtf = if elapsed > 0.0 {
+            job.duration_sec / elapsed
+        } else {
+            0.0
+        };
+        Ok(WorkerOutput {
+            segments,
+            language,
+            rtf,
+        })
+    }
 }
 
 fn read_f32le(path: &PathBuf) -> Result<Vec<f32>, String> {
