@@ -133,14 +133,7 @@ fn process_region(
     let region_dur_sec = region.end_sec - region.start_sec;
     let start_label = format_hms(std::time::Duration::from_secs_f64(region.start_sec));
     let end_label = format_hms(std::time::Duration::from_secs_f64(region.end_sec));
-    if !slab_has_speech(&region.samples) {
-        logfile::info(&format!(
-            "slab #{} {}-{} skipped (no speech detected)",
-            st.slab_index, start_label, end_label
-        ));
-        st.state.last_done_sec = region.end_sec;
-        partial::save(&st.state)?;
-        emit_pct(ctx.sink, region.end_sec, ctx.trimmed_dur_sec);
+    if skip_no_speech(ctx, st, region, &start_label, &end_label)? {
         return Ok(());
     }
     logfile::info(&format!(
@@ -302,6 +295,26 @@ pub(super) fn run_streaming_phase(
         pipeline_t0.elapsed().as_secs_f64(),
     ));
     Ok((st, scanned_end))
+}
+
+fn skip_no_speech(
+    ctx: &StreamCtx<'_>,
+    st: &mut StreamState,
+    region: &crate::audio_toolkit::vad::Region,
+    start_label: &str,
+    end_label: &str,
+) -> Result<bool> {
+    if slab_has_speech(&region.samples) {
+        return Ok(false);
+    }
+    logfile::info(&format!(
+        "slab #{} {}-{} skipped (no speech detected)",
+        st.slab_index, start_label, end_label
+    ));
+    st.state.last_done_sec = region.end_sec;
+    partial::save(&st.state)?;
+    emit_pct(ctx.sink, region.end_sec, ctx.trimmed_dur_sec);
+    Ok(true)
 }
 
 const VAD_SPEECH_FRAMES: usize = 3;

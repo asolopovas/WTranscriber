@@ -295,6 +295,12 @@ where
     Ok(cursor_samples as f64 / f64::from(WHISPER_SAMPLE_RATE) + trim_offset_sec)
 }
 
+fn format_ms(ms: u64) -> String {
+    let secs = ms / 1000;
+    let frac = ms % 1000;
+    format!("{secs}.{frac:03}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,10 +337,4 @@ mod tests {
         let search = snap_samples(SNAP_SEARCH_SEC);
         assert!(cut >= target - search && cut <= target + search);
     }
-}
-
-fn format_ms(ms: u64) -> String {
-    let secs = ms / 1000;
-    let frac = ms % 1000;
-    format!("{secs}.{frac:03}")
 }
