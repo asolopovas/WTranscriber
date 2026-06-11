@@ -126,6 +126,30 @@ fn cargo_env(arch: &str, jobs: &str) -> Vec<(&'static str, String)> {
     env
 }
 
+// `cargo clean -p` does not reliably remove build-script out dirs, and a
+// CMakeCache from a previous configure pins GGML_CCACHE_FOUND and the CUDA
+// arch list. Remove the dirs so every arch configures fresh.
+fn remove_whisper_sys_build_dirs() {
+    let build_dir = root()
+        .join("workers")
+        .join("whisper-cuda-worker")
+        .join("target")
+        .join("release")
+        .join("build");
+    let Ok(entries) = fs::read_dir(&build_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("whisper-rs-sys-")
+        {
+            fs::remove_dir_all(entry.path()).ok();
+        }
+    }
+}
+
 // ggml's CMake auto-detects ccache on PATH when no compiler launcher is set;
 // ccache + MSVC emits no object files and the build dies at lib.exe.
 fn path_without_ccache() -> Option<String> {
@@ -265,6 +289,7 @@ fn package_worker(arch: &str, out_dir: &Path, lock: &SharedOut) -> Result<()> {
     if clean_rc != 0 {
         bail!("cargo clean failed for CUDA worker sm_{arch} (exit {clean_rc})");
     }
+    remove_whisper_sys_build_dirs();
     let jobs = build_jobs();
     println!("→ CUDA worker sm_{arch}: using {jobs} parallel build jobs");
     let env = cargo_env(arch, &jobs);
