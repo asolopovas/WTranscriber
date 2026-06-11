@@ -1,4 +1,7 @@
-use crate::transcriber::{dedup, transcript::Segment};
+use crate::transcriber::{
+    dedup,
+    transcript::{Segment, Token},
+};
 
 pub(super) fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
@@ -10,11 +13,60 @@ pub(super) fn apply_dedup(segments: &mut Vec<Segment>) {
                 seg.tokens = bridged;
                 rebuild_from_tokens(seg);
             }
-        } else if !seg.text.trim().is_empty() {
+        } else if seg.tokens.is_empty() && !seg.text.trim().is_empty() {
             seg.text = dedup::collapse_in_text(seg.text.trim());
         }
     }
+    collapse_across_segments(segments);
     segments.retain(|s| !s.tokens.is_empty() || !s.text.trim().is_empty());
+}
+
+fn collapse_across_segments(segments: &mut [Segment]) {
+    let flat: Vec<Token> = segments
+        .iter()
+        .flat_map(|s| s.tokens.iter().cloned())
+        .collect();
+    if flat.len() < 2 {
+        return;
+    }
+    let collapsed = dedup::collapse_bridged_repeats(&dedup::collapse_repeats(&flat));
+    if collapsed.len() == flat.len() {
+        return;
+    }
+    let mut keep = vec![false; flat.len()];
+    let mut ci = 0;
+    for (i, tok) in flat.iter().enumerate() {
+        if ci < collapsed.len()
+            && tok.text == collapsed[ci].text
+            && tok.start_ms == collapsed[ci].start_ms
+            && tok.end_ms == collapsed[ci].end_ms
+        {
+            keep[i] = true;
+            ci += 1;
+        }
+    }
+    if ci != collapsed.len() {
+        return;
+    }
+    let mut idx = 0;
+    for seg in segments.iter_mut() {
+        let n = seg.tokens.len();
+        if n == 0 {
+            continue;
+        }
+        let kept: Vec<Token> = seg
+            .tokens
+            .drain(..)
+            .enumerate()
+            .filter_map(|(k, t)| keep[idx + k].then_some(t))
+            .collect();
+        idx += n;
+        let changed = kept.len() != n;
+        seg.tokens = kept;
+        if changed {
+            rebuild_from_tokens(seg);
+        }
+    }
 }
 
 pub(super) fn shift_segments(segments: &mut [Segment], offset_ms: u64) {
@@ -154,6 +206,42 @@ mod tests {
         assert_eq!(segs[0].text, "the");
         assert_eq!(segs[0].start_ms, 100);
         assert_eq!(segs[0].end_ms, 200);
+    }
+
+    #[test]
+    fn apply_dedup_collapses_word_per_segment_repetition_loops() {
+        let mut segs: Vec<Segment> = Vec::new();
+        for run in 0..6u64 {
+            let base = run * 1_000;
+            segs.push(seg(
+                "thank",
+                base,
+                base + 400,
+                vec![tok("thank", base, base + 400)],
+            ));
+            segs.push(seg(
+                "you.",
+                base + 500,
+                base + 900,
+                vec![tok("you.", base + 500, base + 900)],
+            ));
+        }
+        apply_dedup(&mut segs);
+        assert_eq!(segs.len(), 2, "loop should collapse to one thank/you pair");
+        assert_eq!(segs[0].text, "thank");
+        assert_eq!(segs[1].text, "you.");
+    }
+
+    #[test]
+    fn apply_dedup_keeps_distinct_word_segments() {
+        let mut segs = vec![
+            seg("the", 0, 100, vec![tok("the", 0, 100)]),
+            seg("quick", 110, 200, vec![tok("quick", 110, 200)]),
+            seg("brown", 210, 300, vec![tok("brown", 210, 300)]),
+            seg("fox", 310, 400, vec![tok("fox", 310, 400)]),
+        ];
+        apply_dedup(&mut segs);
+        assert_eq!(segs.len(), 4);
     }
 
     #[test]

@@ -119,7 +119,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let duration_ms = if window.total_dur_ms > 0 {
         window.total_dur_ms
     } else {
-        ((scanned_end + window.start_ms as f64 / 1000.0) * 1000.0) as u64
+        (scanned_end * 1000.0) as u64
     };
 
     let (diar_segs, diar_name) = if config.diarize {

@@ -22,21 +22,20 @@ pub fn provider(config: &Config) -> Provider {
     }
 }
 
-pub const fn threads(config: &Config) -> u32 {
+pub fn threads(config: &Config) -> u32 {
     let requested = if config.threads > 0 {
         config.threads
     } else {
         4
     };
-    match config.device {
-        Device::Cuda => {
-            if requested > 2 {
-                2
-            } else {
-                requested
-            }
-        }
-        Device::Cpu => requested,
+    let gpu_decode = match config.engine {
+        crate::config::Engine::WhisperCpp => matches!(config.device, Device::Cuda),
+        _ => provider(config) == Provider::Cuda,
+    };
+    if gpu_decode {
+        requested.min(2)
+    } else {
+        requested
     }
 }
 

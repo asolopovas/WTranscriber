@@ -98,6 +98,7 @@ fn run(cli: Cli) -> Result<WorkerOutput, String> {
     params.set_print_timestamps(false);
     params.set_translate(false);
     params.set_single_segment(false);
+    params.set_no_context(true);
 
     let t0 = Instant::now();
     state
