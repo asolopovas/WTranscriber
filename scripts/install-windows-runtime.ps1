@@ -159,6 +159,9 @@ function Get-NvidiaComputeCapability {
 function Get-ReleaseSha256([string]$ReleaseTag, [string]$Asset) {
     $sums = Join-Path $cache "SHA256SUMS-$ReleaseTag"
     $url = "https://github.com/asolopovas/WTranscriber/releases/download/$ReleaseTag/SHA256SUMS"
+    # Rolling tags republish assets under the same name; the checksum file must
+    # always be fetched fresh or stale caches validate against stale sums.
+    Remove-Item -Force -ErrorAction SilentlyContinue $sums
     Download-FileChecked $url $sums
     $line = Get-Content $sums | Where-Object { $_ -match "\s+$([regex]::Escape($Asset))$" } | Select-Object -First 1
     if ($null -eq $line) {
@@ -191,6 +194,10 @@ function Install-WhisperCudaWorker {
     Write-SetupLog "Installing Whisper CUDA worker sm_$arch from GitHub release $releaseTag"
     $archive = Join-Path $cache $asset
     $expected = Get-ReleaseSha256 $releaseTag $asset
+    if ((Test-Path $archive) -and ((Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant() -ne $expected.ToLowerInvariant())) {
+        Write-SetupLog "Cached $asset does not match release checksum; redownloading"
+        Remove-Item -Force $archive
+    }
     Download-FileChecked "https://github.com/asolopovas/WTranscriber/releases/download/$releaseTag/$asset" $archive
     Assert-Sha256 $archive $expected
     $stage = Join-Path $cache "wtranscriber-cuda-sm$arch"
