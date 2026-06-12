@@ -12,6 +12,10 @@ Drop these once Tauri 2.12 publishes the fixed plugin Gradle and activity migrat
 - `src-tauri/build.rs` warns when `CMAKE_GENERATOR` changes; `xtask/src/check.rs` owns the cache wipe for `target/{debug,release}/build/{whisper-rs-sys-*,sherpa-onnx-sys-*}` using the `target/.cmake-generator` sentinel.
 - `xtask/src/release/builders.rs::ensure_dev_keystore_properties` regenerates `src-tauri/gen/android/keystore.properties` whenever the recorded `storeFile` is missing on the current host. It is called from both `cargo xtask android build` and the release matrix so the same checkout signs APKs on Windows and Linux.
 
+## Vendored symphonia-format-isomp4
+
+`src-tauri/vendor/symphonia-format-isomp4` is upstream 0.5.5 with one change: `SLDescriptor::read` tolerates a non-MP4 SL config descriptor (skips it with a warning) instead of erroring. WhatsApp voice notes (`AUD-*-WA*.m4a`) set `predefined != 2`, which broke every ffmpeg-less decode path — all of Android, plus the desktop silero-langid probe (`audio/decode.rs`). Wired via `[patch.crates-io]` in `src-tauri/Cargo.toml`. Drop the vendor dir and the patch entry when symphonia ships a release that accepts these files.
+
 ## Guardrail candidates
 
 Promote these to mechanical checks when they become recurring review feedback:
