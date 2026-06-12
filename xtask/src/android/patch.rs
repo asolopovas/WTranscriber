@@ -70,15 +70,11 @@ pub(super) fn patch_gradle_build_config() -> Result<()> {
 
 pub(super) fn copy_jni_prebuilts(target: &str) -> Result<()> {
     let abi = abi_for(target)?.abi;
-    let gen_dir = gen_android()
-        .join("app")
-        .join("src")
-        .join("main")
-        .join("jniLibs")
-        .join(abi);
-    if !gen_dir.exists() {
+    let main_dir = gen_android().join("app").join("src").join("main");
+    if !main_dir.exists() {
         return Ok(());
     }
+    let gen_dir = main_dir.join("jniLibs").join(abi);
     fs::create_dir_all(&gen_dir)?;
 
     let llama_src = root()
