@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{
-    chunk::{ChunkProcessor, run_single, segments_from_sherpa},
+    chunk::{ChunkProcessor, run_chunked, run_single, segments_from_sherpa},
     runtime,
     sherpa::{find_binary, parse_json, run_cmd},
 };
@@ -15,6 +15,7 @@ use super::{
 #[derive(Debug, Clone, Copy)]
 pub enum ChunkStrategy {
     Single,
+    Fixed(f64),
 }
 
 pub struct SubprocessSpec<'a> {
@@ -54,6 +55,9 @@ impl SubprocessSpec<'_> {
         };
         match strategy {
             ChunkStrategy::Single => run_single(samples, audio_dur_sec, processor, on_progress),
+            ChunkStrategy::Fixed(sec) => {
+                run_chunked(samples, audio_dur_sec, sec, processor, on_progress)
+            }
         }
     }
 }

@@ -167,6 +167,51 @@ pub trait ChunkProcessor {
     }
 }
 
+pub fn run_chunked<P: ChunkProcessor>(
+    samples: &[f32],
+    audio_dur_sec: f64,
+    chunk_sec: f64,
+    mut processor: P,
+    on_progress: &mut dyn FnMut(f64),
+) -> Result<(Vec<Segment>, f64)> {
+    if samples.is_empty() {
+        return Ok((Vec::new(), 0.0));
+    }
+    let chunks = split_chunks(samples, chunk_sec);
+    let dir = tempfile::tempdir()?;
+    let start = std::time::Instant::now();
+    let mut all: Vec<Segment> = Vec::new();
+    for (i, ch) in chunks.iter().enumerate() {
+        if processor.is_cancelled() {
+            return Err(crate::error::Error::Cancelled);
+        }
+        let wav = dir.path().join(format!("chunk{i}.wav"));
+        write_pcm16_wav(&wav, ch.samples, WHISPER_SAMPLE_RATE)?;
+        let mut segs = processor.process(&wav, ch.end_sec - ch.start_sec)?;
+        let offset = ms(ch.start_sec);
+        for seg in &mut segs {
+            seg.start_ms = seg.start_ms.saturating_add(offset);
+            seg.end_ms = seg.end_ms.saturating_add(offset);
+            for tok in &mut seg.tokens {
+                tok.start_ms = tok.start_ms.saturating_add(offset);
+                tok.end_ms = tok.end_ms.saturating_add(offset);
+            }
+        }
+        all.extend(segs);
+        on_progress((i + 1) as f64 / chunks.len() as f64 * 100.0);
+    }
+    if processor.is_cancelled() {
+        return Err(crate::error::Error::Cancelled);
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    let rtf = if elapsed > 0.0 {
+        audio_dur_sec / elapsed
+    } else {
+        0.0
+    };
+    Ok((all, rtf))
+}
+
 pub fn run_single<P: ChunkProcessor>(
     samples: &[f32],
     audio_dur_sec: f64,

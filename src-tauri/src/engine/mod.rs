@@ -146,7 +146,10 @@ fn run_in_process(
         .as_mut()
         .ok_or_else(|| Error::Transcribe("recognizer cache empty after ensure".into()))?;
     let sample_rate = i32::try_from(crate::audio::WHISPER_SAMPLE_RATE).unwrap_or(16_000);
-    let chunk_sec = audio_dur_sec.max(1.0);
+    let chunk_sec = match config.engine {
+        Engine::Qwen3Asr => crate::constants::QWEN3_CHUNK_SEC,
+        _ => audio_dur_sec.max(1.0),
+    };
     let chunks = chunk::split_chunks(samples, chunk_sec);
 
     let t0 = std::time::Instant::now();

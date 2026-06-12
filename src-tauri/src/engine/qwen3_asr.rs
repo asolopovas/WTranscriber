@@ -57,7 +57,7 @@ pub fn run(
     let (segs, rtf) = SubprocessSpec {
         model_args,
         config,
-        strategy: ChunkStrategy::Single,
+        strategy: ChunkStrategy::Fixed(crate::constants::QWEN3_CHUNK_SEC),
         cancelled,
     }
     .execute(samples, audio_dur_sec, on_progress)?;
