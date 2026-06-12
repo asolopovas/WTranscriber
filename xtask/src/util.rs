@@ -38,16 +38,35 @@ pub fn read_json(path: &Path) -> Result<serde_json::Value> {
     serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))
 }
 
-pub fn write_json_pretty(path: &Path, value: &serde_json::Value) -> Result<()> {
-    let mut out = serde_json::to_string_pretty(value)?;
-    out.push('\n');
-    std::fs::write(path, out).with_context(|| format!("write {}", path.display()))
-}
-
 pub fn set_json_string(path: &Path, key: &str, value: &str) -> Result<()> {
-    let mut json = read_json(path)?;
-    json[key] = serde_json::Value::String(value.to_string());
-    write_json_pretty(path, &json)
+    let raw = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let needle = format!("\"{key}\"");
+    let key_pos = raw
+        .find(&needle)
+        .with_context(|| format!("{} has no key {key}", path.display()))?;
+    let rest = &raw[key_pos + needle.len()..];
+    let colon = rest
+        .find(':')
+        .with_context(|| format!("{} key {key} has no colon", path.display()))?;
+    let value_part = &rest[colon + 1..];
+    let open = value_part
+        .find('"')
+        .with_context(|| format!("{} key {key} has no string value", path.display()))?;
+    let close = value_part[open + 1..]
+        .find('"')
+        .with_context(|| format!("{} key {key} value is unterminated", path.display()))?;
+    let start = key_pos + needle.len() + colon + 1 + open + 1;
+    let end = start + close;
+    let out = format!("{}{}{}", &raw[..start], value, &raw[end..]);
+    let parsed: serde_json::Value = serde_json::from_str(&out)
+        .with_context(|| format!("{} invalid after edit", path.display()))?;
+    if parsed[key].as_str() != Some(value) {
+        bail!(
+            "{} key {key} did not take value {value} after edit",
+            path.display()
+        );
+    }
+    std::fs::write(path, out).with_context(|| format!("write {}", path.display()))
 }
 
 pub fn git_short_sha() -> Result<String> {
@@ -186,5 +205,21 @@ fn forward_lines<R: std::io::Read>(reader: R, prefix: &str, lock: &SharedOut) {
         let _g = lock.lock().unwrap();
         let mut stdout = std::io::stdout().lock();
         let _ = writeln!(stdout, "{prefix}{line}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::set_json_string;
+
+    #[test]
+    fn set_json_string_edits_in_place() {
+        let raw = "{\n  \"name\": \"app\",\n  \"version\": \"0.1.13\",\n  \"bundle\": {\n    \"targets\": [\"nsis\", \"deb\"]\n  }\n}\n";
+        let path = std::env::temp_dir().join(format!("xtask-set-json-{}.json", std::process::id()));
+        std::fs::write(&path, raw).unwrap();
+        set_json_string(&path, "version", "0.1.14").unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(out, raw.replace("0.1.13", "0.1.14"));
     }
 }

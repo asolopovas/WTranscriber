@@ -23,18 +23,13 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": ["**"]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "deb"
-    ],
+    "targets": ["nsis", "deb"],
     "linux": {
       "deb": {
         "depends": [
@@ -48,9 +43,7 @@
           "bzip2",
           "tar"
         ],
-        "recommends": [
-          "ffmpeg"
-        ]
+        "recommends": ["ffmpeg"]
       }
     },
     "icon": [
