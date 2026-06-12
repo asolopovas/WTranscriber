@@ -159,8 +159,6 @@ function Get-NvidiaComputeCapability {
 function Get-ReleaseSha256([string]$ReleaseTag, [string]$Asset) {
     $sums = Join-Path $cache "SHA256SUMS-$ReleaseTag"
     $url = "https://github.com/asolopovas/WTranscriber/releases/download/$ReleaseTag/SHA256SUMS"
-    # Rolling tags republish assets under the same name; the checksum file must
-    # always be fetched fresh or stale caches validate against stale sums.
     Remove-Item -Force -ErrorAction SilentlyContinue $sums
     Download-FileChecked $url $sums
     $line = Get-Content $sums | Where-Object { $_ -match "\s+$([regex]::Escape($Asset))$" } | Select-Object -First 1
@@ -228,15 +226,11 @@ function Install-SherpaOnnx {
     Download-FileChecked "https://github.com/k2-fsa/sherpa-onnx/releases/download/$version/$asset" $archive
     Reset-Dir $stage
     Write-SetupLog "Extracting $asset"
-    # Pin to the Windows built-in bsdtar: PATH may resolve tar to GNU/Strawberry
-    # variants with incompatible flags and rsh-style "C:" host parsing.
     & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf $archive -C $stage
     if ($LASTEXITCODE -ne 0) {
         throw "tar failed extracting $archive"
     }
     Write-SetupLog "Extracted to $stage"
-    # The CPU package keeps DLLs next to the exes in bin/; the CUDA package
-    # keeps them in lib/. Collect recursively so both layouts work.
     $dlls = @(Get-ChildItem -Path $stage -Recurse -Filter '*.dll' |
         Group-Object Name | ForEach-Object { $_.Group[0] })
     if ($dlls.Name -notcontains 'sherpa-onnx-c-api.dll') {
