@@ -12,7 +12,7 @@ This document describes the current pipeline. It is not a migration plan.
 4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` gives CLI and GUI the same cuda-fallback decision:
    - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); pre-serve workers fall back to one-shot spawning per slab.
    - whisper-cpp + cpu → in-process whisper-rs.
-   - sherpa engines (parakeet, gigaam) → in-process when the `cuda` feature is on, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and surfaces it as a `transcribe:warning` event.
+   - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process when the `cuda` feature is on, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and surfaces it as a `transcribe:warning` event.
    - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity.
 5. Dedup — per-segment and cross-segment token collapse (`job/postprocess.rs`, `dedup.rs`) against whisper repetition loops.
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
@@ -61,20 +61,25 @@ When `--model` is not passed and `--no-auto-route` is not set, the CLI chooses t
 1. If `--lang` or saved `config.language` is a real code, use it.
 2. If the language is empty or `auto`, probe the first input with `silero-lang95-onnx`.
 3. Route by language:
-   - `ru` → `gigaam-v3-ru`, then Parakeet, then Whisper.cpp
-   - Parakeet's 25 European languages → Parakeet, then Whisper.cpp
+   - `ru` → `gigaam-v3-ru`, then Parakeet, then Qwen3-ASR, then Whisper.cpp
+   - Parakeet languages also covered by Qwen3-ASR → Parakeet, then Qwen3-ASR, then Whisper.cpp
+   - remaining Parakeet languages → Parakeet, then Whisper.cpp
+   - Qwen3-only languages (`zh`, `yue`, `ar`, `id`, `ko`, `th`, `vi`, `ja`, `tr`, `hi`, `ms`, `fil`, `fa`, `mk`) → Qwen3-ASR, then Whisper.cpp
    - all other languages → Whisper.cpp
 4. Only installed models are selected. If no candidate is installed, the saved config remains unchanged.
 
 Parakeet languages: `bg`, `hr`, `cs`, `da`, `nl`, `en`, `et`, `fi`, `fr`, `de`, `el`, `hu`, `it`, `lv`, `lt`, `mt`, `pl`, `pt`, `ro`, `sk`, `sl`, `es`, `sv`, `ru`, `uk`.
 
+Qwen3-ASR languages: `zh`, `en`, `yue`, `ar`, `de`, `fr`, `es`, `pt`, `id`, `it`, `ko`, `ru`, `th`, `vi`, `ja`, `tr`, `hi`, `ms`, `nl`, `sv`, `da`, `fi`, `pl`, `cs`, `fil`, `fa`, `el`, `hu`, `mk`, `ro`.
+
 ## Engines
 
-| Engine tag    | Models                          | Use case                |
-| ------------- | ------------------------------- | ----------------------- |
-| `parakeet`    | `parakeet-tdt-0.6b-v3-int8`     | Fast default ASR        |
-| `nemo-ctc`    | `gigaam-v3-ru`                  | Russian-specialised ASR |
-| `whisper-cpp` | `whisper-cpp-large-v3-turbo-q8` | Multilingual fallback   |
+| Engine tag    | Models                          | Use case                      |
+| ------------- | ------------------------------- | ----------------------------- |
+| `parakeet`    | `parakeet-tdt-0.6b-v3-int8`     | Fast default ASR              |
+| `nemo-ctc`    | `gigaam-v3-ru`                  | Russian-specialised ASR       |
+| `qwen3-asr`   | `qwen3-asr-0.6b-int8`           | 30 languages incl. Asian/MENA |
+| `whisper-cpp` | `whisper-cpp-large-v3-turbo-q8` | Multilingual fallback         |
 
 The current catalogue has no legacy Sherpa Whisper fallback.
 

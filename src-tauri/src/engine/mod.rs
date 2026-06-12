@@ -1,6 +1,7 @@
 mod chunk;
 mod nemo_ctc;
 mod processor;
+mod qwen3_asr;
 mod recognizer;
 mod runtime;
 mod sherpa;
@@ -37,7 +38,7 @@ pub fn resolve_device(config: &mut Config) -> Option<String> {
                     .into(),
             )
         }
-        Engine::Parakeet | Engine::NemoCtc => {
+        Engine::Parakeet | Engine::NemoCtc | Engine::Qwen3Asr => {
             if crate::runtimes::dependencies::onnx_provider(config.device) == "cuda" {
                 None
             } else {
@@ -76,6 +77,7 @@ pub fn run(
             transducer::run(samples, audio_dur_sec, config, on_progress, cancelled)?
         }
         Engine::NemoCtc => nemo_ctc::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
+        Engine::Qwen3Asr => qwen3_asr::run(samples, audio_dur_sec, config, on_progress, cancelled)?,
         Engine::WhisperCpp => {
             #[cfg(not(target_os = "ios"))]
             {
@@ -104,7 +106,10 @@ fn use_in_process(config: &Config) -> bool {
         .ok()
         .is_some_and(|v| v == "1")
     {
-        return matches!(config.engine, Engine::Parakeet | Engine::NemoCtc);
+        return matches!(
+            config.engine,
+            Engine::Parakeet | Engine::NemoCtc | Engine::Qwen3Asr
+        );
     }
 
     if matches!(config.device, crate::config::Device::Cuda) && !cfg!(feature = "cuda") {
@@ -118,7 +123,10 @@ fn use_in_process(config: &Config) -> bool {
     {
         return false;
     }
-    matches!(config.engine, Engine::Parakeet | Engine::NemoCtc)
+    matches!(
+        config.engine,
+        Engine::Parakeet | Engine::NemoCtc | Engine::Qwen3Asr
+    )
 }
 
 #[allow(clippy::significant_drop_tightening)]
@@ -246,7 +254,7 @@ mod tests {
         assert!(!use_in_process(&cfg(Engine::WhisperCpp, Device::Cpu)));
         assert!(!use_in_process(&cfg(Engine::WhisperCpp, Device::Cuda)));
 
-        for e in [Engine::Parakeet, Engine::NemoCtc] {
+        for e in [Engine::Parakeet, Engine::NemoCtc, Engine::Qwen3Asr] {
             assert!(
                 use_in_process(&cfg(e, Device::Cpu)),
                 "{e:?} on CPU should be in-process"

@@ -7,8 +7,8 @@ use std::{
 };
 
 use sherpa_onnx::{
-    OfflineModelConfig, OfflineNemoEncDecCtcModelConfig, OfflineRecognizer,
-    OfflineRecognizerConfig, OfflineTransducerModelConfig,
+    OfflineModelConfig, OfflineNemoEncDecCtcModelConfig, OfflineQwen3ASRModelConfig,
+    OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig,
 };
 
 use crate::{
@@ -79,6 +79,7 @@ fn build_config(config: &Config, provider: &str, threads: u32) -> Result<Offline
     match config.engine {
         Engine::Parakeet => transducer_config(config, provider, threads),
         Engine::NemoCtc => nemo_ctc_config(config, provider, threads),
+        Engine::Qwen3Asr => qwen3_asr_config(config, provider, threads),
         Engine::WhisperCpp => Err(Error::Config(
             "whisper-cpp engine bypasses the sherpa recognizer; \
              dispatch happens in engine::run"
@@ -233,6 +234,52 @@ fn nemo_ctc_config(
                 model: Some(model.to_string_lossy().into_owned()),
             },
             tokens: Some(tokens.to_string_lossy().into_owned()),
+            provider: Some(provider.into()),
+            num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
+            debug: true,
+            ..OfflineModelConfig::default()
+        },
+        ..OfflineRecognizerConfig::default()
+    })
+}
+
+fn qwen3_asr_config(
+    config: &Config,
+    provider: &str,
+    threads: u32,
+) -> Result<OfflineRecognizerConfig> {
+    let dir = model_dir(&config.model)?;
+    let conv_frontend = dir.join("conv_frontend.onnx");
+    let encoder = ["encoder.int8.onnx", "encoder.onnx"]
+        .into_iter()
+        .map(|n| dir.join(n))
+        .find(|p| p.exists());
+    let decoder = ["decoder.int8.onnx", "decoder.onnx"]
+        .into_iter()
+        .map(|n| dir.join(n))
+        .find(|p| p.exists());
+    let tokenizer = dir.join("tokenizer");
+    let (Some(encoder), Some(decoder)) = (encoder, decoder) else {
+        return Err(Error::Transcribe(format!(
+            "encoder/decoder(.int8).onnx missing in {}",
+            dir.display()
+        )));
+    };
+    if !conv_frontend.exists() || !tokenizer.is_dir() {
+        return Err(Error::Transcribe(format!(
+            "conv_frontend.onnx or tokenizer/ missing in {}",
+            dir.display()
+        )));
+    }
+    Ok(OfflineRecognizerConfig {
+        model_config: OfflineModelConfig {
+            qwen3_asr: OfflineQwen3ASRModelConfig {
+                conv_frontend: Some(conv_frontend.to_string_lossy().into_owned()),
+                encoder: Some(encoder.to_string_lossy().into_owned()),
+                decoder: Some(decoder.to_string_lossy().into_owned()),
+                tokenizer: Some(tokenizer.to_string_lossy().into_owned()),
+                ..OfflineQwen3ASRModelConfig::default()
+            },
             provider: Some(provider.into()),
             num_threads: i32::try_from(threads.max(1)).unwrap_or(1),
             debug: true,

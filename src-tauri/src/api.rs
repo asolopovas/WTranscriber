@@ -30,9 +30,10 @@ pub fn is_model_installed(id: &str) -> bool {
 /// Pick the best installed ASR model id (and its engine) for a detected language code.
 ///
 /// Priority follows current benchmarks:
-///   `ru`            -> `GigaAM` v3 (Russian-specialised)
-///   parakeet's 25   -> Parakeet TDT 0.6B v3 (token timestamps, fast)
-///   everything else -> Whisper-turbo (multilingual fallback)
+///   `ru`             -> `GigaAM` v3 (Russian-specialised)
+///   parakeet's 25    -> Parakeet TDT 0.6B v3 (token timestamps, fast)
+///   qwen3's other 14 -> Qwen3-ASR 0.6B (Asian/MENA languages)
+///   everything else  -> Whisper-turbo (multilingual fallback)
 /// Falls through to the next candidate if a model is not installed.
 #[must_use]
 pub fn route_model_for_lang(lang: &str) -> Option<(String, Engine)> {
@@ -42,12 +43,20 @@ pub fn route_model_for_lang(lang: &str) -> Option<(String, Engine)> {
         "ru" => &[
             "gigaam-v3-ru",
             "parakeet-tdt-0.6b-v3-int8",
+            "qwen3-asr-0.6b-int8",
             "whisper-cpp-large-v3-turbo-q8",
         ],
-        "bg" | "hr" | "cs" | "da" | "nl" | "en" | "et" | "fi" | "fr" | "de" | "el" | "hu"
-        | "it" | "lv" | "lt" | "mt" | "pl" | "pt" | "ro" | "sk" | "sl" | "es" | "sv" | "uk" => {
+        "cs" | "da" | "nl" | "en" | "fi" | "fr" | "de" | "el" | "hu" | "it" | "pl" | "pt"
+        | "ro" | "es" | "sv" => &[
+            "parakeet-tdt-0.6b-v3-int8",
+            "qwen3-asr-0.6b-int8",
+            "whisper-cpp-large-v3-turbo-q8",
+        ],
+        "bg" | "hr" | "et" | "lv" | "lt" | "mt" | "sk" | "sl" | "uk" => {
             &["parakeet-tdt-0.6b-v3-int8", "whisper-cpp-large-v3-turbo-q8"]
         }
+        "zh" | "yue" | "ar" | "id" | "ko" | "th" | "vi" | "ja" | "tr" | "hi" | "ms" | "fil"
+        | "fa" | "mk" => &["qwen3-asr-0.6b-int8", "whisper-cpp-large-v3-turbo-q8"],
         _ => &["whisper-cpp-large-v3-turbo-q8"],
     };
     candidates

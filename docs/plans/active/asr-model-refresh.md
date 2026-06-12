@@ -30,11 +30,11 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
   - [x] Bump the `sherpa-onnx` crate to the matching release if published.
   - [x] Delete `.android-prebuilt` so xtask re-fetches v1.13.2 prebuilts; rebuild APK and confirm the jniLibs set is complete.
   - [x] `just check`, then a desktop transcription run with sortformer diarization enabled.
-- [ ] Phase 2 — Qwen3-ASR 0.6B catalogue entry
-  - [ ] Verify the Rust binding exposes the Qwen3-ASR recogniser config; if not, decide between binding upgrade and the `wt` subprocess path.
-  - [ ] Pin csukuangfj int8 export URLs + sha256 in `catalog_data.rs`; new engine tag wired through `engine/processor.rs`, `config.rs`, `api.rs`, `wt.rs`, `types.ts`.
-  - [ ] Extend auto-route: Qwen3 languages (minus Parakeet/GigaAM overlap) → qwen3-asr before Whisper.
-  - [ ] CLI smoke runs: zh/ja/ko sample plus an EU-language sample proving Parakeet still wins routing.
+- [x] Phase 2 — Qwen3-ASR 0.6B catalogue entry
+  - [x] Verify the Rust binding exposes the Qwen3-ASR recogniser config; if not, decide between binding upgrade and the `wt` subprocess path.
+  - [x] Pin csukuangfj int8 export URLs + sha256 in `catalog_data.rs`; new engine tag wired through `engine/processor.rs`, `config.rs`, `api.rs`, `wt.rs`, `types.ts`.
+  - [x] Extend auto-route: Qwen3 languages (minus Parakeet/GigaAM overlap) → qwen3-asr before Whisper.
+  - [x] CLI smoke runs: zh/ja/ko sample plus an EU-language sample proving Parakeet still wins routing.
 - [ ] Phase 3 — Cohere Transcribe evaluation (decision gate, not a commitment)
   - [ ] Run `sherpa-onnx-cohere-transcribe-14-lang` int8 (~2 GB) via CLI on the same samples; compare WER and RTF against whisper-large-v3-turbo-q8.
   - [ ] If clearly better: add as `desktop_only` non-default entry; otherwise record the numbers and close.
@@ -42,6 +42,7 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 ## Decisions
 
 - 2026-06-12: Keep Parakeet v3 default, GigaAM v3 for Russian, Whisper as long-tail fallback — research found no successor to any of them.
+- 2026-06-12: Qwen3-ASR runs both in-process (crate 1.13.2 exposes `OfflineQwen3ASRModelConfig`) and via the `sherpa-onnx-offline` subprocess (`--qwen3-asr-*` flags); model source is the csukuangfj2 int8 export with the tokenizer directory passed as `tokenizer`.
 - 2026-06-12: Phases ordered by risk: runtime bump is low-risk and fixes a shipped crash class; Qwen3-ASR is additive; Cohere is gated on measured benefit because of its 2 GB footprint.
 
 ## Verification log
@@ -49,5 +50,6 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 - 2026-06-12: `just check` — 11 jobs green after bumping sherpa-version.txt and sherpa-onnx crates to 1.13.2 (first run failed: offline clippy needed `cargo fetch` for the new crates).
 - 2026-06-12: `wt --no-cache --diarizer sortformer-onnx tmp/gpu-test.wav` (sherpa-shared build) — parakeet + sortformer end-to-end on 1.13.2, 1 speaker, 2 segments, transcript JSON written.
 - 2026-06-12: `xtask release --dev --no-host --no-deb` — Android prebuilts re-fetched as sherpa-onnx-v1.13.2-android.tar.bz2; dev APK contains all seven native libs with the v1.13.2 sherpa set and a rebuilt libwtranscriber_lib.so.
+- 2026-06-12: `wt models install qwen3-asr-0.6b-int8` — all six files downloaded with checksums; `wt --lang ja qwen3-ja1.wav` auto-routed to qwen3-asr (subprocess, rtf 0.26 cpu) and matched the reference transcript bar one token; `wt --lang en` still routes to parakeet; 208 Rust tests green.
 
 ## Handoff notes

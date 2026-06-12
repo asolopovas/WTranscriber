@@ -44,6 +44,7 @@ pub enum Engine {
     #[default]
     Parakeet,
     NemoCtc,
+    Qwen3Asr,
     WhisperCpp,
 }
 
@@ -53,6 +54,7 @@ impl Engine {
         match self {
             Self::Parakeet => "parakeet",
             Self::NemoCtc => "nemo-ctc",
+            Self::Qwen3Asr => "qwen3-asr",
             Self::WhisperCpp => "whisper-cpp",
         }
     }
@@ -64,6 +66,7 @@ impl std::str::FromStr for Engine {
         match s {
             "parakeet" => Ok(Self::Parakeet),
             "nemo-ctc" => Ok(Self::NemoCtc),
+            "qwen3-asr" => Ok(Self::Qwen3Asr),
             "whisper-cpp" => Ok(Self::WhisperCpp),
             _ => Err(()),
         }
@@ -289,12 +292,18 @@ mod tests {
     fn engine_string_matches_catalog_values() {
         assert_eq!(Engine::Parakeet.as_str(), "parakeet");
         assert_eq!(Engine::NemoCtc.as_str(), "nemo-ctc");
+        assert_eq!(Engine::Qwen3Asr.as_str(), "qwen3-asr");
         assert_eq!(Engine::WhisperCpp.as_str(), "whisper-cpp");
     }
 
     #[test]
     fn engine_from_str_roundtrip() {
-        for e in [Engine::Parakeet, Engine::NemoCtc, Engine::WhisperCpp] {
+        for e in [
+            Engine::Parakeet,
+            Engine::NemoCtc,
+            Engine::Qwen3Asr,
+            Engine::WhisperCpp,
+        ] {
             assert_eq!(e.as_str().parse::<Engine>().unwrap(), e);
         }
     }
@@ -376,7 +385,12 @@ mod tests {
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let mut missing: Vec<String> = Vec::new();
-        let engines = [Engine::Parakeet, Engine::NemoCtc, Engine::WhisperCpp];
+        let engines = [
+            Engine::Parakeet,
+            Engine::NemoCtc,
+            Engine::Qwen3Asr,
+            Engine::WhisperCpp,
+        ];
         for e in engines {
             let needle = format!("\"{}\"", e.as_str());
             if !raw.contains(&needle) {

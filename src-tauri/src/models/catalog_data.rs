@@ -44,6 +44,58 @@ pub(super) fn default_catalog() -> Vec<Entry> {
             ],
         },
         Entry {
+            id: "qwen3-asr-0.6b-int8".into(),
+            family: Family::Asr,
+            engine: "qwen3-asr".into(),
+            display_name: "Qwen3-ASR 0.6B (30 languages)".into(),
+            description: "Alibaba Qwen3-ASR 0.6B int8. 30 languages including Chinese, \
+                          Japanese, Korean, Arabic, Hindi and Vietnamese. ~987 MB.".into(),
+            languages: vec!["zh","en","yue","ar","de","fr","es","pt","id","it","ko","ru","th","vi","ja","tr","hi","ms","nl","sv","da","fi","pl","cs","fil","fa","el","hu","mk","ro"]
+                .into_iter().map(String::from).collect(),
+            size_bytes: 987_015_347,
+            default_active: false,
+            android_default: false,
+            desktop_only: false,
+            files: vec![
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/conv_frontend.onnx".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/conv_frontend.onnx".into(),
+                    size_bytes: 44_148_281,
+                    sha256: "d22dc4423e0940e49884e903d2ea2f7e5567c14fc1aed97e4e26d6b8f208ef9e".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/encoder.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/encoder.int8.onnx".into(),
+                    size_bytes: 182_491_662,
+                    sha256: "60748d3e6744a57c9c91e1b17424a6c2990567e8adceb0783940c03ed98fa9d9".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/decoder.int8.onnx".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/decoder.int8.onnx".into(),
+                    size_bytes: 755_914_231,
+                    sha256: "4f6885be5959ae26af3089d38ee7972c5fafbeeb1cf8d5e76eab6d8b61ca5771".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/vocab.json".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/tokenizer/vocab.json".into(),
+                    size_bytes: 2_776_833,
+                    sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/merges.txt".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/tokenizer/merges.txt".into(),
+                    size_bytes: 1_671_853,
+                    sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5".into(),
+                },
+                FileSpec {
+                    url: "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/tokenizer_config.json".into(),
+                    rel_path: "sherpa-onnx-qwen3-asr-0.6b-int8/tokenizer/tokenizer_config.json".into(),
+                    size_bytes: 12_487,
+                    sha256: "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c".into(),
+                },
+            ],
+        },
+        Entry {
             id: "whisper-cpp-large-v3-turbo-q8".into(),
             family: Family::Asr,
             engine: "whisper-cpp".into(),

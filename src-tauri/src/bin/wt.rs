@@ -105,7 +105,8 @@ struct Cli {
     #[arg(
         long,
         help = "Disable automatic ASR model selection by detected language \
-                (otherwise: ru → GigaAM, parakeet's 25 EU langs → Parakeet, else → Whisper)"
+                (otherwise: ru → GigaAM, parakeet's 25 EU langs → Parakeet, \
+                qwen3's other 14 langs → Qwen3-ASR, else → Whisper)"
     )]
     no_auto_route: bool,
 
