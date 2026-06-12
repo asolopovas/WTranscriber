@@ -32,20 +32,58 @@ function Format-ByteSize([long]$Bytes) {
     return "$Bytes bytes"
 }
 
-function Download-FileChecked([string]$Url, [string]$OutFile) {
+function Test-ZipArchive([string]$Path) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        try {
+            return ($zip.Entries.Count -gt 0)
+        } finally {
+            $zip.Dispose()
+        }
+    } catch {
+        return $false
+    }
+}
+
+function Test-TarArchive([string]$Path) {
+    & (Join-Path $env:SystemRoot 'System32\tar.exe') -tf $Path *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Download-FileChecked([string]$Url, [string]$OutFile, [scriptblock]$Validator) {
     $name = Split-Path -Leaf $OutFile
     if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
-        $size = Format-ByteSize (Get-Item $OutFile).Length
-        Write-SetupLog "Using cached $name ($size)"
-        return
+        if ($null -eq $Validator -or (& $Validator $OutFile)) {
+            $size = Format-ByteSize (Get-Item $OutFile).Length
+            Write-SetupLog "Using cached $name ($size)"
+            return
+        }
+        Write-SetupLog "Cached $name is corrupt; redownloading"
+        Remove-Item -Force $OutFile
     }
     $tmp = "$OutFile.tmp"
-    Write-SetupLog "Downloading $name"
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        Write-SetupLog "Downloading $name (attempt $attempt of $maxAttempts)"
+        Remove-Item -Force -ErrorAction SilentlyContinue $tmp
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
+        } catch {
+            Write-SetupLog "Download of $name failed: $($_.Exception.Message)"
+            continue
+        }
+        if ($null -ne $Validator -and -not (& $Validator $tmp)) {
+            Write-SetupLog "Downloaded $name failed integrity validation; retrying"
+            continue
+        }
+        Move-Item -Force $tmp $OutFile
+        $size = Format-ByteSize (Get-Item $OutFile).Length
+        Write-SetupLog "Downloaded $name ($size)"
+        return
+    }
     Remove-Item -Force -ErrorAction SilentlyContinue $tmp
-    Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
-    Move-Item -Force $tmp $OutFile
-    $size = Format-ByteSize (Get-Item $OutFile).Length
-    Write-SetupLog "Downloaded $name ($size)"
+    throw "failed to download a valid copy of $name after $maxAttempts attempts"
 }
 
 function Reset-Dir([string]$Path) {
@@ -58,7 +96,12 @@ function Expand-Zip([string]$Archive, [string]$Destination) {
     Write-SetupLog "Extracting $(Split-Path -Leaf $Archive)"
     Reset-Dir $Destination
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Destination)
+    try {
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($Archive, $Destination)
+    } catch {
+        Remove-Item -Force -ErrorAction SilentlyContinue $Archive
+        throw
+    }
     Write-SetupLog "Extracted to $Destination"
 }
 
@@ -73,7 +116,7 @@ function Install-OnnxRuntimeDirectML {
     Write-SetupLog "Installing ONNX Runtime DirectML $version"
     $archive = Join-Path $cache "Microsoft.ML.OnnxRuntime.DirectML.$version.zip"
     $stage = Join-Path $cache "Microsoft.ML.OnnxRuntime.DirectML.$version"
-    Download-FileChecked "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/$version" $archive
+    Download-FileChecked "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/$version" $archive ${function:Test-ZipArchive}
     Expand-Zip $archive $stage
     $native = Join-Path $stage 'runtimes\win-x64\native'
     Write-SetupLog 'Copying ONNX Runtime DLLs'
@@ -89,7 +132,7 @@ function Install-DirectML {
     Write-SetupLog "Installing DirectML $version"
     $archive = Join-Path $cache "Microsoft.AI.DirectML.$version.zip"
     $stage = Join-Path $cache "Microsoft.AI.DirectML.$version"
-    Download-FileChecked "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/$version" $archive
+    Download-FileChecked "https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/$version" $archive ${function:Test-ZipArchive}
     Expand-Zip $archive $stage
     Write-SetupLog 'Copying DirectML.dll'
     Copy-Item -Force (Join-Path $stage 'bin\x64-win\DirectML.dll') (Join-Path $InstallDir 'DirectML.dll')
@@ -196,7 +239,7 @@ function Install-WhisperCudaWorker {
         Write-SetupLog "Cached $asset does not match release checksum; redownloading"
         Remove-Item -Force $archive
     }
-    Download-FileChecked "https://github.com/asolopovas/WTranscriber/releases/download/$releaseTag/$asset" $archive
+    Download-FileChecked "https://github.com/asolopovas/WTranscriber/releases/download/$releaseTag/$asset" $archive ${function:Test-ZipArchive}
     Assert-Sha256 $archive $expected
     $stage = Join-Path $cache "wtranscriber-cuda-sm$arch"
     Expand-Zip $archive $stage
@@ -223,11 +266,12 @@ function Install-SherpaOnnx {
     }
     $archive = Join-Path $cache $asset
     $stage = Join-Path $cache "sherpa-onnx-$version"
-    Download-FileChecked "https://github.com/k2-fsa/sherpa-onnx/releases/download/$version/$asset" $archive
+    Download-FileChecked "https://github.com/k2-fsa/sherpa-onnx/releases/download/$version/$asset" $archive ${function:Test-TarArchive}
     Reset-Dir $stage
     Write-SetupLog "Extracting $asset"
     & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf $archive -C $stage
     if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $archive
         throw "tar failed extracting $archive"
     }
     Write-SetupLog "Extracted to $stage"
