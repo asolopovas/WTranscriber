@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from "vue";
 import type { Transcript } from "@/types";
+import { api } from "@/api";
+import { copyTextToClipboard } from "@utils/clipboard";
 import { fmtMs as fmt } from "@utils/format";
 import SlidingPanel from "@components/SlidingPanel.vue";
 import Icon from "@components/ui/Icon.vue";
@@ -39,6 +41,17 @@ function commit() {
 function cancel() {
   editing.value = null;
 }
+
+const copied = ref(false);
+
+async function copyTranscript() {
+  const text = await api.formatTranscript(props.transcript, "txt");
+  await copyTextToClipboard(text);
+  copied.value = true;
+  setTimeout(() => {
+    copied.value = false;
+  }, 1500);
+}
 </script>
 
 <template>
@@ -48,18 +61,30 @@ function cancel() {
         <Icon name="subtitles" :size="18" class="text-primary" />
         Transcript
       </h3>
-      <Button
-        variant="ghost"
-        shape="circle"
-        size="sm"
-        icon="close"
-        :icon-size="18"
-        class="mr-md"
-        title="Close transcript"
-        aria-label="Close transcript"
-        @pointerdown.stop
-        @click.stop="emit('close')"
-      />
+      <div class="flex items-center gap-xs mr-md">
+        <Button
+          variant="ghost"
+          shape="circle"
+          size="sm"
+          :icon="copied ? 'check' : 'content_copy'"
+          :icon-size="18"
+          :title="copied ? 'Copied' : 'Copy transcript'"
+          :aria-label="copied ? 'Copied' : 'Copy transcript'"
+          @pointerdown.stop
+          @click.stop="copyTranscript"
+        />
+        <Button
+          variant="ghost"
+          shape="circle"
+          size="sm"
+          icon="close"
+          :icon-size="18"
+          title="Close transcript"
+          aria-label="Close transcript"
+          @pointerdown.stop
+          @click.stop="emit('close')"
+        />
+      </div>
     </template>
     <article
       v-for="(u, i) in transcript.utterances"

@@ -33,6 +33,7 @@ import ExportDialog from "@components/dialogs/ExportDialog.vue";
 import RedoDiarizeDialog from "@components/dialogs/RedoDiarizeDialog.vue";
 import TrimDialog from "@components/dialogs/TrimDialog.vue";
 import { audioExtensions, basenameOf, hasAudioExt } from "@utils/audio";
+import { copyTextToClipboard } from "@utils/clipboard";
 import { applyMissingModelDefaults, applySystemConfigDefaults } from "@utils/models";
 import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { useEssentials } from "@composables/useEssentials";
@@ -799,21 +800,6 @@ async function loadTranscriptFor(target: DirEntry): Promise<Transcript | null> {
 
 function isAndroid(): boolean {
   return /Android/i.test(navigator.userAgent);
-}
-
-async function copyTextToClipboard(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const el = document.createElement("textarea");
-  el.value = text;
-  el.style.position = "fixed";
-  el.style.left = "-9999px";
-  document.body.appendChild(el);
-  el.select();
-  document.execCommand("copy");
-  el.remove();
 }
 
 async function onCopy(entry?: DirEntry) {
