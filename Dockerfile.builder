@@ -70,7 +70,9 @@ FROM base AS android
 ARG ANDROID_CMDLINE_VERSION=11076708
 ARG ANDROID_CMDLINE_SHA256=
 ARG ANDROID_PLATFORM=android-34
+ARG ANDROID_PLATFORM_EXTRA=android-36
 ARG ANDROID_BUILD_TOOLS=34.0.0
+ARG ANDROID_BUILD_TOOLS_EXTRA=35.0.0
 ARG ANDROID_NDK_VERSION=27.2.12479018
 ENV ANDROID_HOME=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
@@ -98,7 +100,9 @@ printf 'y\n%.0s' $(seq 1 50) | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmana
 "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
     "platform-tools" \
     "platforms;${ANDROID_PLATFORM}" \
+    "platforms;${ANDROID_PLATFORM_EXTRA}" \
     "build-tools;${ANDROID_BUILD_TOOLS}" \
+    "build-tools;${ANDROID_BUILD_TOOLS_EXTRA}" \
     "ndk;${ANDROID_NDK_VERSION}" >/dev/null
 rm -rf \
     "${NDK_HOME}/simpleperf" \
