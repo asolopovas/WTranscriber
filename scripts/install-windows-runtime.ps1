@@ -212,7 +212,7 @@ function Install-WhisperCudaWorker {
 }
 
 function Install-SherpaOnnx {
-    $version = 'v1.13.0'
+    $version = 'v1.13.2'
     Write-SetupLog "Installing sherpa-onnx speech runtime $version"
     if (Has-NvidiaGpu) {
         Write-SetupLog 'NVIDIA GPU detected; using the CUDA runtime package'

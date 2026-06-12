@@ -25,11 +25,11 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 
 ## Steps
 
-- [ ] Phase 1 — runtime bump to v1.13.2
-  - [ ] Update `src-tauri/sherpa-version.txt`; replace the hardcoded `v1.13.0` in `scripts/install-windows-runtime.ps1:215`; confirm `install-sherpa-cuda.ps1` derives from the version file.
-  - [ ] Bump the `sherpa-onnx` crate to the matching release if published.
-  - [ ] Delete `.android-prebuilt` so xtask re-fetches v1.13.2 prebuilts; rebuild APK and confirm the jniLibs set is complete.
-  - [ ] `just check`, then a desktop transcription run with sortformer diarization enabled.
+- [x] Phase 1 — runtime bump to v1.13.2
+  - [x] Update `src-tauri/sherpa-version.txt`; replace the hardcoded `v1.13.0` in `scripts/install-windows-runtime.ps1:215`; confirm `install-sherpa-cuda.ps1` derives from the version file.
+  - [x] Bump the `sherpa-onnx` crate to the matching release if published.
+  - [x] Delete `.android-prebuilt` so xtask re-fetches v1.13.2 prebuilts; rebuild APK and confirm the jniLibs set is complete.
+  - [x] `just check`, then a desktop transcription run with sortformer diarization enabled.
 - [ ] Phase 2 — Qwen3-ASR 0.6B catalogue entry
   - [ ] Verify the Rust binding exposes the Qwen3-ASR recogniser config; if not, decide between binding upgrade and the `wt` subprocess path.
   - [ ] Pin csukuangfj int8 export URLs + sha256 in `catalog_data.rs`; new engine tag wired through `engine/processor.rs`, `config.rs`, `api.rs`, `wt.rs`, `types.ts`.
@@ -45,5 +45,9 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 - 2026-06-12: Phases ordered by risk: runtime bump is low-risk and fixes a shipped crash class; Qwen3-ASR is additive; Cohere is gated on measured benefit because of its 2 GB footprint.
 
 ## Verification log
+
+- 2026-06-12: `just check` — 11 jobs green after bumping sherpa-version.txt and sherpa-onnx crates to 1.13.2 (first run failed: offline clippy needed `cargo fetch` for the new crates).
+- 2026-06-12: `wt --no-cache --diarizer sortformer-onnx tmp/gpu-test.wav` (sherpa-shared build) — parakeet + sortformer end-to-end on 1.13.2, 1 speaker, 2 segments, transcript JSON written.
+- 2026-06-12: `xtask release --dev --no-host --no-deb` — Android prebuilts re-fetched as sherpa-onnx-v1.13.2-android.tar.bz2; dev APK contains all seven native libs with the v1.13.2 sherpa set and a rebuilt libwtranscriber_lib.so.
 
 ## Handoff notes

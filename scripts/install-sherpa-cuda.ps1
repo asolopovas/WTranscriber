@@ -10,14 +10,14 @@
   (runtime DLL load for `--features cuda` builds).
 
 .PARAMETER Version
-  sherpa-onnx tag to install. Defaults to v1.13.0.
+  sherpa-onnx tag to install. Defaults to the version in src-tauri/sherpa-version.txt.
 
 .PARAMETER Force
   Reinstall even if sherpa-onnx-c-api.lib is already present.
 
 .EXAMPLE
   pwsh -File scripts/install-sherpa-cuda.ps1
-  pwsh -File scripts/install-sherpa-cuda.ps1 -Version v1.13.0 -Force
+  pwsh -File scripts/install-sherpa-cuda.ps1 -Version v1.13.2 -Force
 #>
 
 [CmdletBinding()]
