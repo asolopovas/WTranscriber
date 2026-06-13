@@ -5,23 +5,23 @@
 `transcriber/job.rs` drives every transcription (GUI and `wt` CLI):
 
 1. Cache probe — key over source mtime, model, language, speakers, trim, timestamp mode (`transcriber/cache.rs`); hit serves immediately.
-2. Slab streaming — `audio_toolkit/stream.rs` decodes via ffmpeg/symphonia into ~60 s slabs (10 s calibration first slab; durations in `transcriber/job/slab.rs`). Slab ends snap to the lowest-energy point within ±1.5 s of the nominal boundary so words are not cut mid-syllable.
-3. VAD gate — slabs with no speech (silero VAD, fail-open if the model is absent; `WT_NO_VAD_GATE=1` disables) are skipped before any engine runs (`job/streaming.rs`).
-4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` gives CLI and GUI the same cuda-fallback decision:
-   - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); pre-serve workers fall back to one-shot spawning per slab.
+2. Slab streaming — `audio_toolkit/stream.rs` decodes via ffmpeg/symphonia into ~60 s slabs (10 s calibration first slab; durations in `transcriber/job/slab.rs`). Slab ends snap to the lowest-energy point within ±1.5 s of the nominal boundary (`SNAP_SEARCH_SEC`).
+3. VAD gate — no-speech slabs are skipped before any engine runs (silero VAD, fail-open if the model is absent; `WT_NO_VAD_GATE=1` disables; `job/streaming.rs`).
+4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` (`engine/mod.rs`) gives CLI and GUI the same cuda-fallback decision:
+   - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); falls back to one-shot spawn per slab when the serve worker is absent.
    - whisper-cpp + cpu → in-process whisper-rs.
-   - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process when the `cuda` feature is on, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and surfaces it as a `transcribe:warning` event.
+   - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process with the `cuda` feature, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and emits a `transcribe:warning` event.
    - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity.
-5. Dedup — per-segment and cross-segment token collapse (`job/postprocess.rs`, `dedup.rs`) against whisper repetition loops.
+5. Dedup — per-segment and cross-segment token collapse against whisper repetition loops (`job/postprocess.rs`, `dedup.rs`).
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
 7. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcriber/transcript/`).
 8. Cache store and JSON export.
 
-Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count. Engine warnings reach the UI through `Sink::warn` → `transcribe:warning`.
+Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count (default 4). Engine warnings reach the UI through `progress::Sink::warn` → `transcribe:warning`.
 
 ## Defaults
 
-Fresh installs use these catalogue entries:
+Fresh installs use these catalogue entries (`models/catalog.rs`):
 
 | Role               | Default ID                  | Notes                             |
 | ------------------ | --------------------------- | --------------------------------- |
@@ -54,7 +54,7 @@ Important rules:
 
 ## Language-aware ASR routing
 
-When `--model` is not passed and `--no-auto-route` is not set, the CLI chooses the best installed ASR model for the language.
+When `--model` is not passed and `--no-auto-route` is not set, the CLI picks the best installed ASR model for the language (`api.rs::route_model_for_lang`).
 
 1. If `--lang` or saved `config.language` is a real code, use it.
 2. If the language is empty or `auto`, probe the first input with `silero-lang95-onnx`.

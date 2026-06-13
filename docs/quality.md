@@ -1,6 +1,6 @@
 # Quality ledger
 
-This ledger captures project quality in an agent-legible form. Update it when guardrails, architecture, or known risks change. Prefer turning repeated review feedback into checks.
+Update when guardrails, architecture, or known risks change. Turn repeated review feedback into checks.
 
 ## Current grades
 
@@ -17,18 +17,17 @@ Grades are deliberately coarse: A = mechanically enforced and well tested; B = d
 
 ## Golden principles
 
-- Boundaries over micromanagement: enforce module, IPC, and platform edges; allow local implementation freedom.
+- Enforce module, IPC, and platform edges; allow local implementation freedom.
 - Parse or type data at boundaries; do not build on guessed shapes.
 - Prefer repository-local, inspectable knowledge over chat, memory, or external notes.
-- Encode taste as tooling when possible: small checks with remediation-oriented errors beat long prose.
-- Pay down drift continuously in small changes.
+- Encode taste as tooling: small checks with remediation-oriented errors beat long prose.
 
 ## Quality-gardening loop
 
-Use this loop for recurring cleanup or after a confusing agent run:
+After a confusing agent run or for recurring cleanup:
 
 1. Identify the repeated confusion, stale pattern, or escaped bug.
-2. Decide whether it belongs in code, a test, a lint, a script, a skill, or docs.
+2. Decide where it belongs: code, test, lint, script, skill, or docs.
 3. Add the smallest enforceable guardrail.
 4. Update this ledger if the grade or gap changes.
 5. Move any resolved item out of [`technical-debt.md`](technical-debt.md).

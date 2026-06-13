@@ -1,19 +1,19 @@
 # Verification
 
-Use the smallest check that proves the change while iterating. Before handoff, run the matrix row that matches the touched files. Command execution semantics and live-session liveness are owned by [`dev-loop.md`](dev-loop.md).
+Use the smallest check that proves the change while iterating. Before handoff, run the matrix row that matches the touched files. Execution semantics and live-session liveness are owned by [`dev-loop.md`](dev-loop.md).
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden except for the release bump commit that runs after `just check`.
+`.githooks/pre-commit` is mandatory; `--no-verify` is forbidden except for the release bump commit after `just check`.
 
 The hook:
 
-1. Auto-formats touched Rust with `cargo fmt` for `src-tauri`/`xtask`.
-2. Auto-formats touched TS/Vue/scripts/docs with `prettier --write`.
+1. Auto-formats touched Rust (`cargo fmt`, separate manifests for `src-tauri`/`xtask`).
+2. Auto-formats touched TS/Vue/scripts/docs/config (`prettier --write`).
 3. Re-stages formatted files.
 4. Runs `bun scripts/check-changed.ts --staged`.
 
-The hook covers changed-file formatting, TS/Vue typecheck/tests/lint, xtask clippy/tests, and dependency audits when lockfiles change. Compile-heavy native Rust correctness remains in explicit `just check` and release gates.
+`check-changed.ts` selects gates from changed files: typecheck, Vue lint, doc lint, JS tests, xtask clippy/tests, and `cargo audit`/`bun audit` when lockfiles change. Compile-heavy native Rust correctness stays in `just check` / release gates.
 
 ## Main gates
 
@@ -26,11 +26,11 @@ bun run lint-docs
 bun run test
 ```
 
-`just check` runs `cargo xtask check`, which fans out 11 jobs in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs complete before the first failure is reported. The `fmt-check` job also runs `bun run lint-docs` so the documentation map, local links, and execution-plan structure stay mechanically enforced.
+`just check` runs `cargo xtask check`, fanning out 11 jobs in parallel: `fmt-check`, `clippy`, `clippy-xtask`, `typecheck`, `vue-lint`, `knip`, `rust-test`, `xtask-test`, `js-test`, `machete`, `audit`. All jobs run to completion before the first failure is reported. `fmt-check` also runs `bun run lint-docs`.
 
-CI runs `just check-changed --base …`: formatting, lint, typecheck, tests, and audits are selected from changed files. Full native Rust/Tauri gates are local/release-only.
+CI runs `just check-changed --base …`; full native Rust/Tauri gates are local/release-only.
 
-`just check` assumes C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built. `just setup` pre-warms them via `cargo build`. If `target/` is wiped, re-run `just setup` rather than letting `just check` pay the cold rebuild under parallel cargo lock contention.
+`just check` assumes the C++ deps (`whisper-rs-sys`, `sherpa-onnx-sys`) are already built. `just setup` pre-warms them. If `target/` is wiped, re-run `just setup` rather than paying the cold rebuild under `just check`'s parallel cargo lock contention.
 
 ## Change-type matrix
 
@@ -47,6 +47,6 @@ CI runs `just check-changed --base …`: formatting, lint, typecheck, tests, and
 ## Live-session review loop
 
 - Desktop: scan the live `[dev]` stream for new error/panic lines.
-- Android: diff `tmp/logcat.log` line counts. New failures require root cause from `logs/*.log`, `tmp/*.log`, `adb logcat`, and recent git history.
+- Android: diff `tmp/logcat.log` line counts; new failures need root cause from `logs/*.log`, `tmp/*.log`, `adb logcat`, and recent git history.
 - Android JS edits must show `[vite] hmr update` in `tmp/android-dev.log`.
-- New `am_kill`, `am_proc_died`, or `am_crash` for the app means inspect `tmp/logcat.log` around the timestamp before continuing.
+- New `am_kill`/`am_proc_died`/`am_crash` for the app means inspect `tmp/logcat.log` around the timestamp before continuing.

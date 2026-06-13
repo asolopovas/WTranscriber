@@ -1,6 +1,6 @@
 # Documentation map
 
-The repository is the system of record for agent-operable knowledge. Keep `AGENTS.md` short and put durable details here so agents can progressively disclose context instead of loading a monolithic manual.
+`AGENTS.md` is the table of contents; durable detail lives here so agents load only what a task needs.
 
 ## Catalogue
 
@@ -18,21 +18,18 @@ The repository is the system of record for agent-operable knowledge. Keep `AGENT
 | [`technical-debt.md`](technical-debt.md)     | Known debt, temporary patches, cleanup triggers               | Updated when debt is added or retired; local links enforced by `scripts/lint-docs.ts`    |
 | [`plans/README.md`](plans/README.md)         | Execution-plan lifecycle and directory contract               | Plan directories and required plan headings are enforced by `scripts/lint-docs.ts`       |
 
-## Agent-first documentation rules
+## Rules
 
-- Prefer a map plus links over a large instruction blob.
-- Store decisions, workflows, quality expectations, and temporary patches in versioned Markdown near the code they explain.
-- Every doc should say what code or command verifies it; `bun run lint-docs` enforces catalogue links, local Markdown links, `AGENTS.md` size, and execution-plan shape.
-- When a rule becomes repeatable and mechanical, encode it in tooling rather than prose.
-- When an agent gets confused twice, promote the missing context into `docs/` or a project skill.
-- Keep docs small enough to read in one pass; split by domain when a file becomes a grab bag.
+- Keep each doc small enough to read in one pass; split by domain when a file becomes a grab bag.
+- Every doc names the code or command that verifies it. `bun run lint-docs` enforces catalogue links, local Markdown links, `AGENTS.md` size, and execution-plan shape.
+- When a rule becomes mechanical, encode it in tooling rather than prose. When an agent gets confused twice, promote the missing context into `docs/` or a skill.
 
 ## Update checklist
 
-When changing behaviour, ask:
+When changing behaviour:
 
 1. Does `AGENTS.md` still point to the right source of truth?
 2. Does the relevant doc describe the new workflow or invariant?
-3. Is there a check, test, lint, or script that can enforce the rule?
-4. If the work spans multiple turns, should there be an execution plan under `docs/plans/active/`?
-5. Did any known debt move between `technical-debt.md`, `quality.md`, and completed work?
+3. Can a check, test, lint, or script enforce the rule instead?
+4. Multi-turn work → add an execution plan under `docs/plans/active/`.
+5. Did debt move between `technical-debt.md`, `quality.md`, and completed work?

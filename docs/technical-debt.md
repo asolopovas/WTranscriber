@@ -1,6 +1,6 @@
 # Technical debt
 
-Track temporary patches, known cleanup work, and removal triggers here. Debt should be specific enough for an agent to retire it without external memory.
+Temporary patches, cleanup work, and removal triggers. Each item must be specific enough to retire without external memory.
 
 ## Tauri 2.11 patches
 

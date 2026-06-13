@@ -1,6 +1,6 @@
 # Architecture
 
-WTranscriber is a Tauri app: Vue/WebView owns presentation; Rust owns filesystem, models, native runtimes, audio processing, and long-running transcription work.
+Tauri app. Vue/WebView owns presentation; Rust owns filesystem, models, native runtimes, audio processing, and long-running transcription work.
 
 ## Layout
 
@@ -60,10 +60,8 @@ Touch all relevant layers in one change:
 
 ## Mechanical guardrails
 
-Current guardrails live in:
-
 - `.githooks/pre-commit` and `scripts/check-changed.ts` for changed-file checks.
 - `cargo xtask check` for the full local gate (jobs enumerated in `docs/verification.md`).
 - `scripts/lint-vue.ts`, `cargo fmt`, clippy, tests, `knip`, `machete`, and audits.
 
-When a prose invariant becomes important enough to repeat, add a lint, test, or xtask check and make its failure message actionable for agents.
+When a prose invariant becomes important enough to repeat, add a lint, test, or xtask check with an actionable failure message rather than another doc line.

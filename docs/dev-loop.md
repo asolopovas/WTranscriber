@@ -2,28 +2,27 @@
 
 ## Task contract
 
-Most `just` recipes run through `scripts/run.ts`:
+Most `just` recipes wrap `scripts/run.ts`:
 
-- Output line-prefixed with `[tag]`.
-- Heartbeat after 10 s of silence: `… still running, Xs elapsed, Ys without output`.
+- Output is line-prefixed with `[tag]`; per-tag log at `logs/<tag>.log`.
 - Idle timeout (`--idle`, default 90 s): kills with `FAIL IDLE_TIMEOUT`, exit 124.
 - Hard timeout (`--max`, default 600 s): kills with `FAIL MAX_TIMEOUT`, exit 124.
-- Final summary: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
+- Final line: `OK in X.Ys` / `FAIL exit=N in X.Ys`.
 
-`just dev` uses `--idle 0 --max 0`. `just android` runs xtask directly so Android bootstrap is not killed during quiet cargo/Gradle phases. Anything quiet >30 s during steady state is a bug.
+`just dev` runs `--idle 0 --max 0` (no watchdog). `just android` runs xtask directly, so the bootstrap is not killed during quiet cargo/Gradle phases.
 
-Verification gates, pre-commit behaviour, and the change-type matrix live in [`verification.md`](verification.md).
+Verification gates and the change-type matrix live in [`verification.md`](verification.md).
 
 ## Desktop
 
-Windows is the primary release host. Linux is supported for desktop dev (`just dev`) and for the Docker-based `.deb` path inside `cargo xtask release`. The `just build` shortcut runs only on a Windows host but builds the full matrix (Windows + Linux `.deb` + Android APK). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
+Windows is the primary release host. Linux supports `just dev` and the Docker `.deb` path in `cargo xtask release`. `just build` runs only on a Windows host but builds the full matrix (Windows + Linux `.deb` + Android APK). `bundle.targets = ["nsis", "deb"]`; no macOS `.app`.
 
 ```bash
 just dev          # HMR (Vite + tauri dev)
-just dev stop     # stop any running dev session (desktop + android)
+just dev stop     # stop any dev session (desktop + android)
 just build        # full dev release matrix (Windows host)
 just check        # parallel pre-release gate
-just check-changed --staged  # changed-file gate used by hooks/CI
+just check-changed --staged  # changed-file gate (hooks/CI)
 ```
 
 ## Android
@@ -31,24 +30,24 @@ just check-changed --staged  # changed-file gate used by hooks/CI
 ```bash
 just android                       # clean-start USB HMR session
 just android host                  # bootstrap Wi-Fi/LAN session
-just android usb <serial>          # pick a device when multiple are attached
+just android usb <serial>          # pick a device when several are attached
 just dev stop                      # stop session and forwards
 
 bun scripts/android-install.ts          # APK-only build + install
-bun scripts/android-install.ts --force  # uninstall + reinstall (handles signature mismatch)
+bun scripts/android-install.ts --force  # uninstall + reinstall (signature mismatch)
 bun scripts/android-emu.ts              # headless x86_64 emulator
 ```
+
+`just android` is not a no-op: it stops any existing session and force-stops the app before restarting.
 
 ## Live-session signals
 
 - HMR proof after JS/CSS edit: `[vite] hmr update /src/...` in `tmp/android-dev.log`.
-- USB mode pins the host to localhost: bootstrap sets `TAURI_DEV_HOST=127.0.0.1` and `adb reverse tcp:1420`/`tcp:1421` so the device reaches Vite over USB. Host mode (`just android host`) is the LAN path — it detects the host LAN IP, sets `TAURI_DEV_HOST` to it, and passes `--host`; Vite serves HMR on `1421` from that host.
-- Crash/OOM proof: `am_kill` / `am_proc_died` / `am_crash` in `tmp/logcat.log` for the app.
+- USB mode sets `TAURI_DEV_HOST=127.0.0.1` and `adb reverse tcp:1420`/`tcp:1421` so the device reaches Vite over USB. Host mode detects the LAN IP, sets `TAURI_DEV_HOST` to it, and passes `--host`.
+- Crash/OOM proof: `am_kill` / `am_proc_died` / `am_crash` for the app in `tmp/logcat.log`.
 - `location.href` is not a health signal on Android.
 
 Full `tmp/` artefact contract: [`tmp.md`](tmp.md).
-
-`just android` is repeatable but not a no-op: it stops any existing Android dev session and force-stops the app before starting a new one.
 
 ## HMR rule
 
