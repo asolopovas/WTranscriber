@@ -26,9 +26,16 @@ pub(super) struct WindowsVmConfig {
 
 impl ReleaseConfig {
     pub fn load() -> Result<Self> {
-        let path = std::env::var("WT_RELEASE_CONFIG")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| root().join("release.config.json"));
+        let path = if let Ok(custom) = std::env::var("WT_RELEASE_CONFIG") {
+            PathBuf::from(custom)
+        } else {
+            let local = root().join("release.config.local.json");
+            if local.exists() {
+                local
+            } else {
+                root().join("release.config.json")
+            }
+        };
         let value = read_json(&path)?;
         serde_json::from_value(value).with_context(|| format!("parse {}", path.display()))
     }

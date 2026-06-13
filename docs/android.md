@@ -4,7 +4,7 @@ Dev-loop commands live in [`dev-loop.md`](dev-loop.md). This file: prerequisites
 
 ## Prerequisites
 
-- Android Studio with SDK + NDK (version pinned in `justfile` `_android_ndk` — currently `27.2.12479018`)
+- Android Studio with SDK + NDK (version pinned in `justfile` `_android_ndk`)
 - JDK 21
 - Rust Android targets (`rustup target add aarch64-linux-android`, etc.)
 - sherpa-onnx Android prebuilts are fetched automatically on first build into `.android-prebuilt/`
@@ -26,18 +26,19 @@ The keystore-properties path is regenerated per-host by `xtask/src/release/build
 
 ## What `just android` guarantees
 
-`cargo xtask android bootstrap usb` always stops any existing dev session and force-stops the app first, then starts a fresh one:
+`cargo xtask android bootstrap usb` always stops any existing dev session and force-stops the app first, then brings up a fresh one. The bootstrap prints labelled `[stage N/7]` lines:
 
-1. Validates adb device, writes `tmp/_platform`.
-2. Clears + tails logcat → `tmp/logcat.log` (W+, RustStdoutStderr/Tauri/chromium; `am_crash`, `am_proc_died`, `am_proc_start`, `am_kill` raised to V).
-3. In USB mode, configures `adb reverse tcp:1420` and `tcp:1421` for localhost/emulator fallback. Tauri 2.11 rewrites physical Android devices to the host LAN IP on Windows, so the effective host is the one printed by `tauri android dev`.
-4. Spawns a detached Vite dev server → `tmp/android-dev.{log,err.log}`, then `tauri android dev` with the frontend hook replaced by a no-op → `tmp/android-tauri.{log,err.log}`. Vite is owned by bootstrap so it stays alive after the APK launch.
-5. Waits for Vite ready event (`Local:`/`Network:` + `:1420` line in `tmp/android-dev.log`; fast-fails on child death or signature mismatch).
-6. Waits for cargo+gradle build → APK install/launch (any of `Info Opening`, `Info Installing`, `Performing Streamed Install`, `Starting: Intent … wtranscriber`, or `am_proc_start … wtranscriber` — covers cold cargo+NDK builds).
-7. Waits for WebView event (`connecting to … :1420` in `tmp/logcat.log`, ≤90 s).
-8. Forwards CDP to `127.0.0.1:9222` (event-driven: succeeds the moment the WebView devtools socket appears); probes Tauri IPC (`appVersion`, `systemInfo`, `loadConfig`) for ≤20 s — non-fatal, since the WebView-connected event already proves the session is live.
-9. Auto-recovers signature mismatch (uninstall + retry once).
-10. Writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
+- **stage 0/7** — stops any previous session and force-stops the app for a clean restart.
+- **stage 1/7** — preflight (`node_modules`, adb device target); writes `tmp/_platform`.
+- **stage 2/7** — clears then tails focused logcat → `tmp/logcat.log` (baseline `*:S`, then `RustStdoutStderr:I`, `Tauri:I`, `chromium:W`, `AndroidRuntime:E`; `am_crash`, `am_proc_died`, `am_proc_start`, `am_kill` at `:V`). Also spawns `scripts/dev-vital.ts`.
+- **stage 3a/7** — spawns a detached Vite dev server → `tmp/android-dev.{log,err.log}`. USB mode sets `TAURI_DEV_HOST=127.0.0.1` and `adb reverse tcp:1420`/`tcp:1421`; host mode detects the host LAN IP and sets `TAURI_DEV_HOST` to it.
+- **stage 3b/7** — spawns `tauri android dev` (external-vite, frontend hook is an `echo` no-op) → `tmp/android-tauri.{log,err.log}`. Vite is owned by bootstrap so it survives the APK launch.
+- **stage 4/7** — waits for Vite HMR ready on `:1420` (`Local:`/`Network:` + `:1420`); fast-fails on child death or signature mismatch.
+- **stage 5/7** — waits for the cargo+gradle build → APK install/launch (any of `Info Opening …`, `Starting: Intent … wtranscriber`, `am_proc_start … wtranscriber`, or the `renderer error bridge installed` Rust log — covers cold cargo+NDK builds).
+- **stage 6/7** — attaches WebView DevTools (≤90 s, event-driven: succeeds the moment the WebView devtools socket appears via `cat /proc/net/unix`), then probes Tauri IPC by invoking `system_info` over CDP (≤20 s, non-fatal — the attached DevTools socket already proves the session is live).
+- **stage 7/7** — attaches lldb (best-effort; warns and continues on failure).
+
+On an APK signature mismatch the bootstrap auto-recovers (uninstall + retry once). On success it writes `tmp/_pids.json` and prints `BOOTSTRAP OK …`.
 
 `just android` runs xtask directly; there is no outer idle/max harness around Android dev bootstrap.
 

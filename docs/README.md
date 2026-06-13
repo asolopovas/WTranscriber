@@ -13,7 +13,7 @@ The repository is the system of record for agent-operable knowledge. Keep `AGENT
 | [`release.md`](release.md)                   | Release commands, artefacts, signing, Windows VM path         | Backed by `xtask/src/release/**`, `release.config.json`                                  |
 | [`tmp.md`](tmp.md)                           | `tmp/` and `logs/` artefact inventory                         | Backed by `scripts/run.ts`, android bootstrap, cleanup script                            |
 | [`rust-build-speed.md`](rust-build-speed.md) | Native dependency cache and build-speed guidance              | Backed by `src-tauri/build.rs`, `xtask/src/check.rs`                                     |
-| [`asr-pipeline-v2.md`](asr-pipeline-v2.md)   | ASR/transcription pipeline design                             | Backed by `src-tauri/src/transcriber/**`, `engine/**`, `diarizer/**`                     |
+| [`asr-pipeline.md`](asr-pipeline.md)         | ASR/transcription pipeline design                             | Backed by `src-tauri/src/transcriber/**`, `engine/**`, `diarizer/**`                     |
 | [`quality.md`](quality.md)                   | Current quality grades and guardrail gaps                     | Updated when architecture or checks change; catalogue enforced by `scripts/lint-docs.ts` |
 | [`technical-debt.md`](technical-debt.md)     | Known debt, temporary patches, cleanup triggers               | Updated when debt is added or retired; local links enforced by `scripts/lint-docs.ts`    |
 | [`plans/README.md`](plans/README.md)         | Execution-plan lifecycle and directory contract               | Plan directories and required plan headings are enforced by `scripts/lint-docs.ts`       |

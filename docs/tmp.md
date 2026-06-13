@@ -24,7 +24,6 @@ Two separate scratch directories:
 | `tmp/android-tauri.err.log`   | same                                          | dev loop on failure    | Live Android session      |
 | `tmp/dev-vital.{out,err}.log` | `scripts/dev-vital.ts` (spawned by bootstrap) | dev-loop heartbeat     | Live Android session      |
 | `tmp/.setup.stamp`            | `just setup`                                  | `just setup-if-stale`  | Persistent until re-setup |
-| `tmp/dev*.log`                | `just dev` (when redirected)                  | dev-loop desktop path  | Per dev session           |
 
 ## Rules
 
@@ -38,10 +37,11 @@ Two separate scratch directories:
   `cargo tauri build`, or any release build until `just dev stop`
   removes it.
 - **`location.href` is not a liveness signal on Android.** Tauri reports
-  `http://tauri.localhost/` even when HMR is dead. Always cross-check
-  `tmp/logcat.log` for a fresh WebView connection to `:1420` (`127.0.0.1`
-  for localhost/emulator flows, or the host LAN IP chosen by Tauri on
-  physical devices).
+  `http://tauri.localhost/` even when HMR is dead. Use the real signals:
+  `[vite] hmr update …` in `tmp/android-dev.log` for HMR,
+  `am_crash`/`am_proc_died`/`am_kill` in `tmp/logcat.log` for crashes, and
+  the bootstrap's `✓ WebView DevTools attached` / `BOOTSTRAP OK` to confirm
+  the session came up over `:1420`.
 
 ## Cleanup
 

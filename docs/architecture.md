@@ -63,7 +63,7 @@ Touch all relevant layers in one change:
 Current guardrails live in:
 
 - `.githooks/pre-commit` and `scripts/check-changed.ts` for changed-file checks.
-- `cargo xtask check` for the full 11-job local gate.
+- `cargo xtask check` for the full local gate (jobs enumerated in `docs/verification.md`).
 - `scripts/lint-vue.ts`, `cargo fmt`, clippy, tests, `knip`, `machete`, and audits.
 
 When a prose invariant becomes important enough to repeat, add a lint, test, or xtask check and make its failure message actionable for agents.

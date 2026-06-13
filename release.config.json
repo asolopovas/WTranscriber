@@ -1,7 +1,7 @@
 {
   "windowsVm": {
     "sshHost": "windows-vm",
-    "vmDir": "~/vms/win11",
+    "vmDir": "~/vms/windows",
     "startCommand": ["make", "-C", "{vmDir}", "up"],
     "restartCommand": ["sh", "-c", "make -C {vmDir} down && make -C {vmDir} up"],
     "sshReadyCommand": "$PSVersionTable.PSVersion.ToString(); hostname",

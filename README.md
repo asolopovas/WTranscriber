@@ -26,7 +26,7 @@ just setup             # fresh-clone setup: toolchain (Windows), JS deps, git ho
 just dev               # desktop HMR
 just android           # clean-start an Android USB HMR session
 just check             # full local quality gate
-just build             # Windows-only: build releases/dev/
+just build             # full dev release matrix (Windows host) → releases/dev/
 just release           # publish releases/dev/ to the rolling dev prerelease
 just release --stable  # bump patch, check, build, publish stable
 ```
@@ -86,7 +86,7 @@ Default essentials are about **1.6 GB** before any desktop runtime downloads:
 | Component          | ID                          |   Size |
 | ------------------ | --------------------------- | -----: |
 | ASR                | `parakeet-tdt-0.6b-v3-int8` | 670 MB |
-| Language detection | `silero-lang95-onnx`        |  17 MB |
+| Language detection | `silero-lang95-onnx`        |  16 MB |
 | Diarization        | `sortformer-v2-onnx-4spk`   | 492 MB |
 | Local rename LLM   | `qwen3-0.6b-q4km`           | 397 MB |
 
@@ -116,7 +116,7 @@ Run `wt models list` for install status and exact sizes.
 
 - [`docs/dev-loop.md`](docs/dev-loop.md) — desktop and Android development loop
 - [`docs/android.md`](docs/android.md) — Android prerequisites and bootstrap contract
-- [`docs/asr-pipeline-v2.md`](docs/asr-pipeline-v2.md) — current ASR and diarization routing
+- [`docs/asr-pipeline.md`](docs/asr-pipeline.md) — current ASR and diarization routing
 - [`docs/release.md`](docs/release.md) — release commands, artifacts, signing, recovery
 - [`docs/tmp.md`](docs/tmp.md) — scratch files and liveness logs
 

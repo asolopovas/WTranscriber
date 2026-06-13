@@ -3,7 +3,7 @@
 Status: completed
 Owner: agent
 Started: 2026-06-12
-Related docs: docs/asr-pipeline-v2.md
+Related docs: docs/asr-pipeline.md
 
 ## Goal
 
@@ -15,7 +15,7 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 - Parakeet v3, GigaAM v3 and whisper large-v3-turbo are still the latest in their lines; no replacement needed.
 - sherpa-onnx native libs pinned at v1.13.0 (`src-tauri/sherpa-version.txt`); Rust crate at 1.13.1. Upstream v1.13.1 fixed a SIGSEGV in speaker diarization; v1.13.2 is current.
 - sherpa-onnx supports Qwen3-ASR since 1.12.34 (int8, hotwords) and Cohere Transcribe since 1.12.35.
-- Auto-routing (`docs/asr-pipeline-v2.md`): ru → GigaAM, Parakeet langs → Parakeet, everything else → Whisper. Asian languages currently get the slowest path.
+- Auto-routing (`docs/asr-pipeline.md`): ru → GigaAM, Parakeet langs → Parakeet, everything else → Whisper. Asian languages currently get the slowest path.
 
 ## Acceptance criteria
 
@@ -26,7 +26,7 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 ## Steps
 
 - [x] Phase 1 — runtime bump to v1.13.2
-  - [x] Update `src-tauri/sherpa-version.txt`; replace the hardcoded `v1.13.0` in `scripts/install-windows-runtime.ps1:215`; confirm `install-sherpa-cuda.ps1` derives from the version file.
+  - [x] Update `src-tauri/sherpa-version.txt`; replace the hardcoded `v1.13.0` in `scripts/install-windows-runtime.ps1`; confirm `install-sherpa-cuda.ps1` derives from the version file.
   - [x] Bump the `sherpa-onnx` crate to the matching release if published.
   - [x] Delete `.android-prebuilt` so xtask re-fetches v1.13.2 prebuilts; rebuild APK and confirm the jniLibs set is complete.
   - [x] `just check`, then a desktop transcription run with sortformer diarization enabled.
@@ -55,3 +55,5 @@ Bring the ASR stack up to the June 2026 state of the art without disturbing the 
 - 2026-06-12: Cohere eval via `sherpa-onnx-offline` v1.13.2 cpu — ja: exact reference match, RTF 0.648; en: exact match, RTF 0.604; qwen3 same harness ja: exact match, RTF 0.751; whisper-turbo (debug in-process cpu) ja: exact match, 94 s. Both Cohere and Qwen3 return empty `timestamps`/`words`.
 
 ## Handoff notes
+
+None — shipped; see the decisions and verification log above.

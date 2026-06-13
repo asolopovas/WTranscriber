@@ -16,7 +16,7 @@ This file is the agent table of contents, not the project manual. Keep durable k
 | Release, signing, Windows VM                | [`docs/release.md`](docs/release.md)                                                     |
 | Scratch artefacts and liveness files        | [`docs/tmp.md`](docs/tmp.md)                                                             |
 | Build-speed constraints for native deps     | [`docs/rust-build-speed.md`](docs/rust-build-speed.md)                                   |
-| ASR/transcription pipeline design           | [`docs/asr-pipeline-v2.md`](docs/asr-pipeline-v2.md)                                     |
+| ASR/transcription pipeline design           | [`docs/asr-pipeline.md`](docs/asr-pipeline.md)                                           |
 | Current quality/debt ledger                 | [`docs/quality.md`](docs/quality.md), [`docs/technical-debt.md`](docs/technical-debt.md) |
 | Multi-turn execution plans                  | [`docs/plans/README.md`](docs/plans/README.md)                                           |
 
@@ -27,7 +27,7 @@ just dev               # desktop HMR; `just dev stop` to stop
 just android           # Android USB/host HMR session (clean restart)
 just check             # full local gate; accepts job tags
 just check-changed     # changed-file gate for hooks/CI
-just build             # Windows-only dev release matrix -> releases/dev/
+just build             # full dev release matrix (Windows host) -> releases/dev/
 just release           # publish dev; --stable bumps patch; --bump selects stable version
 just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
 just doctor            # diagnose host toolchain and prerequisites
@@ -48,17 +48,18 @@ Run `just --list` for the complete command set. Prefer focused checks while iter
 ## Live dev quick rules
 
 - Desktop liveness comes from the live `[dev]` stream and Vite on `http://localhost:1420/`.
-- Android liveness comes from a fresh WebView `connecting to …:1420` line in `tmp/logcat.log`; `location.href` is not a signal.
+- Android liveness comes from the bootstrap reaching stage 6 (`✓ WebView DevTools attached`) and printing `BOOTSTRAP OK`; the trigger is the WebView devtools socket, not a logcat line. `location.href` is not a signal.
 - While `tmp/_pids.json` exists and Vite owns `:1420`, do not run APK/release/build commands that replace the debug-dev APK.
 - JS/CSS edits should hot-reload; Rust/native/config/capability edits require restarting the Android bootstrap.
 
 ## Skills
 
-Project-relevant skills live in `.agents/skills/` for pi and are mirrored under `.opencode/skills/` for opencode.
+The full set lives under `.opencode/skills/` (opencode). A subset is mirrored under `.agents/skills/` (pi): `rust-skills`, `tauri-debugging`, `tauri-v2`, plus `m15-anti-pattern`.
 
 - `tauri-v2` — Tauri architecture, IPC, commands, capabilities, mobile, plugins, distribution.
 - `tauri-debugging` — live desktop/Android/iOS WebView, CDP, logcat, Rust panic, IPC/capability triage.
 - `rust-skills` — canonical Rust guidance.
+- `m15-anti-pattern` — Rust/code anti-pattern review: code smells, pitfalls, idiomatic fixes (pi only).
 - `chrome-devtools` — CDP/live browser inspection for the Vite/WebView surface.
 - `playwright-skill` — browser automation and end-to-end UI probes.
 - `error-resolver` — systematic diagnosis for errors, stack traces, and unexpected behaviour.

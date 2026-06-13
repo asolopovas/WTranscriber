@@ -16,12 +16,12 @@ Verification gates, pre-commit behaviour, and the change-type matrix live in [`v
 
 ## Desktop
 
-Windows is the primary release host. Linux is supported for desktop dev (`just dev`) and for the Docker-based `.deb` path inside `cargo xtask release`. The `just build` shortcut is Windows-only. `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
+Windows is the primary release host. Linux is supported for desktop dev (`just dev`) and for the Docker-based `.deb` path inside `cargo xtask release`. The `just build` shortcut runs only on a Windows host but builds the full matrix (Windows + Linux `.deb` + Android APK). `bundle.targets = ["nsis", "deb"]` — macOS `.app` is not configured.
 
 ```bash
 just dev          # HMR (Vite + tauri dev)
 just dev stop     # stop any running dev session (desktop + android)
-just build        # Windows-only: full dev release matrix
+just build        # full dev release matrix (Windows host)
 just check        # parallel pre-release gate
 just check-changed --staged  # changed-file gate used by hooks/CI
 ```
@@ -31,7 +31,7 @@ just check-changed --staged  # changed-file gate used by hooks/CI
 ```bash
 just android                       # clean-start USB HMR session
 just android host                  # bootstrap Wi-Fi/LAN session
-just android usb R5CXB2PGC2H       # pick a device when multiple are attached
+just android usb <serial>          # pick a device when multiple are attached
 just dev stop                      # stop session and forwards
 
 bun scripts/android-install.ts          # APK-only build + install
@@ -39,12 +39,10 @@ bun scripts/android-install.ts --force  # uninstall + reinstall (handles signatu
 bun scripts/android-emu.ts              # headless x86_64 emulator
 ```
 
-The `.vscode/tasks.json` entries "android: build + install APK" and "android: build + reinstall APK (wipe data)" wrap the install script.
-
 ## Live-session signals
 
 - HMR proof after JS/CSS edit: `[vite] hmr update /src/...` in `tmp/android-dev.log`.
-- USB physical devices still follow Tauri 2.11 mobile behaviour: on Windows, `tauri android dev` rewrites `localhost` to the host LAN IP and sets `TAURI_DEV_HOST`; Vite serves HMR on `1421` from that host. `adb reverse` is kept for localhost/emulator fallback.
+- USB mode pins the host to localhost: bootstrap sets `TAURI_DEV_HOST=127.0.0.1` and `adb reverse tcp:1420`/`tcp:1421` so the device reaches Vite over USB. Host mode (`just android host`) is the LAN path — it detects the host LAN IP, sets `TAURI_DEV_HOST` to it, and passes `--host`; Vite serves HMR on `1421` from that host.
 - Crash/OOM proof: `am_kill` / `am_proc_died` / `am_crash` in `tmp/logcat.log` for the app.
 - `location.href` is not a health signal on Android.
 

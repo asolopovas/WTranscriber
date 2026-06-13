@@ -47,7 +47,7 @@ pub(super) fn build_windows_vm(
             if !restart_vm(cfg, lock)? {
                 println!(
                     "[win] Windows VM SSH still unreachable after restart — skipping Windows build.\n\
-                     [win]   check release.config.json windowsVm settings and run the configured VM manually."
+                     [win]   check release.config.local.json / release.config.json windowsVm settings and run the configured VM manually."
                 );
                 return Ok(-1);
             }

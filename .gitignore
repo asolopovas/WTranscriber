@@ -55,6 +55,9 @@ local.properties
 # Release artifacts
 releases/
 
+# Local per-host release config (Windows VM settings)
+release.config.local.json
+
 # Android signing (NEVER commit)
 keystore.properties
 *.jks
