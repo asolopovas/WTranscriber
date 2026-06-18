@@ -520,7 +520,7 @@ async function runTranscribe(entry?: DirEntry) {
   transcript.value = null;
   recordSet(busy, target.path, true);
   try {
-    transcript.value = await api.transcribeFile(target.path, config.value);
+    await api.transcribeFile(target.path, config.value);
     status.value = "idle";
     await refreshListing();
     if (config.value.auto_rename) {
