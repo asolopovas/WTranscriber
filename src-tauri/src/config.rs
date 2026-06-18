@@ -174,6 +174,12 @@ fn migrate_for_platform(cfg: &mut Config) -> bool {
             dirty = true;
         }
     }
+    if let Some(p) = cfg.last_dir.as_ref()
+        && !p.is_dir()
+    {
+        cfg.last_dir = None;
+        dirty = true;
+    }
     if !cfg!(target_os = "android") {
         return dirty;
     }
@@ -273,6 +279,25 @@ mod tests {
         if cfg!(not(any(target_os = "android", target_os = "ios"))) && !cfg!(feature = "cuda") {
             assert!(matches!(Config::default().device, Device::Cpu));
         }
+    }
+
+    #[test]
+    fn migrate_clears_missing_last_dir() {
+        let mut cfg = Config::default();
+        cfg.last_dir = Some(std::path::PathBuf::from(
+            "C:/nonexistent-wtranscriber-workdir-zzz",
+        ));
+        assert!(migrate_for_platform(&mut cfg));
+        assert!(cfg.last_dir.is_none());
+    }
+
+    #[test]
+    fn migrate_keeps_existing_last_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::default();
+        cfg.last_dir = Some(dir.path().to_path_buf());
+        migrate_for_platform(&mut cfg);
+        assert_eq!(cfg.last_dir.as_deref(), Some(dir.path()));
     }
 
     #[test]
