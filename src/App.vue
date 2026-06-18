@@ -995,39 +995,33 @@ const selectedProgress = computed(() =>
             <Button variant="ghost" shape="link" @click="clearSelection">Clear</Button>
           </div>
 
-          <div class="flex-1 flex flex-col overflow-hidden px-xs md:px-md py-md">
-            <div
-              class="flex-1 flex flex-col overflow-hidden bg-surface-container/40 rounded-xl border border-outline-variant/40"
-            >
-              <div class="flex-1 overflow-y-auto scroll-overlay">
-                <FileList
-                  ref="fileListRef"
-                  :entries="audioEntries"
-                  :selected-path="selectedPath"
-                  :busy="busy"
-                  :progress-by-path="progressByPath"
-                  :auto-renaming-path="autoRenamingPath"
-                  :drag-over="dragOver"
-                  :has-listing="!!listing"
-                  @choose="chooseEntry"
-                  @view="viewEntry"
-                  @transcribe="runTranscribe"
-                  @stop="stopTranscribe"
-                  @trim="openTrim"
-                  @auto-rename="autoRename"
-                  @rename="openRename"
-                  @share="onShare"
-                  @copy="onCopy"
-                  @export="openExport"
-                  @redo-diarize="openRedoDiarize"
-                  @reveal="revealEntry"
-                  @delete="deleteEntry"
-                  :selected-paths="selectedPaths"
-                  @toggle-select="toggleSelect"
-                  @range-select="rangeSelect"
-                />
-              </div>
-            </div>
+          <div class="flex-1 overflow-y-auto overscroll-contain scroll-thin mb-md">
+            <FileList
+              ref="fileListRef"
+              :entries="audioEntries"
+              :selected-path="selectedPath"
+              :busy="busy"
+              :progress-by-path="progressByPath"
+              :auto-renaming-path="autoRenamingPath"
+              :drag-over="dragOver"
+              :has-listing="!!listing"
+              @choose="chooseEntry"
+              @view="viewEntry"
+              @transcribe="runTranscribe"
+              @stop="stopTranscribe"
+              @trim="openTrim"
+              @auto-rename="autoRename"
+              @rename="openRename"
+              @share="onShare"
+              @copy="onCopy"
+              @export="openExport"
+              @redo-diarize="openRedoDiarize"
+              @reveal="revealEntry"
+              @delete="deleteEntry"
+              :selected-paths="selectedPaths"
+              @toggle-select="toggleSelect"
+              @range-select="rangeSelect"
+            />
           </div>
 
           <TranscriptPanel
