@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::file_names::unique_child_path;
 use crate::{
+    audio::meta,
     browser::{self, DirListing},
     error::{Error, Result},
     logfile, transcriber,
@@ -138,6 +139,13 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
         )));
     }
     std::fs::rename(&source, &dst)?;
+    let sidecar = meta::meta_path(&source);
+    if sidecar.exists() {
+        let sidecar_dst = meta::meta_path(&dst);
+        if let Err(e) = std::fs::rename(&sidecar, &sidecar_dst) {
+            logfile::warn(&format!("sidecar rename failed: {e}"));
+        }
+    }
     if let Err(e) = transcriber::cache::rename_source(&source, &dst) {
         logfile::warn(&format!("cache index rename failed: {e}"));
     }

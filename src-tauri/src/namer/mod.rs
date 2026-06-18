@@ -18,6 +18,8 @@ ws ::= [ \t\n]*
 
 const EXCERPT_LIMIT: usize = 6000;
 
+const EXAMPLE_SLUGS: [&str; 2] = ["main-subject-key-detail", "topic-word-word-word"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Suggestion {
     pub topic: String,
@@ -81,7 +83,7 @@ pub fn suggest(transcript: &Transcript, fallback_date: DateTime<Local>) -> Resul
         .map_err(|e| Error::Transcribe(format!("parsing LLM JSON {raw:?}: {e}")))?;
 
     let mut topic = sanitize_topic(&reply.topic);
-    if topic.is_empty() {
+    if topic.is_empty() || EXAMPLE_SLUGS.contains(&topic.as_str()) {
         topic = "untitled".into();
     }
     Ok(Suggestion {
@@ -93,8 +95,8 @@ pub fn suggest(transcript: &Transcript, fallback_date: DateTime<Local>) -> Resul
 fn build_prompt(excerpt: &str) -> String {
     format!(
         "You are a filename topic generator. Read the conversation transcript below and respond with a single JSON object: {{\"topic\": \"<slug>\"}}.\n\n\
-         The topic must be a kebab-case slug of 3-7 lowercase words joined with hyphens that captures the main subject, setting, or purpose of the conversation. Use only ASCII letters, digits, and hyphens. Max 60 characters. Be specific (e.g. \"fulham-boys-school-admission-interview\", not \"interview\"; \"kitchen-renovation-quote\", not \"renovation\"; \"weekly-sales-team-standup\", not \"meeting\"). Avoid generic single words like \"sports\", \"talk\", \"meeting\".\n\n\
-         Output ONLY the JSON object, no prose, no commentary, no markdown.\n\n\
+         The topic must be a kebab-case slug of 3-7 lowercase words joined with hyphens, of the form main-subject-key-detail, that captures the main subject, setting, or purpose of the conversation. Use only ASCII letters, digits, and hyphens. Max 60 characters. Be specific rather than generic: name the actual subject and a distinguishing detail instead of a single broad word like \"sports\", \"talk\", or \"meeting\".\n\n\
+         Derive the topic ONLY from the transcript below; do not reuse any words from these instructions. If the transcript is in another language, translate the topic into English. Output ONLY the JSON object, no prose, no commentary, no markdown.\n\n\
          Transcript:\n{excerpt}\n\nJSON:"
     )
 }

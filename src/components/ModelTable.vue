@@ -105,6 +105,22 @@ function accPct(m: ModelInfo): number {
             title="Install"
             @click="emit('install', m.id)"
           />
+          <Icon
+            v-else-if="isSelected(m)"
+            name="check_circle"
+            :size="24"
+            class="shrink-0 text-primary"
+          />
+          <Button
+            v-else
+            variant="neutral"
+            size="sm"
+            class="shrink-0"
+            title="Use this model by default"
+            @click="emit('select', { family: m.family, id: m.id })"
+          >
+            Set default
+          </Button>
         </div>
         <div v-if="progress[m.id]" class="flex flex-col gap-unit">
           <div class="h-1 bg-surface-variant rounded-full overflow-hidden">
@@ -210,11 +226,20 @@ function accPct(m: ModelInfo): number {
               @click="emit('install', m.id)"
             />
             <span
-              v-else-if="m.status === 'installed'"
-              class="text-labelSmall text-on-surface-variant"
+              v-else-if="m.status === 'installed' && isSelected(m)"
+              class="text-labelSmall text-primary uppercase tracking-wide"
             >
-              —
+              default
             </span>
+            <Button
+              v-else-if="m.status === 'installed'"
+              variant="neutral"
+              size="sm"
+              title="Use this model by default"
+              @click="emit('select', { family: m.family, id: m.id })"
+            >
+              Set default
+            </Button>
           </td>
         </tr>
       </tbody>
