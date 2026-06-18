@@ -21,6 +21,11 @@ function Add-Path($dir) {
 }
 
 function Winget-Install($id) {
+    $listed = & winget list --id $id --exact --disable-interactivity 2>$null
+    if ($listed -and ($listed -match [regex]::Escape($id))) {
+        Write-Host "-> $id already installed (skipping)"
+        return
+    }
     Write-Host "-> winget install $id"
     winget install --id $id --source winget --silent --accept-package-agreements --accept-source-agreements `
         --scope machine --disable-interactivity 2>&1 | Out-Host

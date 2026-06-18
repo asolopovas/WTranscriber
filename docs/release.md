@@ -6,6 +6,7 @@
 | ----------------------------------- | -------------------------------------------------------------------------------- |
 | `just build`                        | Full dev matrix (Windows host + Linux `.deb` + Android APK) into `releases/dev/` |
 | `just build-host`                   | Windows host installer only (no Docker)                                          |
+| `just install [--interactive]`      | Build the host installer, then install it silently (`--interactive` for NSIS UI) |
 | `just release`                      | Publish `releases/dev/*` to the rolling `dev` prerelease                         |
 | `just release --stable`             | Stable release: check + bump patch + build + publish                             |
 | `just release --bump [level]`       | Stable release with chosen bump; implies `--stable`                              |

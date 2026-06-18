@@ -28,6 +28,7 @@ just android           # Android USB/host HMR session (clean restart)
 just check             # full local gate; accepts job tags
 just check-changed     # changed-file gate for hooks/CI
 just build             # full dev release matrix (Windows host) -> releases/dev/
+just install           # build host installer then install it silently (--interactive for UI)
 just release           # publish dev; --stable bumps patch; --bump selects stable version
 just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
 just doctor            # diagnose host toolchain and prerequisites
