@@ -196,7 +196,7 @@ pub(super) fn build_deb_docker(skip: bool, lock: &SharedOut) -> Result<i32> {
 }
 
 fn builder_image() -> String {
-    std::env::var("WT_BUILDER_IMAGE").unwrap_or_else(|_| "asolopovas/wt-builder:debian12".into())
+    std::env::var("WT_BUILDER_IMAGE").unwrap_or_else(|_| "asolopovas/tauri-builder:debian12".into())
 }
 
 fn builder_volumes() -> (String, String, String, String) {

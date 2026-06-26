@@ -1,11 +1,9 @@
 # syntax=docker/dockerfile:1.10
 # check=error=true;skip=UndefinedVar
-
-# Override in CI for digest pinning:
-#   docker build --build-arg BASE=debian:12-slim@sha256:<digest> ...
 ARG BASE=debian:12-slim
+ARG ANDROID_NDK_VERSION=27.2.12479018
 
-# ─── shared base ──────────────────────────────────────────────────────────
+# ─── base ────────────────────────────────────────────────────────────────
 FROM ${BASE} AS base
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -18,7 +16,7 @@ apt-get update -qq
 apt-get install -y --no-install-recommends ca-certificates curl unzip xz-utils
 EOF
 
-# ─── CUDA toolkit (parallel) ─────────────────────────────────────────────
+# ─── CUDA toolkit + cuDNN ────────────────────────────────────────────────
 FROM base AS cuda
 ARG CUDA_APT_VERSION=12-9
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -43,7 +41,7 @@ done < <(dpkg -L libcudnn9-cuda-12 libcudnn9-headers-cuda-12 libcudnn9-dev-cuda-
     | grep -E '^/(usr/include|usr/lib)')
 EOF
 
-# ─── Rust toolchain (parallel) ───────────────────────────────────────────
+# ─── Rust toolchain ──────────────────────────────────────────────────────
 FROM base AS rust
 ENV CARGO_HOME=/cache/cargo RUSTUP_HOME=/cache/rustup
 ARG RUST_VERSION=1.88.0
@@ -57,7 +55,7 @@ for t in ${RUST_TARGETS}; do /cache/cargo/bin/rustup target add "$t"; done
 rm -rf /cache/rustup/tmp /cache/cargo/registry
 EOF
 
-# ─── Bun (parallel) ──────────────────────────────────────────────────────
+# ─── Bun ─────────────────────────────────────────────────────────────────
 FROM base AS bun
 ARG BUN_VERSION=1.3.12
 RUN <<EOF
@@ -65,7 +63,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun
 EOF
 
-# ─── Android SDK + NDK (parallel) ────────────────────────────────────────
+# ─── Android SDK + NDK ───────────────────────────────────────────────────
 FROM base AS android
 ARG ANDROID_CMDLINE_VERSION=11076708
 ARG ANDROID_CMDLINE_SHA256=
@@ -73,17 +71,15 @@ ARG ANDROID_PLATFORM=android-34
 ARG ANDROID_PLATFORM_EXTRA=android-36
 ARG ANDROID_BUILD_TOOLS=34.0.0
 ARG ANDROID_BUILD_TOOLS_EXTRA=35.0.0
-ARG ANDROID_NDK_VERSION=27.2.12479018
+ARG ANDROID_NDK_VERSION
 ENV ANDROID_HOME=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
-    NDK_HOME=/opt/android-sdk/ndk/27.2.12479018
+    NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked <<EOF
 apt-get update -qq
 apt-get install -y --no-install-recommends openjdk-17-jdk-headless
 EOF
-# Cache the cmdline-tools zip across rebuilds; the SDK/NDK package downloads
-# stay inside the (cached) android stage layer.
 RUN --mount=type=cache,target=/var/cache/android-dl,sharing=locked <<EOF
 mkdir -p "${ANDROID_HOME}/cmdline-tools"
 ZIP=/var/cache/android-dl/cmdline-tools-${ANDROID_CMDLINE_VERSION}.zip
@@ -112,13 +108,13 @@ rm -rf \
     /root/.android
 EOF
 
-# ─── Final builder image ─────────────────────────────────────────────────
+# ─── final builder image ─────────────────────────────────────────────────
 FROM base AS final
-LABEL org.opencontainers.image.title="wt-builder" \
-      org.opencontainers.image.description="WTranscriber release builder: Rust + Bun + Tauri Linux + Android SDK/NDK + CUDA" \
+LABEL org.opencontainers.image.title="tauri-builder" \
+      org.opencontainers.image.description="Reusable Tauri release builder: Rust + Bun + Tauri Linux deps + Android SDK/NDK + CUDA + cuDNN" \
       org.opencontainers.image.source="https://github.com/lyntouch/wtranscriber"
 
-ARG ANDROID_NDK_VERSION=27.2.12479018
+ARG ANDROID_NDK_VERSION
 ENV CARGO_HOME=/cache/cargo \
     RUSTUP_HOME=/cache/rustup \
     ANDROID_HOME=/opt/android-sdk \
@@ -133,7 +129,6 @@ ENV CARGO_HOME=/cache/cargo \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64 \
     PATH=/cache/cargo/bin:/usr/local/cuda/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Native build deps for Tauri Linux + Rust crates with C bindings.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked <<EOF
 apt-get update -qq
@@ -169,23 +164,20 @@ COPY --from=android /opt/android-sdk /opt/android-sdk
 
 RUN install -d -m 0777 /cache/cargo /cache/rustup /cache/target /work
 
-# Login shells (bash -lc) re-source /etc/profile and would clobber PATH/env
-# baked in via ENV. Drop a profile.d snippet so xtask's `bash -lc` invocations
-# see the toolchain.
-RUN cat >/etc/profile.d/wt-builder.sh <<'SH'
+RUN cat >/etc/profile.d/tauri-builder.sh <<SH
 export CARGO_HOME=/cache/cargo
 export RUSTUP_HOME=/cache/rustup
 export ANDROID_HOME=/opt/android-sdk
 export ANDROID_SDK_ROOT=/opt/android-sdk
-export NDK_HOME=/opt/android-sdk/ndk/27.2.12479018
-export ANDROID_NDK=$NDK_HOME
-export ANDROID_NDK_ROOT=$NDK_HOME
-export ANDROID_NDK_HOME=$NDK_HOME
+export NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION}
+export ANDROID_NDK=\$NDK_HOME
+export ANDROID_NDK_ROOT=\$NDK_HOME
+export ANDROID_NDK_HOME=\$NDK_HOME
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 export CUDA_HOME=/usr/local/cuda
 export CUDA_PATH=/usr/local/cuda
-export LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-export PATH=/cache/cargo/bin:/usr/local/cuda/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}
+export PATH=/cache/cargo/bin:/usr/local/cuda/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:\$PATH
 SH
 
 WORKDIR /work

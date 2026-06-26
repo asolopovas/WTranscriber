@@ -110,6 +110,20 @@ check *jobs:
 check-changed *args:
     {{_run}} --tag check-changed --idle 120 --max 900 -- bun scripts/check-changed.ts {{args}}
 
+# ─── docker builder image ───────────────────────────────────────────────────────
+
+# Build the reusable Tauri builder image locally from Dockerfile.builder.
+builder-build *args:
+    {{_run}} --tag builder-build --idle 1800 --max 7200 -- cargo xtask builder build {{args}}
+
+# Push the builder image tags to Docker Hub (run `docker login` first).
+builder-push *args:
+    {{_run}} --tag builder-push --idle 600 --max 3600 -- cargo xtask builder push {{args}}
+
+# Build then push the reusable Tauri builder image to Docker Hub.
+builder-publish *args:
+    {{_run}} --tag builder-publish --idle 1800 --max 10800 -- cargo xtask builder publish {{args}}
+
 # ─── build / release ──────────────────────────────────────────────────────────
 
 [private]
