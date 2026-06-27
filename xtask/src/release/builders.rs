@@ -230,7 +230,6 @@ fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
     let _guard = DOCKER_BUILDER_IMAGE_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("docker builder image lock poisoned"))?;
-    let rebuild = std::env::var("WT_BUILDER_REBUILD").ok().as_deref() == Some("1");
     let exists = std::process::Command::new("docker")
         .args(["image", "inspect", image])
         .stdout(std::process::Stdio::null())
@@ -238,28 +237,14 @@ fn ensure_builder_image(image: &str, lock: &SharedOut) -> Result<()> {
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    if exists && !rebuild {
-        return Ok(());
-    }
-    if rebuild {
-        println!("[docker] building image {image} from Dockerfile.builder");
-        let rc = run_streamed(
-            "docker",
-            "docker",
-            &["build", "-f", "Dockerfile.builder", "-t", image, "."],
-            &[],
-            lock,
-        )?;
-        if rc != 0 {
-            anyhow::bail!("docker build failed (exit {rc})");
-        }
+    if exists {
         return Ok(());
     }
     println!("[docker] pulling image {image}");
     let rc = run_streamed("docker", "docker", &["pull", image], &[], lock)?;
     if rc != 0 {
         anyhow::bail!(
-            "docker pull {image} failed (exit {rc}); set WT_BUILDER_REBUILD=1 to build Dockerfile.builder locally"
+            "docker pull {image} failed (exit {rc}); the builder image is built from https://github.com/asolopovas/tauri-app-container"
         );
     }
     Ok(())

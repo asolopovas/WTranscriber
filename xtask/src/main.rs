@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Parser;
 
 mod android;
-mod builder;
 mod bump;
 mod check;
 mod cuda_workers;
@@ -23,8 +22,6 @@ enum Cmd {
     #[command(subcommand)]
     Android(android::Cmd),
     #[command(subcommand)]
-    Builder(builder::Cmd),
-    #[command(subcommand)]
     CudaWorkers(cuda_workers::Cmd),
     #[command(subcommand)]
     Dev(dev::Cmd),
@@ -38,7 +35,6 @@ fn main() -> Result<()> {
         Cmd::Check(a) => check::run(a),
         Cmd::ReleaseStable(a) => release_stable::run(a),
         Cmd::Android(c) => android::run(c),
-        Cmd::Builder(c) => builder::run(c),
         Cmd::CudaWorkers(c) => cuda_workers::run(c),
         Cmd::Dev(c) => dev::run(c),
     }

@@ -26,23 +26,15 @@
 
 ## Docker (Windows host)
 
-`just build` uses Docker Desktop's Linux engine for the `.deb` and (unless `WT_ANDROID_NATIVE=1`) the APK, via `asolopovas/tauri-builder:debian12`. Start Docker first. On a `dockerDesktopLinuxEngine/_ping` 500 error, restart Docker/WSL. `WT_BUILDER_REBUILD=1` rebuilds the image locally; `WT_BUILDER_IMAGE=…` overrides the tag.
+`just build` uses Docker Desktop's Linux engine for the `.deb` and (unless `WT_ANDROID_NATIVE=1`) the APK, via `asolopovas/tauri-builder:debian12`. Start Docker first. On a `dockerDesktopLinuxEngine/_ping` 500 error, restart Docker/WSL. `WT_BUILDER_IMAGE=…` overrides the tag.
 
 The Windows host installer builds **natively**, not in Docker — Tauri's NSIS bundling and WebView2 linking are unsupported on Linux.
 
 ### Builder image (reusable, public)
 
-The builder is app-agnostic (Rust 1.88 + Bun + Tauri Linux deps + Android SDK/NDK + CUDA toolkit + cuDNN) and published to Docker Hub so contributors pull it instead of compiling the toolchain. `builders.rs` pulls it on demand; only the maintainer rebuilds/publishes it. CUDA is included so CUDA-accelerated Linux builds work on NVIDIA hosts and so the image is reusable across other CUDA projects; `nvcc` is on `PATH` and the libs are on `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
+The builder is app-agnostic (Rust 1.88 + Bun + Tauri Linux deps + Android SDK/NDK + CUDA toolkit + cuDNN) and published to Docker Hub so contributors pull it instead of compiling the toolchain. `builders.rs` pulls it on demand. The image source lives in its own repo — [`asolopovas/tauri-app-container`](https://github.com/asolopovas/tauri-app-container) — where it is built and published (`just publish`); this repo only consumes the published tag. CUDA is included so CUDA-accelerated Linux builds work on NVIDIA hosts and so the image is reusable across other CUDA projects; `nvcc` is on `PATH` and the libs are on `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
 
-| Command                | What it does                                                 |
-| ---------------------- | ------------------------------------------------------------ |
-| `just builder-build`   | `docker build -f Dockerfile.builder` → `:debian12`+`:latest` |
-| `just builder-push`    | `docker push` both tags (run `docker login` first)           |
-| `just builder-publish` | build + push                                                 |
-
-`cargo xtask builder <build\|push\|publish>` accepts `--image`, `--tag`, `--no-latest`.
-
-Publish flow: `docker login` once, then `just builder-publish`. A newly pushed Docker Hub repo is **public** by default. To flip an existing private repo public via API:
+Publish flow (in the [`tauri-app-container`](https://github.com/asolopovas/tauri-app-container) repo): `docker login` once, then `just publish`. A newly pushed Docker Hub repo is **public** by default. To flip an existing private repo public via API:
 
 ```bash
 TOKEN=$(curl -s -H "Content-Type: application/json" \
