@@ -36,7 +36,7 @@ pub fn run(args: Args) -> Result<()> {
     if let Some(level) = args.bump {
         bump::run(bump::Args { level })?;
     }
-    sync_current_version_tag()?;
+    ensure_version_tag_matches_head()?;
     release::run(release::Args {
         dev: false,
         no_host: false,
@@ -46,6 +46,7 @@ pub fn run(args: Args) -> Result<()> {
         skip_rebuild: args.skip_rebuild,
         sequential: args.sequential,
     })?;
+    sync_current_version_tag()?;
     publish::run(publish::Args {
         channel: "stable".into(),
     })?;
@@ -133,6 +134,20 @@ fn docker_ready() -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+fn ensure_version_tag_matches_head() -> Result<()> {
+    let ver = pkg_version()?;
+    let version_tag = format!("v{ver}");
+    let head = capture("git", &["rev-parse", "HEAD"])?;
+    if let Some(commit) = tag_commit(&version_tag)?
+        && commit != head
+    {
+        bail!(
+            "stable tag {version_tag} already points to {commit}, not HEAD {head}; bump the version instead"
+        );
+    }
+    Ok(())
 }
 
 fn sync_current_version_tag() -> Result<()> {
