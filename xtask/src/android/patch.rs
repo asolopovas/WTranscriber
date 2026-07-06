@@ -195,6 +195,8 @@ pub(super) fn patch_manifest() -> Result<()> {
             "    <uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />\n",
             "    <uses-permission android:name=\"android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS\" />\n",
             "    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />\n",
+            "    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n",
+            "    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />\n",
             "    <uses-feature",
         );
         raw = raw.replacen("    <uses-feature", perms, 1);
@@ -203,6 +205,13 @@ pub(super) fn patch_manifest() -> Result<()> {
         raw = raw.replacen(
             "    <uses-feature",
             "    <uses-permission android:name=\"android.permission.MANAGE_EXTERNAL_STORAGE\" />\n    <uses-feature",
+            1,
+        );
+    }
+    if !raw.contains("android.permission.RECORD_AUDIO") {
+        raw = raw.replacen(
+            "    <uses-feature",
+            "    <uses-permission android:name=\"android.permission.RECORD_AUDIO\" />\n    <uses-permission android:name=\"android.permission.MODIFY_AUDIO_SETTINGS\" />\n    <uses-feature",
             1,
         );
     }

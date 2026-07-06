@@ -3,6 +3,7 @@
 use std::{ffi::OsString, path::PathBuf};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde::Deserialize;
 
 use super::file_names::unique_child_path;
 use crate::{
@@ -127,15 +128,14 @@ fn write_recording(workdir: &PathBuf, filename: &str, bytes: &[u8]) -> Result<Pa
 pub fn save_recording(request: tauri::ipc::Request<'_>) -> Result<PathBuf> {
     let workdir = PathBuf::from(header_b64_utf8(&request, "x-workdir")?);
     let filename = header_b64_utf8(&request, "x-filename")?;
-    let bytes: &[u8] = match request.body() {
-        tauri::ipc::InvokeBody::Raw(b) => b.as_slice(),
-        tauri::ipc::InvokeBody::Json(_) => {
-            return Err(Error::Config(
-                "save_recording: expected raw body, got json".into(),
-            ));
+    match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => write_recording(&workdir, &filename, b),
+        tauri::ipc::InvokeBody::Json(v) => {
+            let bytes = Vec::<u8>::deserialize(v)
+                .map_err(|e| Error::Config(format!("save_recording: invalid json body: {e}")))?;
+            write_recording(&workdir, &filename, &bytes)
         }
-    };
-    write_recording(&workdir, &filename, bytes)
+    }
 }
 
 #[cfg(test)]

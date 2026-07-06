@@ -9,9 +9,9 @@ use crate::error::Result;
 pub struct AudioMeta {
     #[serde(default)]
     pub trim_start_ms: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub trim_end_ms: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub duration_ms: Option<u64>,
 }
 
