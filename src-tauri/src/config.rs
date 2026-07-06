@@ -283,10 +283,12 @@ mod tests {
 
     #[test]
     fn migrate_clears_missing_last_dir() {
-        let mut cfg = Config::default();
-        cfg.last_dir = Some(std::path::PathBuf::from(
-            "C:/nonexistent-wtranscriber-workdir-zzz",
-        ));
+        let mut cfg = Config {
+            last_dir: Some(std::path::PathBuf::from(
+                "C:/nonexistent-wtranscriber-workdir-zzz",
+            )),
+            ..Config::default()
+        };
         assert!(migrate_for_platform(&mut cfg));
         assert!(cfg.last_dir.is_none());
     }
@@ -294,8 +296,10 @@ mod tests {
     #[test]
     fn migrate_keeps_existing_last_dir() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cfg = Config::default();
-        cfg.last_dir = Some(dir.path().to_path_buf());
+        let mut cfg = Config {
+            last_dir: Some(dir.path().to_path_buf()),
+            ..Config::default()
+        };
         migrate_for_platform(&mut cfg);
         assert_eq!(cfg.last_dir.as_deref(), Some(dir.path()));
     }
