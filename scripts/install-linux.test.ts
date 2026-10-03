@@ -7,6 +7,7 @@ import {
   readdirSync,
   readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,6 +72,37 @@ describe.skipIf(process.platform !== "linux")("Linux local install", () => {
     expect(
       readdirSync(join(prefix, "lib", "wtranscriber")).filter((n) => n.startsWith("build-")),
     ).toHaveLength(1);
+  });
+
+  it("bundles the selected CUDA runtime and cuDNN instead of stale CPU libraries", () => {
+    const runtime = join(root, "cuda runtime");
+    mkdirSync(runtime);
+    writeFileSync(join(runtime, "libonnxruntime.so"), "cuda");
+    writeFileSync(join(runtime, "libcudnn.so.9.21"), "cudnn");
+    symlinkSync("libcudnn.so.9.21", join(runtime, "libcudnn.so.9"));
+    writeFileSync(
+      join(release, ".wt-runtime.json"),
+      JSON.stringify({ feature: "cuda", libraries: [runtime] }),
+    );
+    installLinux(root, prefix, data);
+    const current = join(prefix, "lib", "wtranscriber", "current");
+    expect(readFileSync(join(current, "libonnxruntime.so"), "utf8")).toBe("cuda");
+    expect(readlinkSync(join(current, "libcudnn.so.9"))).toBe("libcudnn.so.9.21");
+    expect(readFileSync(join(current, "libcudnn.so.9"), "utf8")).toBe("cudnn");
+    expect(existsSync(join(current, "libonnxruntime.so.1"))).toBe(false);
+  });
+
+  it("preserves caller library paths behind the selected runtime", () => {
+    writeFileSync(join(release, "wt"), '#!/bin/sh\nprintf "%s" "$LD_LIBRARY_PATH"\n', {
+      mode: 0o755,
+    });
+    installLinux(root, prefix, data);
+    const cli = spawnSync(join(prefix, "bin", "wt"), [], {
+      encoding: "utf8",
+      env: { ...process.env, LD_LIBRARY_PATH: "/custom/cuda/lib" },
+    });
+    expect(cli.status).toBe(0);
+    expect(cli.stdout).toBe(`${join(prefix, "lib", "wtranscriber", "current")}:/custom/cuda/lib`);
   });
 
   it("rejects empty binaries and concurrent installs", () => {

@@ -10,12 +10,14 @@
 4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` (`engine/mod.rs`) gives CLI and GUI the same cuda-fallback decision:
    - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); falls back to one-shot spawn per slab when the serve worker is absent.
    - whisper-cpp + cpu → in-process whisper-rs.
-   - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process with the `cuda` feature, otherwise `wt` subprocess with the resolved ONNX provider (`runtimes/dependencies.rs`); the directml GUI build resolves cuda → cpu and emits a `transcribe:warning` event.
+   - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process with the resolved ONNX provider (`runtimes/dependencies.rs`). Unsupported CUDA requests change the job device to CPU before dispatch and emit a `transcribe:warning` event; they must not select an external executable merely because the original request was CUDA. Explicit `WT_USE_SUBPROCESS=1` remains available for subprocess diagnostics.
    - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity.
 5. Dedup — per-segment and cross-segment token collapse against whisper repetition loops (`job/postprocess.rs`, `dedup.rs`).
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
 7. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcriber/transcript/`).
 8. Cache store and JSON export.
+
+Diarization receives the same requested/resolved device. Sortformer selects CUDA in CUDA builds and honours explicit CPU selection; TitaNet selects the supported ONNX provider for both segmentation and embedding. GPU initialisation errors retry on CPU before reporting failure. Small VAD and language probes stay on CPU to avoid unnecessary GPU transfers and session overhead.
 
 Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count (default 4). Engine warnings reach the UI through `progress::Sink::warn` → `transcribe:warning`.
 

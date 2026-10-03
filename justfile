@@ -23,7 +23,7 @@ _libclang_env := env_var_or_default('LIBCLANG_PATH', '')
 export LIBCLANG_PATH := if _libclang_env == '' { _libclang_default } else { _libclang_env }
 export CMAKE_GENERATOR := env_var_or_default('CMAKE_GENERATOR', 'Ninja')
 export GGML_NATIVE := env_var_or_default('GGML_NATIVE', 'OFF')
-export CMAKE_CUDA_ARCHITECTURES := env_var_or_default('CMAKE_CUDA_ARCHITECTURES', '61;75;80;86;89')
+export CMAKE_CUDA_ARCHITECTURES := env_var_or_default('CMAKE_CUDA_ARCHITECTURES', if os() == 'linux' { '' } else { '61;75;80;86;89' })
 # MSVC cl.exe + parallel Ninja builds clash on shared .pdb files (C1041).
 # `CL` is read by cl.exe as prepended flags on every invocation, bypassing
 # any CMAKE_C_FLAGS_RELEASE overrides set by whisper.cpp / ggml CMakeLists.
@@ -94,7 +94,7 @@ dev action="":
 
 [unix]
 dev action="":
-    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; else {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun run tauri dev; fi
+    if [ "{{action}}" = "stop" ]; then {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; else {{_run}} --tag dev-stop --idle 30 --max 60 -- {{_xtask_dev_stop}}; RUST_BACKTRACE=1 {{_run}} --tag dev --idle 0 --max 0 -- bun scripts/desktop.ts dev; fi
 
 # Android HMR session. mode = usb (default) or host. Always force-restarts.
 android mode="usb" device="":

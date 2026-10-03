@@ -5,6 +5,7 @@ use parakeet_rs::sortformer::{DiarizationConfig, Sortformer};
 
 use crate::{
     audio::decode,
+    config::Device,
     diarizer::{Backend, Progress, Segment},
     error::{Error, Result},
     paths,
@@ -20,7 +21,7 @@ pub struct SortformerDiarizer {
 }
 
 impl SortformerDiarizer {
-    pub fn new() -> Result<Self> {
+    pub fn new(device: Device) -> Result<Self> {
         let model_path = paths::models_dir()?.join(MODEL_REL);
         if !model_path.exists() {
             return Err(Error::Transcribe(format!(
@@ -28,8 +29,18 @@ impl SortformerDiarizer {
                 model_path.display()
             )));
         }
-        let exec_cfg = sortformer_exec_config();
+        let exec_cfg = sortformer_exec_config(device);
+        let accelerated = exec_cfg.is_some();
         let sf = Sortformer::with_config(&model_path, exec_cfg, DiarizationConfig::callhome())
+            .or_else(|error| {
+                if !accelerated {
+                    return Err(error);
+                }
+                crate::logfile::warn(&format!(
+                    "sortformer GPU initialisation failed ({error}); retrying on CPU"
+                ));
+                Sortformer::with_config(&model_path, None, DiarizationConfig::callhome())
+            })
             .map_err(|e| Error::Transcribe(format!("sortformer load: {e}")))?;
         Ok(Self {
             model_path,
@@ -41,20 +52,26 @@ impl SortformerDiarizer {
 
 #[cfg(all(windows, feature = "directml"))]
 #[allow(clippy::unnecessary_wraps)]
-fn sortformer_exec_config() -> Option<parakeet_rs::ExecutionConfig> {
+fn sortformer_exec_config(device: Device) -> Option<parakeet_rs::ExecutionConfig> {
     use parakeet_rs::{ExecutionConfig, ExecutionProvider};
+    if matches!(device, Device::Cpu) {
+        return None;
+    }
     Some(ExecutionConfig::new().with_execution_provider(ExecutionProvider::DirectML))
 }
 
 #[cfg(all(feature = "cuda", not(all(windows, feature = "directml"))))]
 #[allow(clippy::unnecessary_wraps)]
-fn sortformer_exec_config() -> Option<parakeet_rs::ExecutionConfig> {
+fn sortformer_exec_config(device: Device) -> Option<parakeet_rs::ExecutionConfig> {
     use parakeet_rs::{ExecutionConfig, ExecutionProvider};
+    if matches!(device, Device::Cpu) {
+        return None;
+    }
     Some(ExecutionConfig::new().with_execution_provider(ExecutionProvider::Cuda))
 }
 
 #[cfg(not(any(feature = "cuda", all(windows, feature = "directml"))))]
-const fn sortformer_exec_config() -> Option<parakeet_rs::ExecutionConfig> {
+const fn sortformer_exec_config(_device: Device) -> Option<parakeet_rs::ExecutionConfig> {
     None
 }
 
@@ -149,6 +166,15 @@ impl Backend for SortformerDiarizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_config_respects_requested_device() {
+        assert!(sortformer_exec_config(Device::Cpu).is_none());
+        assert_eq!(
+            sortformer_exec_config(Device::Cuda).is_some(),
+            cfg!(any(feature = "cuda", all(windows, feature = "directml")))
+        );
+    }
 
     #[test]
     #[ignore = "requires WT_TEST_SORTFORMER_MODEL pointing to the installed four-speaker model"]

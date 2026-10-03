@@ -6,6 +6,7 @@ case "${1:-}" in
     --help|-h)
         printf '%s\n' 'just install: bootstrap, build and install the current checkout on Windows or Linux.' \
             'Linux installs to ~/.local (override with WT_INSTALL_PREFIX); system dependencies may require sudo.' \
+            'CUDA is selected automatically when supported; set WT_CUDA=0 for CPU or WT_CUDA=1 to require CUDA.' \
             'Use --interactive on Windows to show the installer UI. No git pull or branch switch is performed.'
         exit 0
         ;;
@@ -97,5 +98,5 @@ unset CARGO_BUILD_TARGET
 bun install
 rustup show active-toolchain
 bun scripts/run.ts --tag install-build --idle 1800 --max 7200 -- \
-    bun run tauri build --no-bundle -- --locked --no-default-features --features sherpa-static
+    bun scripts/desktop.ts build
 bun scripts/install-linux.ts

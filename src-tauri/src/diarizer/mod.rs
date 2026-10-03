@@ -4,7 +4,10 @@ mod sortformer_onnx;
 
 use std::path::Path;
 
-use crate::{config::DiarizerChoice, error::Result};
+use crate::{
+    config::{Device, DiarizerChoice},
+    error::Result,
+};
 
 pub use sherpa::SherpaDiarizer;
 
@@ -29,10 +32,18 @@ pub trait Backend {
     ) -> Result<Vec<Segment>>;
 }
 
-pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<dyn Backend>> {
+pub fn new_with_choice(
+    num_speakers: u32,
+    choice: DiarizerChoice,
+    device: Device,
+) -> Result<Box<dyn Backend>> {
     let titanet_fallback = || {
-        SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
-            .map(|d| Box::new(d) as Box<dyn Backend>)
+        SherpaDiarizer::new(
+            num_speakers,
+            DiarizerChoice::Titanet.embedding_rel(),
+            device,
+        )
+        .map(|d| Box::new(d) as Box<dyn Backend>)
     };
     match choice {
         DiarizerChoice::SortformerOnnx => {
@@ -49,7 +60,7 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
                     ));
                     return titanet_fallback();
                 }
-                match sortformer_onnx::SortformerDiarizer::new() {
+                match sortformer_onnx::SortformerDiarizer::new(device) {
                     Ok(d) => Ok(Box::new(d) as Box<dyn Backend>),
                     Err(e) => {
                         crate::logfile::warn(&format!(
@@ -60,8 +71,10 @@ pub fn new_with_choice(num_speakers: u32, choice: DiarizerChoice) -> Result<Box<
                 }
             }
         }
-        DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())
-            .map(|d| Box::new(d) as Box<dyn Backend>),
+        DiarizerChoice::Titanet => {
+            SherpaDiarizer::new(num_speakers, choice.embedding_rel(), device)
+                .map(|d| Box::new(d) as Box<dyn Backend>)
+        }
     }
 }
 

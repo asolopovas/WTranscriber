@@ -279,8 +279,8 @@ defineExpose({
         <MenuItem
           icon="content_cut"
           @click="
-            closeMenu();
             emit('trim', activeMenuEntry);
+            closeMenu();
           "
         >
           {{
@@ -295,8 +295,8 @@ defineExpose({
           class="md:hidden"
           :disabled="autoRenamingPath === activeMenuEntry.path"
           @click="
-            closeMenu();
             emit('auto-rename', activeMenuEntry);
+            closeMenu();
           "
         >
           <template #icon>
@@ -309,8 +309,8 @@ defineExpose({
           icon="ios_share"
           :disabled="!activeMenuEntry.cache_key"
           @click="
-            closeMenu();
             emit('share', activeMenuEntry);
+            closeMenu();
           "
         >
           Share
@@ -319,8 +319,8 @@ defineExpose({
           icon="content_copy"
           :disabled="!activeMenuEntry.cache_key"
           @click="
-            closeMenu();
             emit('copy', activeMenuEntry);
+            closeMenu();
           "
         >
           Copy
@@ -329,8 +329,8 @@ defineExpose({
           icon="file_save"
           :disabled="!activeMenuEntry.cache_key"
           @click="
-            closeMenu();
             emit('export', activeMenuEntry);
+            closeMenu();
           "
         >
           Export…
@@ -340,8 +340,8 @@ defineExpose({
           icon="groups"
           :disabled="!activeMenuEntry.cache_key"
           @click="
-            closeMenu();
             emit('redo-diarize', activeMenuEntry);
+            closeMenu();
           "
         >
           Re-diarize…
@@ -349,8 +349,8 @@ defineExpose({
         <MenuItem
           icon="drive_file_rename_outline"
           @click="
-            closeMenu();
             emit('rename', activeMenuEntry);
+            closeMenu();
           "
         >
           Rename
@@ -358,8 +358,8 @@ defineExpose({
         <MenuItem
           icon="folder_open"
           @click="
-            closeMenu();
             emit('reveal', activeMenuEntry);
+            closeMenu();
           "
         >
           Reveal in folder
@@ -368,8 +368,8 @@ defineExpose({
           icon="delete"
           tone="danger"
           @click="
-            closeMenu();
             emit('delete', activeMenuEntry);
+            closeMenu();
           "
         >
           Delete

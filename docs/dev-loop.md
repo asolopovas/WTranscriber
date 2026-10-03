@@ -27,6 +27,14 @@ just check        # parallel pre-release gate
 just check-changed --staged  # changed-file gate (hooks/CI)
 ```
 
+### Linux acceleration
+
+`just dev` and `just install` select CUDA when an NVIDIA GPU and a compatible CUDA Toolkit are available. The desktop helper checks supported compute architectures, tests the CUDA host compiler, reuses or downloads the pinned Sherpa CUDA and cuDNN runtimes, and supplies their library paths before launching the application. Local builds target the detected GPUs; set `CMAKE_CUDA_ARCHITECTURES` explicitly when building for other machines.
+
+Use `WT_CUDA=0 just install` for a CPU-only build or `WT_CUDA=1 just install` to require CUDA and report missing prerequisites. Without suitable GPU/toolkit support, automatic selection builds the existing static CPU configuration. Install a supported NVIDIA driver and CUDA Toolkit to enable GPU builds; an incompatible host compiler requires a supported `g++` or an explicit `CMAKE_CUDA_HOST_COMPILER`.
+
+The local installer copies the selected GPU and cuDNN libraries into the installed build and puts those ahead of existing `LD_LIBRARY_PATH` entries. It verifies the staged CLI before replacing the active installation. Old Whisper C++ ABI caches are detected and rebuilt before desktop development or installation.
+
 ## Android
 
 ```bash

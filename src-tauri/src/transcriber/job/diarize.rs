@@ -58,7 +58,7 @@ fn run_diarize_streaming(
     config: &Config,
 ) -> Result<(Vec<DiarSegment>, String)> {
     let wav = audio::ensure_cached_wav(input)?;
-    let backend = diarizer::new_with_choice(speakers, config.diarizer)?;
+    let backend = diarizer::new_with_choice(speakers, config.diarizer, config.device)?;
     let backend_name = backend.name();
     sink.set_diarize_backend(&backend_name);
     let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);

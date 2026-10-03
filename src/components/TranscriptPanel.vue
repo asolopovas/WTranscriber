@@ -16,7 +16,7 @@ const emit = defineEmits<{
 
 const editing = ref<string | null>(null);
 const draft = ref("");
-const inputRef = ref<HTMLInputElement | null>(null);
+const inputRef = ref<HTMLInputElement[]>([]);
 
 const canRename = computed(() => !!props.cacheKey);
 
@@ -25,8 +25,9 @@ async function startEdit(speaker: string) {
   editing.value = speaker;
   draft.value = speaker;
   await nextTick();
-  inputRef.value?.focus();
-  inputRef.value?.select();
+  const input = inputRef.value[0];
+  input?.focus();
+  input?.select();
 }
 
 function commit() {

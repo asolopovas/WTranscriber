@@ -4,6 +4,9 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
   mkdtempSync,
   readdirSync,
   readlinkSync,
@@ -20,6 +23,21 @@ const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const desktopValue = (value: string) => value.replaceAll("\\", "\\\\");
 const desktopExec = (value: string) =>
   desktopValue(`"${value.replace(/[\\"`$]/g, "\\$&").replaceAll("%", "%%")}"`);
+
+function copyLibrary(directory: string, name: string, stage: string): void {
+  const source = join(directory, name);
+  const destination = join(stage, name);
+  rmSync(destination, { force: true });
+  if (
+    lstatSync(source).isSymbolicLink() &&
+    dirname(realpathSync(source)) === realpathSync(directory)
+  ) {
+    symlinkSync(basename(realpathSync(source)), destination);
+  } else {
+    copyFileSync(source, destination);
+    chmodSync(destination, 0o755);
+  }
+}
 
 export function installLinux(root: string, prefix: string, dataHome: string): void {
   for (const path of [prefix, dataHome]) {
@@ -44,18 +62,29 @@ export function installLinux(root: string, prefix: string, dataHome: string): vo
   let activated = false;
   try {
     stage = mkdtempSync(join(lib, "build-"));
+    const manifest = join(release, ".wt-runtime.json");
+    const runtime = existsSync(manifest)
+      ? (JSON.parse(readFileSync(manifest, "utf8")) as { feature: string; libraries: string[] })
+      : undefined;
     for (const name of readdirSync(release)) {
       if (
         ["wtranscriber", "wt"].includes(name) ||
-        (/\.so(?:\.|$)/.test(name) && name !== "libwtranscriber_lib.so")
+        (!runtime && /\.so(?:\.|$)/.test(name) && name !== "libwtranscriber_lib.so")
       ) {
-        copyFileSync(join(release, name), join(stage, name));
-        chmodSync(join(stage, name), 0o755);
+        copyLibrary(release, name, stage);
+      }
+    }
+    for (const directory of runtime?.libraries ?? []) {
+      for (const name of readdirSync(directory)) {
+        if (/\.so(?:\.|$)/.test(name)) copyLibrary(directory, name, stage);
       }
     }
     const probe = spawnSync(join(stage, "wt"), ["--help"], {
       encoding: "utf8",
-      env: { ...process.env, LD_LIBRARY_PATH: stage },
+      env: {
+        ...process.env,
+        LD_LIBRARY_PATH: [stage, process.env.LD_LIBRARY_PATH].filter(Boolean).join(":"),
+      },
     });
     if (probe.error || probe.status !== 0) {
       throw new Error(`Built CLI cannot run: ${probe.error?.message ?? probe.stderr}`);
@@ -67,7 +96,7 @@ export function installLinux(root: string, prefix: string, dataHome: string): vo
       const temporary = join(stage, `${name}.launcher`);
       writeFileSync(
         temporary,
-        `#!/bin/sh\nexport LD_LIBRARY_PATH=${shellQuote(current)}\nexec ${shellQuote(join(current, name))} "$@"\n`,
+        `#!/bin/sh\nexport LD_LIBRARY_PATH=${shellQuote(current)}\${LD_LIBRARY_PATH:+:"$LD_LIBRARY_PATH"}\nexec ${shellQuote(join(current, name))} "$@"\n`,
         { mode: 0o755 },
       );
       renameSync(temporary, join(bin, name));

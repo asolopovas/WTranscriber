@@ -86,9 +86,7 @@ esac`,
     expect(commands).toContain("apt-get update");
     expect(commands).toContain("bun install\n");
     expect(commands).toContain("rustup show active-toolchain");
-    expect(commands).toContain(
-      "--no-bundle -- --locked --no-default-features --features sherpa-static",
-    );
+    expect(commands).toContain("bun scripts/desktop.ts build");
     expect(commands.trim().endsWith("bun scripts/install-linux.ts")).toBe(true);
   });
 

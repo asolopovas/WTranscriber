@@ -23,11 +23,14 @@ pub fn shutdown() {
 }
 
 pub fn resolve_device(config: &mut Config) -> Option<String> {
-    if !matches!(config.device, crate::config::Device::Cuda) || cfg!(feature = "cuda") {
+    if !matches!(config.device, crate::config::Device::Cuda) {
         return None;
     }
     match config.engine {
         Engine::WhisperCpp => {
+            if cfg!(feature = "cuda") {
+                return None;
+            }
             #[cfg(not(target_os = "ios"))]
             if whisper_cpp::cuda_worker_available() {
                 return None;
@@ -42,6 +45,7 @@ pub fn resolve_device(config: &mut Config) -> Option<String> {
             if crate::runtimes::dependencies::onnx_provider(config.device) == "cuda" {
                 None
             } else {
+                config.device = crate::config::Device::Cpu;
                 Some(
                     "CUDA requested but this build has no ONNX CUDA runtime; transcribing on CPU"
                         .into(),
@@ -239,6 +243,45 @@ mod tests {
                 std::env::remove_var(k);
             }
         }
+    }
+
+    #[test]
+    fn resolved_onnx_device_keeps_fallback_in_process() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_env();
+        for engine in [Engine::Parakeet, Engine::NemoCtc, Engine::Qwen3Asr] {
+            let mut config = cfg(engine, Device::Cuda);
+            let warning = resolve_device(&mut config);
+            if crate::runtimes::dependencies::onnx_cuda_supported_for_build() {
+                assert!(warning.is_none());
+                assert_eq!(config.device, Device::Cuda);
+            } else {
+                assert!(warning.is_some());
+                assert_eq!(config.device, Device::Cpu);
+                assert_eq!(runtime::provider(&config), runtime::Provider::Cpu);
+            }
+            assert!(
+                use_in_process(&config),
+                "{engine:?} must use the bundled recognizer"
+            );
+            assert!(preflight(&config).is_ok());
+            assert!(resolve_device(&mut config).is_none());
+        }
+    }
+
+    #[test]
+    fn cpu_resolution_preserves_explicit_subprocess_override() {
+        let _g = ENV_LOCK.lock().unwrap();
+        clear_env();
+        for engine in [Engine::Parakeet, Engine::NemoCtc, Engine::Qwen3Asr] {
+            let mut config = cfg(engine, Device::Cpu);
+            assert!(resolve_device(&mut config).is_none());
+            assert_eq!(config.device, Device::Cpu);
+            assert!(use_in_process(&config));
+        }
+        set_env("WT_USE_SUBPROCESS", "1");
+        assert!(!use_in_process(&cfg(Engine::Parakeet, Device::Cpu)));
+        clear_env();
     }
 
     #[test]
