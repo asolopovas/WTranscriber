@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "@/api";
 import { audioMimeType } from "@utils/audio";
+import { waveforms } from "@utils/waveforms";
 
 import type { AudioMeta, DirEntry } from "@/types";
 import { fmtMs } from "@utils/format";
@@ -113,7 +114,7 @@ async function load(target: DirEntry) {
     const [durMs, meta, peaksArr] = await Promise.all([
       api.probeAudio(target.path).catch(() => null),
       api.loadAudioMeta(target.path),
-      api.audioWaveform(target.path, 320),
+      waveforms.load(target),
     ]);
     if (version !== loadVersion) return;
     const dur = Math.max(0, Math.floor((durMs ?? target.duration_ms ?? 0) as number));
@@ -189,6 +190,7 @@ function handleWaveformPointerDown(ev: PointerEvent) {
   if (!box || duration.value === 0) return;
   ev.preventDefault();
   seekScrubActive = true;
+  const version = loadVersion;
   const wasPlaying = playing.value;
 
   if (wasPlaying && audioEl.value) audioEl.value.pause();
@@ -202,6 +204,7 @@ function handleWaveformPointerDown(ev: PointerEvent) {
     return Math.min(end.value, Math.max(start.value, Math.round(ms)));
   };
   const updateVisual = (e: PointerEvent) => {
+    if (version !== loadVersion) return;
     const ms = computeMs(e);
     playOffsetMs = ms;
     playheadMs.value = ms;
@@ -217,6 +220,7 @@ function handleWaveformPointerDown(ev: PointerEvent) {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
     window.removeEventListener("pointercancel", up);
+    if (version !== loadVersion) return;
     updateVisual(e);
     if (audioEl.value) audioEl.value.currentTime = playOffsetMs / 1000;
     if (wasPlaying) {
@@ -234,8 +238,10 @@ function beginHandleDrag(side: "start" | "end", ev: PointerEvent) {
   const box = waveformBox.value;
   if (!box || duration.value === 0) return;
   const dur = duration.value;
+  const version = loadVersion;
   const gap = Math.min(MIN_GAP_MS, Math.max(100, Math.floor(dur / 4)));
   const move = (e: PointerEvent) => {
+    if (version !== loadVersion) return;
     const rect = box.getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
     const ms = Math.round((x / rect.width) * dur);
@@ -499,6 +505,14 @@ function cleanup() {
   audioLoading.value = false;
   seekScrubActive = false;
   stop();
+  duration.value = 0;
+  start.value = 0;
+  end.value = 0;
+  initialStart.value = 0;
+  initialEnd.value = 0;
+  peaks.value = [];
+  playheadMs.value = 0;
+  localError.value = null;
   playOffsetMs = 0;
   const el = audioEl.value;
   if (el) {
@@ -634,6 +648,7 @@ async function close() {
         icon="restart_alt"
         :icon-size="18"
         title="Reset to full track"
+        :disabled="loading"
         class="shrink-0"
         @click="reset"
       >
@@ -645,7 +660,7 @@ async function close() {
           shape="circle"
           size="lg"
           title="Mark in (I) — set start to playhead"
-          :disabled="!target"
+          :disabled="!target || loading"
           @click="markIn"
         >
           <Icon name="first_page" :size="22" />
@@ -667,7 +682,7 @@ async function close() {
           shape="circle"
           size="lg"
           title="Mark out (O) — set end to playhead"
-          :disabled="!target"
+          :disabled="!target || loading"
           @click="markOut"
         >
           <Icon name="last_page" :size="22" />
@@ -675,7 +690,14 @@ async function close() {
         <Button variant="neutral" shape="circle" size="lg" title="Cancel" @click="close">
           <CancelIcon :size="20" />
         </Button>
-        <Button variant="primary" shape="circle" size="lg" title="Save" @click="commit">
+        <Button
+          variant="primary"
+          shape="circle"
+          size="lg"
+          title="Save"
+          :disabled="loading"
+          @click="commit"
+        >
           <SaveIcon :size="20" />
         </Button>
       </div>

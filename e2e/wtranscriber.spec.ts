@@ -285,6 +285,43 @@ test("deletes only the file targeted by its menu", async ({ page }) => {
   expect(removed?.args).toEqual({ path: "C:\\audio\\field_notes.m4a" });
 });
 
+test("preloads waveforms and opens independent trims from desktop row shortcuts", async ({
+  page,
+}, testInfo) => {
+  await expect.poll(() => commandCount(page, "audio_waveform")).toBe(3);
+  expect(await commandCount(page, "read_audio_bytes")).toBe(0);
+  const first = rowNamed(page, "interview");
+  const second = rowNamed(page, "field_notes");
+  const trim = first.getByTitle("Trim recording", { exact: true });
+  const ai = first.getByTitle("Auto-rename (AI)", { exact: true });
+  await expect(trim).toBeVisible();
+  const aiBox = await ai.boundingBox();
+  const trimBox = await trim.boundingBox();
+  expect(trimBox!.x).toBeGreaterThan(aiBox!.x);
+  expect(Math.abs(trimBox!.y - aiBox!.y)).toBeLessThan(2);
+  await page.screenshot({ path: testInfo.outputPath("desktop-trim-shortcut.png") });
+  await trim.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("selected 01:00", { exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("i");
+  await dialog.getByTitle("Save", { exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await second.getByTitle("Trim recording", { exact: true }).click();
+  await expect(dialog.getByText("selected 01:00", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Position 00:00", { exact: true })).toBeVisible();
+  await dialog.getByTitle("Close", { exact: true }).click();
+  await trim.click();
+  await expect(dialog.getByText("selected 00:55", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Position 00:05", { exact: true })).toBeVisible();
+  await dialog.getByTitle("Close", { exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(trim).toBeHidden();
+  await first.getByTitle("More", { exact: true }).click();
+  await expect(page.getByRole("button", { name: /Cut: 00:05/ })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("mobile-trim-menu.png") });
+});
+
 test("saves a trim range and resets it to the full track", async ({ page }) => {
   const row = rowNamed(page, "field_notes");
   await row.getByTitle("More", { exact: true }).click();

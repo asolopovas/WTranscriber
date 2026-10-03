@@ -245,6 +245,18 @@ defineExpose({
             <Icon v-else name="auto_awesome" :size="20" />
           </Button>
           <Button
+            v-if="!isAndroid"
+            class="max-md:hidden!"
+            variant="ghost"
+            shape="circle"
+            size="md"
+            icon="content_cut"
+            :icon-size="20"
+            title="Trim recording"
+            :disabled="!!busy[entry.path]"
+            @click="emit('trim', entry)"
+          />
+          <Button
             v-if="entry.cache_key"
             class="hidden md:inline-flex"
             variant="ghost"

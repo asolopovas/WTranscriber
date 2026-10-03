@@ -68,6 +68,65 @@ afterEach(() => {
 });
 
 describe("trim editor seeking", () => {
+  it("clears the old range immediately and loads only the new track's saved trim", async () => {
+    vi.mocked(api.loadAudioMeta).mockResolvedValueOnce({
+      trim_start_ms: 10000,
+      trim_end_ms: 20000,
+      duration_ms: null,
+    });
+    await open();
+    expect(wrapper.text()).toContain("selected 00:10");
+    let finish!: (peaks: number[]) => void;
+    vi.mocked(api.audioWaveform).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await wrapper.setProps({ target: { ...target, path: "/new.wav", name: "new.wav" } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("selected 00:00");
+    expect(wrapper.text()).toContain("Position 00:00");
+    expect(wrapper.get('[title="Save"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('[title="Close"]').trigger("click");
+    expect(api.saveAudioMeta).not.toHaveBeenCalled();
+    await wrapper.setProps({ target: null });
+    finish([0.9]);
+    await flushPromises();
+    await wrapper.setProps({ target: { ...target, path: "/new.wav", name: "new.wav" } });
+    await flushPromises();
+    expect(wrapper.text()).toContain("selected 01:00");
+    expect(wrapper.text()).toContain("Position 00:00");
+  });
+
+  it("ignores late metadata and waveform results from the previous track", async () => {
+    let finish!: (peaks: number[]) => void;
+    vi.mocked(api.audioWaveform).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.mocked(api.loadAudioMeta).mockResolvedValueOnce({
+      trim_start_ms: 10000,
+      trim_end_ms: 20000,
+      duration_ms: null,
+    });
+    wrapper = mount(TrimDialog, { props: { target } });
+    await flushPromises();
+    await wrapper.setProps({ target: { ...target, path: "/other.wav" } });
+    await flushPromises();
+    finish([0.7]);
+    await flushPromises();
+    expect(wrapper.text()).toContain("selected 01:00");
+    await wrapper.get('[title="Save"]').trigger("click");
+    expect(api.saveAudioMeta).toHaveBeenCalledWith("/other.wav", {
+      trim_start_ms: 0,
+      trim_end_ms: null,
+      duration_ms: null,
+    });
+  });
+
   it("seeks by five seconds on initial open, supports repeat, and clamps to track bounds", async () => {
     const audio = await open();
     expect(press("ArrowLeft").defaultPrevented).toBe(true);

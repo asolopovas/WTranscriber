@@ -28,25 +28,32 @@ static CACHE: Mutex<WaveformCache> = Mutex::new(WaveformCache {
 
 impl WaveformCache {
     fn get_or_load(
-        &mut self,
+        cache: &Mutex<Self>,
         path: &Path,
         bins: usize,
         load: impl FnOnce(&Path) -> Result<Vec<f32>>,
     ) -> Result<Vec<f32>> {
         let path = std::path::absolute(path)?;
         let source_key = audio_cache_key(&path)?;
-        self.entries
-            .retain(|entry| entry.path != path || entry.source_key == source_key);
-        if let Some(index) = self.entries.iter().position(|entry| {
-            entry.path == path && entry.source_key == source_key && entry.bins == bins
-        }) {
-            let entry = self
+        {
+            let mut cache = cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cache
                 .entries
-                .remove(index)
-                .expect("waveform cache index exists");
-            let peaks = entry.peaks.clone();
-            self.entries.push_back(entry);
-            return Ok(peaks);
+                .retain(|entry| entry.path != path || entry.source_key == source_key);
+            if let Some(index) = cache.entries.iter().position(|entry| {
+                entry.path == path && entry.source_key == source_key && entry.bins == bins
+            }) {
+                let entry = cache
+                    .entries
+                    .remove(index)
+                    .expect("waveform cache index exists");
+                let peaks = entry.peaks.clone();
+                cache.entries.push_back(entry);
+                drop(cache);
+                return Ok(peaks);
+            }
         }
         let samples = load(&path)?;
         let peaks = if samples.is_empty() || bins == 0 {
@@ -64,10 +71,16 @@ impl WaveformCache {
                 .collect::<Vec<_>>()
         };
         if peaks.len() <= MAX_CACHED_PEAKS && audio_cache_key(&path)? == source_key {
-            if self.entries.len() == MAX_ENTRIES {
-                self.entries.pop_front();
+            let mut cache = cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cache
+                .entries
+                .retain(|entry| entry.path != path || entry.bins != bins);
+            if cache.entries.len() == MAX_ENTRIES {
+                cache.entries.pop_front();
             }
-            self.entries.push_back(Entry {
+            cache.entries.push_back(Entry {
                 path,
                 source_key,
                 bins,
@@ -79,10 +92,7 @@ impl WaveformCache {
 }
 
 pub fn waveform_peaks(path: &Path, bins: usize) -> Result<Vec<f32>> {
-    CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get_or_load(path, bins, load_samples)
+    WaveformCache::get_or_load(&CACHE, path, bins, load_samples)
 }
 
 pub(super) fn clear_cache() {
@@ -99,29 +109,47 @@ mod tests {
     use std::{fs::FileTimes, time::SystemTime};
 
     #[test]
+    fn decoding_does_not_lock_out_cached_waveforms() {
+        let dir = tempfile::tempdir().unwrap();
+        let ready = dir.path().join("ready.wav");
+        let loading = dir.path().join("loading.wav");
+        std::fs::write(&ready, b"audio").unwrap();
+        std::fs::write(&loading, b"audio").unwrap();
+        let cache = Mutex::new(WaveformCache::default());
+        WaveformCache::get_or_load(&cache, &ready, 2, |_| Ok(vec![0.2])).unwrap();
+        WaveformCache::get_or_load(&cache, &loading, 2, |_| {
+            assert!(cache.try_lock().is_ok());
+            assert_eq!(
+                WaveformCache::get_or_load(&cache, &ready, 2, |_| panic!("cached audio reloaded"))?,
+                vec![0.2]
+            );
+            Ok(vec![0.5])
+        })
+        .unwrap();
+    }
+
+    #[test]
     fn reuses_peaks_but_separates_bins_and_paths() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         let other = dir.path().join("other.wav");
         std::fs::write(&path, b"audio").unwrap();
         std::fs::write(&other, b"audio").unwrap();
-        let mut cache = WaveformCache::default();
-        let peaks = cache
-            .get_or_load(&path, 2, |_| Ok(vec![0.1, -0.8, 0.2, 1.5]))
+        let cache = Mutex::new(WaveformCache::default());
+        let peaks = WaveformCache::get_or_load(&cache, &path, 2, |_| Ok(vec![0.1, -0.8, 0.2, 1.5]))
             .unwrap();
         assert_eq!(peaks, vec![0.8, 1.0]);
         assert_eq!(
-            cache
-                .get_or_load(&path, 2, |_| panic!("cached audio was reloaded"))
+            WaveformCache::get_or_load(&cache, &path, 2, |_| panic!("cached audio was reloaded"))
                 .unwrap(),
             peaks
         );
         assert_eq!(
-            cache.get_or_load(&path, 1, |_| Ok(vec![0.4])).unwrap(),
+            WaveformCache::get_or_load(&cache, &path, 1, |_| Ok(vec![0.4])).unwrap(),
             vec![0.4]
         );
         assert_eq!(
-            cache.get_or_load(&other, 2, |_| Ok(vec![0.6])).unwrap(),
+            WaveformCache::get_or_load(&cache, &other, 2, |_| Ok(vec![0.6])).unwrap(),
             vec![0.6]
         );
     }
@@ -131,29 +159,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         std::fs::write(&path, b"audio").unwrap();
-        let mut cache = WaveformCache::default();
-        cache.get_or_load(&path, 2, |_| Ok(vec![0.1])).unwrap();
+        let cache = Mutex::new(WaveformCache::default());
+        WaveformCache::get_or_load(&cache, &path, 2, |_| Ok(vec![0.1])).unwrap();
         let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
         std::fs::write(&path, b"longer audio").unwrap();
         let file = std::fs::File::options().write(true).open(&path).unwrap();
         file.set_times(FileTimes::new().set_modified(modified))
             .unwrap();
         assert_eq!(
-            cache.get_or_load(&path, 2, |_| Ok(vec![0.2])).unwrap(),
+            WaveformCache::get_or_load(&cache, &path, 2, |_| Ok(vec![0.2])).unwrap(),
             vec![0.2]
         );
         file.set_times(FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
             .unwrap();
         assert_eq!(
-            cache.get_or_load(&path, 2, |_| Ok(vec![0.3])).unwrap(),
+            WaveformCache::get_or_load(&cache, &path, 2, |_| Ok(vec![0.3])).unwrap(),
             vec![0.3]
         );
-        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.lock().unwrap().entries.len(), 1);
         std::fs::remove_file(&path).unwrap();
         assert!(
-            cache
-                .get_or_load(&path, 2, |_| panic!("missing source"))
-                .is_err()
+            WaveformCache::get_or_load(&cache, &path, 2, |_| panic!("missing source")).is_err()
         );
     }
 
@@ -162,24 +188,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         std::fs::write(&path, b"audio").unwrap();
-        let mut cache = WaveformCache::default();
+        let cache = Mutex::new(WaveformCache::default());
         assert!(
-            cache
-                .get_or_load(&path, 2, |_| Err(
-                    std::io::Error::other("decode failed").into()
-                ))
-                .is_err()
+            WaveformCache::get_or_load(&cache, &path, 2, |_| Err(std::io::Error::other(
+                "decode failed"
+            )
+            .into()))
+            .is_err()
         );
-        assert!(cache.entries.is_empty());
-        cache
-            .get_or_load(&path, 2, |path| {
-                std::fs::write(path, b"changed audio")?;
-                Ok(vec![0.2])
-            })
-            .unwrap();
-        assert!(cache.entries.is_empty());
+        assert!(cache.lock().unwrap().entries.is_empty());
+        WaveformCache::get_or_load(&cache, &path, 2, |path| {
+            std::fs::write(path, b"changed audio")?;
+            Ok(vec![0.2])
+        })
+        .unwrap();
+        assert!(cache.lock().unwrap().entries.is_empty());
         assert_eq!(
-            cache.get_or_load(&path, 2, |_| Ok(vec![0.3])).unwrap(),
+            WaveformCache::get_or_load(&cache, &path, 2, |_| Ok(vec![0.3])).unwrap(),
             vec![0.3]
         );
     }
@@ -189,17 +214,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
         std::fs::write(&path, b"audio").unwrap();
-        let mut cache = WaveformCache::default();
+        let cache = Mutex::new(WaveformCache::default());
         for bins in 1..=MAX_ENTRIES + 1 {
-            cache.get_or_load(&path, bins, |_| Ok(vec![0.1])).unwrap();
+            WaveformCache::get_or_load(&cache, &path, bins, |_| Ok(vec![0.1])).unwrap();
         }
-        assert_eq!(cache.entries.len(), MAX_ENTRIES);
-        assert_eq!(cache.entries.front().unwrap().bins, 2);
-        cache
-            .get_or_load(&path, MAX_CACHED_PEAKS + 1, |_| {
-                Ok(vec![0.1; MAX_CACHED_PEAKS + 1])
-            })
-            .unwrap();
-        assert_eq!(cache.entries.back().unwrap().bins, MAX_ENTRIES + 1);
+        assert_eq!(cache.lock().unwrap().entries.len(), MAX_ENTRIES);
+        assert_eq!(cache.lock().unwrap().entries.front().unwrap().bins, 2);
+        WaveformCache::get_or_load(&cache, &path, MAX_CACHED_PEAKS + 1, |_| {
+            Ok(vec![0.1; MAX_CACHED_PEAKS + 1])
+        })
+        .unwrap();
+        assert_eq!(
+            cache.lock().unwrap().entries.back().unwrap().bins,
+            MAX_ENTRIES + 1
+        );
     }
 }

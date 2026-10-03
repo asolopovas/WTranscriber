@@ -40,6 +40,7 @@ import { useEssentials } from "@composables/useEssentials";
 import { useFileSelection } from "@composables/useFileSelection";
 import { useTranscriptionQueue } from "@composables/useTranscriptionQueue";
 import { recordOmit, recordSet } from "@utils/records";
+import { waveforms } from "@utils/waveforms";
 
 const tab = ref<Tab>("transcribe");
 const logRetain = ref<number>(Number(localStorage.getItem("wt.logRetain") ?? "1") || 1);
@@ -113,6 +114,21 @@ const untranscribedEntries = computed<DirEntry[]>(() =>
   audioEntries.value.filter((e) => !e.cache_key && !busy.value[e.path]),
 );
 const transcribedCount = computed(() => audioEntries.value.filter((e) => !!e.cache_key).length);
+
+watch(
+  () =>
+    [
+      audioEntries.value.map(({ path, size_bytes, modified_ms }) => ({
+        path,
+        size_bytes,
+        modified_ms,
+      })),
+      queueActive.value,
+    ] as const,
+  ([entries, active]) => waveforms.preload(active ? [] : entries),
+  { immediate: true },
+);
+onUnmounted(() => waveforms.preload([]));
 
 const selectedAsrModel = computed(
   () => models.value.find((m) => m.family === "asr" && m.id === config.value?.model) ?? null,

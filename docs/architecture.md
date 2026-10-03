@@ -54,6 +54,8 @@ Touch all relevant layers in one change:
 
 Audio trim selections and probed duration persist as JSON in the recording folder's `.meta/` subdirectory (`<audio filename>.wtmeta.json`). These files are user metadata, not disposable cache. Legacy sidecars beside recordings remain readable and move into `.meta/` when saved or renamed. The trim editor restores these selections when reopened.
 
+Changing the trim target clears the previous waveform, range, and playhead before loading metadata. Folder listings preload up to 32 waveforms sequentially while transcription is idle, sharing in-flight requests with the editor. The native cache checks source size and modification time on every open, and decoding happens outside its lock so background work cannot block an already cached waveform. Only peaks remain in memory; full recordings are not preloaded into the WebView. Desktop rows provide a trim shortcut beside the AI action; the overflow menu remains available on mobile.
+
 Trim-editor saves are non-destructive. Duration probes and trim changes update their own fields under a shared lock, so probing cannot replace a newer selection. Importing an audio file also copies its trim metadata. The explicit native permanent-trim command remains separate from the editor.
 
 Completed transcripts persist as `.meta/<audio filename>.transcript.json`, with `<audio filename>.txt` beside the recording. Completion, re-diarization, segment edits, and speaker renames synchronise the text file. The local JSON remains available after clearing the disposable transcript cache. Recording renames move both files and trim metadata. Transcript playback uses original-recording timestamps; edited text keeps the segment's original time range rather than inventing word timings.
