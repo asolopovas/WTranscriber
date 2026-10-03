@@ -786,6 +786,15 @@ async fn redo_diarization_inner(
         if sink.is_cancelled() {
             return Err(Error::Cancelled);
         }
+        if transcriber::quality::enabled(&config) {
+            let result = transcriber::quality::run(&input, &config, sink.as_ref(), &cached)?;
+            if sink.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            sink.phase(Phase::Writing);
+            transcriber::quality::store(&input, &config, &result)?;
+            return Ok(result);
+        }
         sink.phase(Phase::Diarizing);
         let speakers = config.speakers.unwrap_or(0);
         let wav = audio::ensure_cached_wav(&input)?;
@@ -818,6 +827,7 @@ async fn redo_diarization_inner(
         let key_params = cache::build_key_params(
             &input,
             cache::KeyOptions {
+                diarizer: config.diarizer.as_str(),
                 model: &cached.model,
                 language: &cached.language,
                 speakers,

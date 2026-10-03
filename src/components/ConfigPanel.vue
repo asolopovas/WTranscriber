@@ -316,6 +316,15 @@ const headerAriaLabel = computed(() => {
           </FormField>
         </div>
 
+        <p
+          v-if="config.diarize && config.diarizer === 'whisperx-community1'"
+          class="text-bodySmall text-on-surface-variant"
+        >
+          Keeps the selected ASR model, then aligns words with WhisperX and detects speakers with
+          Community-1. Slower; requires the local Python setup and Hugging Face model access. Audio
+          stays on this computer.
+        </p>
+
         <div class="flex items-center justify-between gap-xl py-xs">
           <div class="flex items-center justify-between gap-xs flex-1 min-w-0">
             <div class="text-bodyMedium text-on-surface truncate">Auto-Diarize</div>

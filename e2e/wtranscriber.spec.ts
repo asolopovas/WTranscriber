@@ -173,6 +173,24 @@ test("retries failed files and ignores duplicate starts while they are active", 
   await expect(page.getByText("test transcription failed", { exact: true })).toHaveCount(0);
 });
 
+test("offers local quality alignment without replacing the native ASR model", async ({
+  page,
+}, testInfo) => {
+  await rowNamed(page, "board_meeting").getByTitle("More", { exact: true }).click();
+  await page.getByRole("button", { name: /Re-diarize…/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "Diarizer" }).selectOption("whisperx-community1");
+  await expect(dialog.getByText(/Realigns words to the audio/)).toBeVisible();
+  await expect(dialog.locator("..")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("quality-desktop.png") });
+  await dialog.getByRole("button", { name: "Re-diarize", exact: true }).click();
+  await expect.poll(() => commandCount(page, "redo_diarization")).toBe(1);
+  const call = await page.evaluate(() =>
+    window.__WT_TEST__.commandCalls.find((call) => call.command === "redo_diarization"),
+  );
+  expect(call?.args).toMatchObject({ config: { diarizer: "whisperx-community1", diarize: true } });
+});
+
 test("queues re-diarization behind transcription with its chosen speakers", async ({ page }) => {
   await rowNamed(page, "interview").getByTitle("Transcribe", { exact: true }).click();
   await rowNamed(page, "board_meeting").getByTitle("More", { exact: true }).click();

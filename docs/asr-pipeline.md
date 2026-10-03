@@ -119,3 +119,7 @@ wt --no-cache --diarizer titanet --speakers 6 meeting.wav
 ```
 
 Expected result: each run produces a JSON transcript with a sensible `language`, `speakers_detected`, utterance list, and word timings.
+
+## Optional desktop alignment and speaker pipeline
+
+The [WhisperX + Community-1 pipeline](quality-pipeline.md) keeps the selected native ASR model, adds forced word alignment and uses Community-1 exclusive speaker turns. It also supports realigning existing transcripts during re-diarization.

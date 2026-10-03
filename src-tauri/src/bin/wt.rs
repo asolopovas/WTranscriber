@@ -21,6 +21,7 @@ use wtranscriber_lib::{
 enum DiarizerArg {
     SortformerOnnx,
     Titanet,
+    WhisperxCommunity1,
 }
 
 impl From<DiarizerArg> for DiarizerChoice {
@@ -28,6 +29,7 @@ impl From<DiarizerArg> for DiarizerChoice {
         match v {
             DiarizerArg::SortformerOnnx => Self::SortformerOnnx,
             DiarizerArg::Titanet => Self::Titanet,
+            DiarizerArg::WhisperxCommunity1 => Self::WhisperxCommunity1,
         }
     }
 }
@@ -98,7 +100,7 @@ struct Cli {
         long,
         value_enum,
         value_name = "DIARIZER",
-        help = "Diarizer backend: sortformer-onnx (default, \u{2264}4 spk) or titanet (>4 spk)"
+        help = "Speaker backend: sortformer-onnx, titanet or whisperx-community1 (desktop alignment + Community-1)"
     )]
     diarizer: Option<DiarizerArg>,
 

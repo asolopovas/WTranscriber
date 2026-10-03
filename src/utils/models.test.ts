@@ -89,9 +89,12 @@ describe("model helpers", () => {
     expect(modelIdForDiarizer("titanet")).toBe("sherpa-pyannote-titanet");
   });
 
-  it("exposes the same diarizer options on every platform", () => {
+  it("limits the Python quality pipeline to desktop", () => {
     const values = ["sortformer-onnx", "titanet"];
-    expect(availableDiarizerOptions(false).map((o) => o.value)).toEqual(values);
+    expect(availableDiarizerOptions(false).map((o) => o.value)).toEqual([
+      "whisperx-community1",
+      ...values,
+    ]);
     expect(availableDiarizerOptions(true).map((o) => o.value)).toEqual(values);
   });
 

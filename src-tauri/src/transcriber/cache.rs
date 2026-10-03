@@ -42,6 +42,7 @@ pub struct Entry {
 
 #[derive(Debug, Clone)]
 pub struct KeyParams {
+    pub diarizer: String,
     pub source_path: PathBuf,
     pub mtime_ns: u128,
     pub model: String,
@@ -55,6 +56,7 @@ pub struct KeyParams {
 
 #[derive(Debug, Clone, Copy)]
 pub struct KeyOptions<'a> {
+    pub diarizer: &'a str,
     pub model: &'a str,
     pub language: &'a str,
     pub speakers: u32,
@@ -86,6 +88,7 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
     Ok(KeyParams {
+        diarizer: options.diarizer.into(),
         source_path: abs,
         mtime_ns,
         model: options.model.to_owned(),
@@ -101,7 +104,8 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "speaker-turns-word-timings-v4\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "quality-pipeline-v5\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        p.diarizer,
         p.source_path.display(),
         p.mtime_ns,
         p.model,
@@ -272,6 +276,7 @@ mod tests {
     #[test]
     fn key_is_deterministic() {
         let p = KeyParams {
+            diarizer: "sortformer".into(),
             source_path: PathBuf::from("/audio/sample.wav"),
             mtime_ns: 12345,
             model: "whisper".into(),
@@ -289,6 +294,30 @@ mod tests {
     }
 
     #[test]
+    fn key_changes_when_diarizer_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("test.wav");
+        std::fs::write(&source, b"audio").unwrap();
+        let mut params = build_key_params(
+            &source,
+            KeyOptions {
+                model: "whisper",
+                language: "en",
+                speakers: 0,
+                no_diarize: false,
+                trim_start_ms: 0,
+                trim_end_ms: 0,
+                precise_word_timestamps: true,
+                diarizer: "sortformer",
+            },
+        )
+        .unwrap();
+        let native = compute_key(&params);
+        params.diarizer = super::super::quality::BACKEND.into();
+        assert_ne!(native, compute_key(&params));
+    }
+
+    #[test]
     fn build_key_params_reads_file_metadata() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.wav");
@@ -296,6 +325,7 @@ mod tests {
         let params = build_key_params(
             &path,
             KeyOptions {
+                diarizer: "sortformer",
                 model: "whisper",
                 language: "en",
                 speakers: 0,
@@ -319,6 +349,7 @@ mod tests {
             build_key_params(
                 &p,
                 KeyOptions {
+                    diarizer: "sortformer",
                     model: "m",
                     language: "en",
                     speakers: 0,
@@ -335,6 +366,7 @@ mod tests {
     #[test]
     fn key_changes_with_trim_window() {
         let mut p = KeyParams {
+            diarizer: "sortformer".into(),
             source_path: PathBuf::from("/audio/a.wav"),
             mtime_ns: 1,
             model: "m".into(),
@@ -356,6 +388,7 @@ mod tests {
     #[test]
     fn key_changes_with_inputs() {
         let mut p = KeyParams {
+            diarizer: "sortformer".into(),
             source_path: PathBuf::from("/audio/a.wav"),
             mtime_ns: 1,
             model: "m".into(),

@@ -6,6 +6,7 @@ pub mod cache;
 pub mod dedup;
 pub mod export;
 pub mod partial;
+pub mod quality;
 pub mod saved;
 
 pub use job::{Job, run, run_fresh_with_sink, run_with_sink};

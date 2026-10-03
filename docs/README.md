@@ -14,6 +14,7 @@
 | [`tmp.md`](tmp.md)                           | `tmp/` and `logs/` artefact inventory                         | Backed by `scripts/run.ts`, android bootstrap, cleanup script                            |
 | [`rust-build-speed.md`](rust-build-speed.md) | Native dependency cache and build-speed guidance              | Backed by `src-tauri/build.rs`, `xtask/src/check.rs`                                     |
 | [`asr-pipeline.md`](asr-pipeline.md)         | ASR/transcription pipeline design                             | Backed by `src-tauri/src/transcriber/**`, `engine/**`, `diarizer/**`                     |
+| [`quality-pipeline.md`](quality-pipeline.md) | Local WhisperX alignment and Community-1 setup                | Updated when the optional quality pipeline changes                                       |
 | [`quality.md`](quality.md)                   | Current quality grades and guardrail gaps                     | Updated when architecture or checks change; catalogue enforced by `scripts/lint-docs.ts` |
 | [`technical-debt.md`](technical-debt.md)     | Known debt, temporary patches, cleanup triggers               | Updated when debt is added or retired; local links enforced by `scripts/lint-docs.ts`    |
 | [`plans/README.md`](plans/README.md)         | Execution-plan lifecycle and directory contract               | Plan directories and required plan headings are enforced by `scripts/lint-docs.ts`       |

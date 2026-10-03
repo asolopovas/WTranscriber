@@ -15,6 +15,11 @@ export interface DiarizerOption {
 
 export const DIARIZER_OPTIONS: readonly DiarizerOption[] = [
   {
+    value: "whisperx-community1",
+    label: "WhisperX + Community-1",
+    desktopOnly: true,
+  },
+  {
     value: "sortformer-onnx",
     label: "NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)",
   },

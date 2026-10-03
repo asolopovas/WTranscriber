@@ -33,7 +33,11 @@ function onDiarizerChange(value: DiarizerChoice) {
       <p class="text-bodySmall text-on-surface-variant">
         Reuses the existing transcript text and reassigns speaker labels using the chosen diarizer.
       </p>
-      <div class="grid grid-cols-2 gap-md">
+      <p v-if="diarizer === 'whisperx-community1'" class="text-bodySmall text-on-surface-variant">
+        Realigns words to the audio and detects speakers with Community-1. Requires the local Python
+        setup and Hugging Face model access. Saves a backup before replacing timings and labels.
+      </p>
+      <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-md">
         <label class="space-y-unit">
           <span class="text-labelSmall text-on-surface-variant">Diarizer</span>
           <select

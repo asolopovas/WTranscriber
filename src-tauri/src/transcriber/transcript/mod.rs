@@ -192,6 +192,10 @@ pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Tr
         w.speaker = label_for(id);
     }
 
+    from_words(words, meta)
+}
+
+pub fn from_words(mut words: Vec<Word>, meta: Meta) -> Transcript {
     if meta.duration_ms > 0 {
         for word in &mut words {
             word.start_ms = word.start_ms.min(meta.duration_ms);

@@ -134,6 +134,28 @@ pub fn rename(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn backup(source: &Path) -> Result<()> {
+    let json = path(source);
+    if !json.exists() {
+        return Ok(());
+    }
+    let parent = json
+        .parent()
+        .ok_or_else(|| Error::Config("missing metadata directory".into()))?
+        .join("backups");
+    std::fs::create_dir_all(&parent)?;
+    let dir = tempfile::Builder::new()
+        .prefix("before-quality-")
+        .tempdir_in(parent)?;
+    std::fs::copy(&json, dir.path().join(json.file_name().unwrap_or_default()))?;
+    let text = text_path(source);
+    if text.exists() {
+        std::fs::copy(&text, dir.path().join(text.file_name().unwrap_or_default()))?;
+    }
+    let _ = dir.keep();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,6 +187,37 @@ mod tests {
             ],
             words: Vec::new(),
         }
+    }
+
+    #[test]
+    fn quality_backup_preserves_previous_json_and_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("recording.wav");
+        store("old", &source, &transcript()).unwrap();
+        let json = std::fs::read(path(&source)).unwrap();
+        let text = std::fs::read(text_path(&source)).unwrap();
+        backup(&source).unwrap();
+        let backup_dir = std::fs::read_dir(dir.path().join(".meta/backups"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            std::fs::read(backup_dir.join("recording.wav.transcript.json")).unwrap(),
+            json
+        );
+        assert_eq!(
+            std::fs::read(backup_dir.join("recording.wav.txt")).unwrap(),
+            text
+        );
+        let mut changed = transcript();
+        changed.rename_speaker("SPEAKER_01", "SPEAKER_02");
+        store("new", &source, &changed).unwrap();
+        assert_eq!(
+            std::fs::read(backup_dir.join("recording.wav.transcript.json")).unwrap(),
+            json
+        );
     }
 
     #[test]

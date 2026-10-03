@@ -17,7 +17,7 @@ export interface SystemInfo {
 
 export type Engine = "parakeet" | "nemo-ctc" | "qwen3-asr" | "whisper-cpp";
 
-export type DiarizerChoice = "sortformer-onnx" | "titanet";
+export type DiarizerChoice = "sortformer-onnx" | "titanet" | "whisperx-community1";
 
 export interface Config {
   model: string;
@@ -130,12 +130,7 @@ export interface Suggestion {
 }
 
 export type TranscribePhase =
-  | "cache_check"
-  | "loading_audio"
-  | "transcribing"
-  | "diarizing"
-  | "writing"
-  | "done";
+  "cache_check" | "loading_audio" | "transcribing" | "diarizing" | "writing" | "done";
 
 export interface TranscribeProgress {
   path: string;

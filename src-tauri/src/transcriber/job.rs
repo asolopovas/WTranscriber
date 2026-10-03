@@ -123,18 +123,23 @@ fn run_blocking(
     let key_params = build_key_params(
         input,
         KeyOptions {
+            diarizer: config.diarizer.as_str(),
             model: &config.model,
             language: &config.language,
             speakers,
             no_diarize: !config.diarize,
             trim_start_ms: trim.trim_start_ms,
             trim_end_ms: trim.trim_end_ms.unwrap_or(0),
-            precise_word_timestamps: matches!(config.engine, Engine::WhisperCpp)
-                && (config.precise_word_timestamps || config.diarize),
+            precise_word_timestamps: super::quality::enabled(config)
+                || matches!(config.engine, Engine::WhisperCpp)
+                    && (config.precise_word_timestamps || config.diarize),
         },
     )?;
     let key = compute_key(&key_params);
 
+    if super::quality::enabled(config) {
+        super::quality::preflight()?;
+    }
     engine::preflight(config)?;
     let _engine_guard = EngineShutdown;
 
@@ -152,7 +157,12 @@ fn run_blocking(
     sink.phase(Phase::LoadingAudio);
     let window = compute_trim_window(input, &trim);
     let device_label = config.device.as_str().to_owned();
-    let (st, scanned_end) = run_streaming_phase(input, config, sink, &key, &window)?;
+    let mut asr_config = config.clone();
+    if super::quality::enabled(config) {
+        asr_config.diarize = false;
+        asr_config.precise_word_timestamps = false;
+    }
+    let (st, scanned_end) = run_streaming_phase(input, &asr_config, sink, &key, &window)?;
 
     let mut segments = st.state.segments;
     apply_dedup(&mut segments);
@@ -162,6 +172,18 @@ fn run_blocking(
     } else {
         (scanned_end * 1000.0) as u64
     };
+
+    if super::quality::enabled(config) {
+        let language = if st.detected_language.is_empty() {
+            config.language.clone()
+        } else {
+            st.detected_language
+        };
+        let transcript =
+            super::quality::finish(input, config, sink, &segments, language, duration_ms)?;
+        let _ = super::partial::clear(&key);
+        return Ok(transcript);
+    }
 
     let (diar_segs, diar_name) = if config.diarize {
         if sink.is_cancelled() {

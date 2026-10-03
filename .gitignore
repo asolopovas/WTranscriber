@@ -64,3 +64,5 @@ keystore.properties
 *.keystore
 .playwright-cli/
 .android-prebuilt/
+
+__pycache__/

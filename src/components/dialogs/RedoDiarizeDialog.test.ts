@@ -20,7 +20,7 @@ const sys = (overrides: Partial<SystemInfo>): SystemInfo => ({
 });
 
 describe("RedoDiarizeDialog", () => {
-  it("shows both diarizers on desktop", () => {
+  it("shows native and quality diarizers on desktop", () => {
     const wrapper = mount(RedoDiarizeDialog, {
       props: {
         sys: sys({}),
@@ -35,6 +35,7 @@ describe("RedoDiarizeDialog", () => {
       .findAll("option")
       .map((option) => option.text());
 
+    expect(options).toContain("WhisperX + Community-1");
     expect(options).toContain("NVIDIA Sortformer v2.1 (ONNX, ≤4 speakers)");
     expect(options).toContain("pyannote-3.0 + TitaNet-Large (>4 speakers)");
   });

@@ -21,7 +21,7 @@ import type {
 
 export const DeviceSchema = z.enum(["cpu", "cuda"]);
 export const EngineSchema = z.enum(["parakeet", "nemo-ctc", "qwen3-asr", "whisper-cpp"]);
-export const DiarizerChoiceSchema = z.enum(["sortformer-onnx", "titanet"]);
+export const DiarizerChoiceSchema = z.enum(["sortformer-onnx", "titanet", "whisperx-community1"]);
 export const ExportFormatSchema: z.ZodType<ExportFormat> = z.enum([
   "txt",
   "csv",

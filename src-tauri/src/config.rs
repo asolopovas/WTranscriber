@@ -104,6 +104,7 @@ pub enum DiarizerChoice {
     SortformerOnnx,
     #[serde(alias = "sherpa", alias = "eres2net")]
     Titanet,
+    WhisperxCommunity1,
 }
 
 impl DiarizerChoice {
@@ -112,6 +113,7 @@ impl DiarizerChoice {
         match self {
             Self::SortformerOnnx => "sortformer-v2-onnx-4spk",
             Self::Titanet => "sherpa-pyannote-titanet",
+            Self::WhisperxCommunity1 => "whisperx-community-1-v1",
         }
     }
 
@@ -422,7 +424,11 @@ mod tests {
                     missing.push(format!("Engine::{e:?} expects {needle}"));
                 }
             }
-            let diarizers = [DiarizerChoice::SortformerOnnx, DiarizerChoice::Titanet];
+            let diarizers = [
+                DiarizerChoice::SortformerOnnx,
+                DiarizerChoice::Titanet,
+                DiarizerChoice::WhisperxCommunity1,
+            ];
             for d in diarizers {
                 let serialised = serde_json::to_string(&d).unwrap();
                 if !raw.contains(&serialised) {

@@ -46,6 +46,9 @@ pub fn new_with_choice(
         .map(|d| Box::new(d) as Box<dyn Backend>)
     };
     match choice {
+        DiarizerChoice::WhisperxCommunity1 => Err(crate::error::Error::Config(
+            "WhisperX + Community-1 must run through the quality pipeline".into(),
+        )),
         DiarizerChoice::SortformerOnnx => {
             #[cfg(target_os = "ios")]
             {
