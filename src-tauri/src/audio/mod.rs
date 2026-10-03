@@ -3,6 +3,7 @@ pub mod decode;
 pub mod ffmpeg;
 pub mod meta;
 mod wav;
+mod waveform;
 
 use std::path::Path;
 
@@ -15,6 +16,7 @@ pub fn probe_duration_ms(path: &std::path::Path) -> Option<u64> {
 pub use meta::AudioMeta;
 pub use wav::write_pcm16_wav;
 pub use wav::{WHISPER_SAMPLE_RATE, read_pcm16_wav};
+pub use waveform::waveform_peaks;
 
 use crate::error::{Error, Result};
 
@@ -78,6 +80,7 @@ pub fn ensure_cached_wav(path: &Path) -> Result<std::path::PathBuf> {
 }
 
 pub fn clear_cache() -> Result<u64> {
+    waveform::clear_cache();
     let cache_dir = crate::paths::cache_dir()?;
     std::fs::create_dir_all(&cache_dir)?;
     let mut removed = 0_u64;
@@ -93,19 +96,4 @@ pub fn clear_cache() -> Result<u64> {
         }
     }
     Ok(removed)
-}
-
-pub fn waveform_peaks(path: &Path, bins: usize) -> Result<Vec<f32>> {
-    let samples = load_samples(path)?;
-    if samples.is_empty() || bins == 0 {
-        return Ok(Vec::new());
-    }
-    let bins = bins.min(samples.len());
-    let step = samples.len().div_ceil(bins);
-    let mut peaks = Vec::with_capacity(bins);
-    for chunk in samples.chunks(step) {
-        let peak = chunk.iter().fold(0.0_f32, |acc, v| acc.max(v.abs()));
-        peaks.push(peak.min(1.0));
-    }
-    Ok(peaks)
 }

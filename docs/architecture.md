@@ -52,6 +52,8 @@ Touch all relevant layers in one change:
 
 ## Taste invariants
 
+Audio trim selections and probed duration persist as JSON in the recording folder's `.meta/` subdirectory (`<audio filename>.wtmeta.json`). These files are user metadata, not disposable cache. Legacy sidecars beside recordings remain readable and move into `.meta/` when saved or renamed. The trim editor restores these selections when reopened.
+
 - Rust edition 2024; use current idioms such as `LazyLock` and `let-else`.
 - No comments in code. Prefer clearer names, smaller functions, tests, and docs.
 - No `sleep` in scripts; poll with bounded timeouts.

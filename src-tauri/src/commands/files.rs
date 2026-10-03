@@ -139,12 +139,8 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
         )));
     }
     std::fs::rename(&source, &dst)?;
-    let sidecar = meta::meta_path(&source);
-    if sidecar.exists() {
-        let sidecar_dst = meta::meta_path(&dst);
-        if let Err(e) = std::fs::rename(&sidecar, &sidecar_dst) {
-            logfile::warn(&format!("sidecar rename failed: {e}"));
-        }
+    if let Err(e) = meta::rename(&source, &dst) {
+        logfile::warn(&format!("sidecar rename failed: {e}"));
     }
     if let Err(e) = transcriber::cache::rename_source(&source, &dst) {
         logfile::warn(&format!("cache index rename failed: {e}"));
@@ -290,5 +286,26 @@ mod tests {
         let err = rename_file(source, "nested/name".into()).unwrap_err();
 
         assert!(err.to_string().contains("path separators"));
+    }
+
+    #[test]
+    fn rename_file_moves_cached_and_legacy_metadata() {
+        for legacy in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("old.wav");
+            std::fs::write(&source, b"audio").unwrap();
+            let sidecar = if legacy {
+                dir.path().join("old.wav.wtmeta.json")
+            } else {
+                meta::meta_path(&source)
+            };
+            crate::fs_utils::ensure_parent_dir(&sidecar).unwrap();
+            std::fs::write(&sidecar, r#"{"trim_start_ms":250}"#).unwrap();
+            let renamed = rename_file(source, "new name".into()).unwrap();
+            assert_eq!(meta::load(&renamed).unwrap().trim_start_ms, 250);
+            assert!(meta::meta_path(&renamed).exists());
+            assert!(!sidecar.exists());
+            assert!(!dir.path().join("new name.wav.wtmeta.json").exists());
+        }
     }
 }

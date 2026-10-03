@@ -23,6 +23,7 @@ function guessMime(path: string): string {
 }
 import type { AudioMeta, DirEntry } from "@/types";
 import { fmtMs } from "@utils/format";
+import { fieldClass } from "@styles/fields";
 import Modal from "@components/ui/Modal.vue";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
 import Icon from "@components/ui/Icon.vue";
@@ -69,19 +70,42 @@ const audioSrc = ref<string>("");
 let currentObjectUrl: string | null = null;
 let playOffsetMs = 0;
 let playheadRaf: number | null = null;
+let loadVersion = 0;
 
-async function loadAudioBlob(target: DirEntry) {
+function validSeekStep(value: unknown): number {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0.1 && Number.isFinite(seconds * 1000)
+    ? seconds
+    : 5;
+}
+
+const seekStepSeconds = ref(5);
+try {
+  seekStepSeconds.value = validSeekStep(localStorage.getItem("wt.trimSeekStepSeconds"));
+} catch {}
+
+function updateSeekStep(ev: Event) {
+  seekStepSeconds.value = validSeekStep((ev.target as HTMLInputElement).value);
+  (ev.target as HTMLInputElement).value = String(seekStepSeconds.value);
+  try {
+    localStorage.setItem("wt.trimSeekStepSeconds", String(seekStepSeconds.value));
+  } catch {}
+}
+
+async function loadAudioBlob(target: DirEntry, version: number) {
   audioLoading.value = true;
   try {
     const bytes = await api.readAudioBytes(target.path);
+    if (version !== loadVersion) return;
     const blob = new Blob([new Uint8Array(bytes)], { type: guessMime(target.path) });
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = URL.createObjectURL(blob);
     audioSrc.value = currentObjectUrl;
   } catch (e) {
+    if (version !== loadVersion) return;
     localError.value = `audio load: ${String(e)}`;
   } finally {
-    audioLoading.value = false;
+    if (version === loadVersion) audioLoading.value = false;
   }
 }
 
@@ -90,10 +114,8 @@ const MIN_GAP_MS = 3_000;
 watch(
   () => props.target,
   async (next) => {
-    if (!next) {
-      cleanup();
-      return;
-    }
+    cleanup();
+    if (!next) return;
     await load(next);
   },
   { immediate: true },
@@ -104,6 +126,7 @@ watch([start, end, peaks], () => {
 });
 
 async function load(target: DirEntry) {
+  const version = ++loadVersion;
   loading.value = true;
   localError.value = null;
   try {
@@ -112,6 +135,7 @@ async function load(target: DirEntry) {
       api.loadAudioMeta(target.path),
       api.audioWaveform(target.path, 320),
     ]);
+    if (version !== loadVersion) return;
     const dur = Math.max(0, Math.floor((durMs ?? target.duration_ms ?? 0) as number));
     let s = Math.min(meta.trim_start_ms ?? 0, dur);
     let e = Math.min(meta.trim_end_ms ?? dur, dur);
@@ -126,12 +150,13 @@ async function load(target: DirEntry) {
     playOffsetMs = s;
     playheadMs.value = s;
     await renderWaveform();
-    void loadAudioBlob(target);
+    if (version === loadVersion) void loadAudioBlob(target, version);
   } catch (e) {
+    if (version !== loadVersion) return;
     emit("error", `prepare: ${String(e)}`);
     emit("close");
   } finally {
-    loading.value = false;
+    if (version === loadVersion) loading.value = false;
   }
 }
 
@@ -389,16 +414,24 @@ function markOut() {
 }
 
 function handleShortcut(ev: KeyboardEvent) {
-  if (!open.value) return;
-  const target = ev.target as HTMLElement | null;
+  if (!open.value || loading.value || applying.value || ev.defaultPrevented) return;
+  const target = ev.composedPath()[0];
   if (
-    target &&
-    (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    target instanceof HTMLElement &&
+    (target.closest(
+      "input, textarea, select, [role='textbox'], [role='combobox'], [role='slider'], [role='spinbutton']",
+    ) ||
+      target.isContentEditable)
   ) {
     return;
   }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   switch (ev.key) {
+    case "ArrowLeft":
+    case "ArrowRight":
+      ev.preventDefault();
+      seekBy((ev.key === "ArrowLeft" ? -1 : 1) * seekStepSeconds.value * 1000);
+      break;
     case " ":
     case "k":
     case "K":
@@ -419,13 +452,28 @@ function handleShortcut(ev: KeyboardEvent) {
   }
 }
 
-watch(open, (isOpen) => {
-  if (isOpen) {
-    window.addEventListener("keydown", handleShortcut);
-  } else {
-    window.removeEventListener("keydown", handleShortcut);
-  }
-});
+function seekBy(deltaMs: number) {
+  if (duration.value <= 0 || seekScrubActive) return;
+  const el = audioEl.value;
+  const currentMs = playing.value && el ? el.currentTime * 1000 : playOffsetMs;
+  const nextMs = Math.max(0, Math.min(duration.value, currentMs + deltaMs));
+  if (playing.value && (nextMs < start.value || nextMs >= end.value)) pause();
+  if (el) el.currentTime = nextMs / 1000;
+  playOffsetMs = nextMs;
+  playheadMs.value = nextMs;
+}
+
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) {
+      window.addEventListener("keydown", handleShortcut);
+    } else {
+      window.removeEventListener("keydown", handleShortcut);
+    }
+  },
+  { immediate: true },
+);
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleShortcut);
@@ -503,6 +551,10 @@ async function applyPermanent() {
 }
 
 function cleanup() {
+  loadVersion += 1;
+  loading.value = false;
+  audioLoading.value = false;
+  seekScrubActive = false;
   stop();
   playOffsetMs = 0;
   const el = audioEl.value;
@@ -615,6 +667,23 @@ async function close() {
       <span class="text-primary">{{ fmtMs(end) }}</span>
     </div>
 
+    <div
+      class="flex flex-wrap items-center justify-between gap-md text-bodyMedium text-on-surface-variant"
+    >
+      <span class="font-mono">Position {{ fmtMs(playheadMs) }}</span>
+      <label class="flex items-center gap-xs">
+        <span>Arrow-key step (seconds)</span>
+        <input
+          :value="seekStepSeconds"
+          type="number"
+          min="0.1"
+          step="0.1"
+          :class="[fieldClass, 'max-w-24']"
+          @change="updateSeekStep"
+        />
+      </label>
+    </div>
+
     <template #footer>
       <Button
         variant="neutral"
@@ -622,11 +691,12 @@ async function close() {
         icon="restart_alt"
         :icon-size="18"
         title="Reset to full track"
+        class="shrink-0"
         @click="reset"
       >
         Full track
       </Button>
-      <div class="flex gap-xs">
+      <div class="flex flex-wrap justify-end gap-xs">
         <Button
           variant="neutral"
           shape="circle"

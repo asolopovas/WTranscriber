@@ -306,10 +306,45 @@ test("saves a trim range and resets it to the full track", async ({ page }) => {
   expect(saved?.args.meta).toMatchObject({ trim_start_ms: 15000, trim_end_ms: 45000 });
   await row.getByTitle("More", { exact: true }).click();
   await page.getByRole("button", { name: /Cut: 00:15/ }).click();
+  await expect(dialog.getByText("selected 00:30", { exact: true })).toBeVisible();
   await dialog.getByTitle("Reset to full track", { exact: true }).click();
   await expect(dialog.getByText("selected 01:00", { exact: true })).toBeVisible();
   await dialog.getByTitle("Save", { exact: true }).click();
   await expect(row.getByText("trimmed", { exact: true })).toHaveCount(0);
+});
+
+test("seeks in the trim editor with a saved step and leaves arrow keys in fields", async ({
+  page,
+}, testInfo) => {
+  const openTrim = async () => {
+    await rowNamed(page, "field_notes").getByTitle("More", { exact: true }).click();
+    await page.getByRole("button", { name: "Cut / select range", exact: true }).click();
+  };
+  await openTrim();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("selected 01:00", { exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByText("Position 00:05", { exact: true })).toBeVisible();
+  const step = dialog.getByRole("spinbutton", { name: "Arrow-key step (seconds)" });
+  await step.fill("12");
+  await step.press("ArrowLeft");
+  await expect(dialog.getByText("Position 00:05", { exact: true })).toBeVisible();
+  await step.press("Tab");
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByText("Position 00:17", { exact: true })).toBeVisible();
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press("ArrowRight");
+  await expect(dialog.getByText("Position 01:00", { exact: true })).toBeVisible();
+  for (let i = 0; i < 6; i += 1) await page.keyboard.press("ArrowLeft");
+  await expect(dialog.getByText("Position 00:00", { exact: true })).toBeVisible();
+  await dialog.getByTitle("Close", { exact: true }).click();
+  await openTrim();
+  await expect(step).toHaveValue("12");
+  await expect(dialog.locator("..")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("trim-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(step).toBeVisible();
+  await expect(dialog.getByTitle("Save", { exact: true })).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath("trim-mobile.png") });
 });
 
 test("renames a transcript speaker and copies the transcript", async ({ page }) => {
