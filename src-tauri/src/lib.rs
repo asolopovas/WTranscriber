@@ -222,6 +222,8 @@ pub fn run() {
             commands::audio_files::read_audio_segment,
             commands::diagnostics::history_load,
             commands::diagnostics::rename_speaker,
+            commands::diagnostics::set_transcript_speaker,
+            commands::diagnostics::replace_transcript_text,
             commands::diagnostics::update_transcript_text,
             commands::llm::suggest_filename,
             commands::diagnostics::log_tail,

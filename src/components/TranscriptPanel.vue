@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Transcript } from "@/types";
 import { api } from "@/api";
 import {
@@ -15,7 +15,6 @@ import SlidingPanel from "@components/SlidingPanel.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 import Modal from "@components/ui/Modal.vue";
-import Toggle from "@components/ui/Toggle.vue";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
 
 const props = defineProps<{
@@ -30,6 +29,25 @@ const emit = defineEmits<{
 
 const speaker = ref<string | null>(null);
 const speakerDraft = ref("");
+const speakerIndex = ref(0);
+const speakerScope = ref<"all" | "segment">("all");
+const speakerNames = computed(() => [
+  ...new Set(props.transcript.utterances.flatMap((u) => (u.speaker ? [u.speaker] : []))),
+]);
+const replacing = ref(false);
+const searchText = ref("");
+const replacementText = ref("");
+const replacements = computed(() =>
+  searchText.value
+    ? props.transcript.utterances.flatMap((u, index) => {
+        const count = u.text.split(searchText.value).length - 1;
+        return count
+          ? [{ index, count, text: u.text.split(searchText.value).join(replacementText.value) }]
+          : [];
+      })
+    : [],
+);
+const matchCount = computed(() => replacements.value.reduce((sum, row) => sum + row.count, 0));
 const speakerInput = ref<HTMLInputElement | null>(null);
 const editing = ref<number | null>(null);
 const draft = ref("");
@@ -41,10 +59,12 @@ const canEdit = computed(() => !!props.cacheKey && !saving.value);
 let returnFocus: HTMLElement | null = null;
 let disposed = false;
 
-async function startSpeakerEdit(name: string, event: MouseEvent) {
+async function startSpeakerEdit(name: string, index: number, event: MouseEvent) {
   if (!canEdit.value || editing.value !== null) return;
   returnFocus = event.currentTarget as HTMLElement;
   speaker.value = name;
+  speakerIndex.value = index;
+  speakerScope.value = name ? "all" : "segment";
   speakerDraft.value = name;
   localError.value = null;
   await nextTick();
@@ -60,16 +80,25 @@ function closeSpeaker() {
 }
 
 async function renameSpeaker() {
-  if (!props.cacheKey || !speaker.value || !speakerDraft.value.trim() || saving.value) return;
+  if (!props.cacheKey || speaker.value === null || !speakerDraft.value.trim() || saving.value)
+    return;
   saving.value = true;
   localError.value = null;
   try {
-    const result = await api.renameSpeaker(
-      props.cacheKey,
-      speaker.value,
-      speakerDraft.value.trim(),
-      props.sourcePath,
-    );
+    const result =
+      speakerScope.value === "segment"
+        ? await api.setTranscriptSpeaker(
+            props.cacheKey,
+            props.sourcePath,
+            speakerIndex.value,
+            speakerDraft.value.trim(),
+          )
+        : await api.renameSpeaker(
+            props.cacheKey,
+            speaker.value,
+            speakerDraft.value.trim(),
+            props.sourcePath,
+          );
     if (disposed) return;
     emit("updated", result);
     speaker.value = null;
@@ -78,6 +107,39 @@ async function renameSpeaker() {
     returnFocus?.focus();
   } catch (error) {
     if (!disposed) localError.value = `Could not save speaker name: ${String(error)}`;
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openReplace() {
+  localError.value = null;
+  replacing.value = true;
+}
+
+function closeReplace() {
+  if (saving.value) return;
+  replacing.value = false;
+  localError.value = null;
+}
+
+async function replaceAll() {
+  if (!props.cacheKey || !matchCount.value || saving.value) return;
+  saving.value = true;
+  localError.value = null;
+  try {
+    const result = await api.replaceTranscriptText(
+      props.cacheKey,
+      props.sourcePath,
+      searchText.value,
+      replacementText.value,
+    );
+    if (disposed) return;
+    emit("updated", result);
+    replacing.value = false;
+    saved.value = true;
+  } catch (error) {
+    if (!disposed) localError.value = `Could not replace text: ${String(error)}`;
   } finally {
     saving.value = false;
   }
@@ -119,10 +181,6 @@ const audio = ref<HTMLAudioElement | null>(null);
 const audioSrc = ref("");
 const activeSegment = ref<number | null>(null);
 const audioLoading = ref(false);
-const includeContext = ref(true);
-try {
-  includeContext.value = localStorage.getItem("wt.transcriptPlaybackContext") !== "false";
-} catch {}
 const fragments = createAudioSegmentCache((start, end) =>
   api.readAudioSegment(props.sourcePath, start, end),
 );
@@ -153,11 +211,7 @@ function stopPlayback() {
 }
 
 function segmentRange(index: number) {
-  return segmentPlaybackRange(
-    props.transcript.utterances[index],
-    props.transcript.duration_ms,
-    includeContext.value,
-  );
+  return segmentPlaybackRange(props.transcript.utterances[index], props.transcript.duration_ms);
 }
 
 function prefetch(index: number) {
@@ -165,14 +219,6 @@ function prefetch(index: number) {
   const { start, end } = segmentRange(index);
   if (end > start) void fragments.load(start, end).catch(() => {});
 }
-
-watch(includeContext, (enabled) => {
-  stopPlayback();
-  try {
-    localStorage.setItem("wt.transcriptPlaybackContext", String(enabled));
-  } catch {}
-  prefetch(0);
-});
 
 onMounted(() => prefetch(0));
 
@@ -278,6 +324,16 @@ async function copyTranscript() {
           variant="ghost"
           shape="circle"
           size="sm"
+          icon="find_replace"
+          title="Find and replace"
+          aria-label="Find and replace"
+          :disabled="!canEdit || editing !== null || speaker !== null"
+          @click="openReplace"
+        />
+        <Button
+          variant="ghost"
+          shape="circle"
+          size="sm"
           :icon="copied ? 'check' : 'content_copy'"
           :icon-size="18"
           :title="copied ? 'Copied' : 'Copy transcript'"
@@ -299,13 +355,7 @@ async function copyTranscript() {
         />
       </div>
     </template>
-    <div class="flex flex-wrap items-center gap-xs text-labelSmall text-on-surface-variant">
-      <Toggle v-model="includeContext" aria-label="Include context" />
-      <span>Include context</span>
-      <span v-if="includeContext">1 s before · 3 s after</span>
-      <span v-else>Exact saved range</span>
-    </div>
-    <ErrorBanner v-if="localError && !speaker">{{ localError }}</ErrorBanner>
+    <ErrorBanner v-if="localError && speaker === null && !replacing">{{ localError }}</ErrorBanner>
     <audio
       v-if="audioSrc"
       :key="audioSrc"
@@ -338,14 +388,13 @@ async function copyTranscript() {
             >{{ fmt(u.start_ms) }} – {{ fmt(u.end_ms) }}</span
           >
           <button
-            v-if="u.speaker"
             type="button"
             class="text-labelSmall text-primary hover:underline cursor-pointer"
             title="Rename speaker"
             :disabled="!canEdit || editing !== null"
-            @click="startSpeakerEdit(u.speaker, $event)"
+            @click="startSpeakerEdit(u.speaker ?? '', i, $event)"
           >
-            {{ u.speaker }}
+            {{ u.speaker || "Assign speaker" }}
           </button>
           <span
             v-if="activeSegment === i && audioLoading"
@@ -401,9 +450,21 @@ async function copyTranscript() {
     @close="closeSpeaker"
   >
     <p class="text-bodyMedium text-on-surface-variant">
-      Update this speaker’s name in all segments and the saved text transcript.
+      {{
+        speakerScope === "all"
+          ? "Update this speaker’s name in all segments."
+          : `Change only segment ${speakerIndex + 1}; other segments keep their speakers.`
+      }}
+      The saved text transcript is updated too.
     </p>
     <ErrorBanner v-if="localError">{{ localError }}</ErrorBanner>
+    <label class="block text-labelSmall text-on-surface-variant">
+      Apply to
+      <select v-model="speakerScope" :class="fieldClass" :disabled="saving">
+        <option value="all" :disabled="!speaker">All segments for this speaker</option>
+        <option value="segment">This segment only</option>
+      </select>
+    </label>
     <label class="block text-labelSmall text-on-surface-variant">
       Speaker name
       <input
@@ -411,13 +472,53 @@ async function copyTranscript() {
         v-model="speakerDraft"
         :class="fieldClass"
         :disabled="saving"
+        list="transcript-speaker-names"
         @keydown.enter.prevent="renameSpeaker"
       />
+      <datalist id="transcript-speaker-names">
+        <option v-for="name in speakerNames" :key="name" :value="name" />
+      </datalist>
     </label>
     <template #footer>
       <Button :disabled="saving" @click="closeSpeaker">Cancel</Button>
       <Button variant="primary" :disabled="saving || !speakerDraft.trim()" @click="renameSpeaker">{{
         saving ? "Saving…" : "Rename"
+      }}</Button>
+    </template>
+  </Modal>
+  <Modal :open="replacing" title="Find and replace" :backdrop-close="!saving" @close="closeReplace">
+    <p class="text-bodyMedium text-on-surface-variant">
+      Replace matching text throughout this transcript. Matches are case-sensitive; speaker names
+      and timestamps stay unchanged.
+    </p>
+    <ErrorBanner v-if="localError">{{ localError }}</ErrorBanner>
+    <label class="block text-labelSmall text-on-surface-variant"
+      >Find
+      <input v-model="searchText" :class="fieldClass" :disabled="saving" />
+    </label>
+    <label class="block text-labelSmall text-on-surface-variant"
+      >Replace with
+      <input v-model="replacementText" :class="fieldClass" :disabled="saving" />
+    </label>
+    <p role="status" class="text-bodyMedium text-on-surface-variant">
+      {{ matchCount }} matches in {{ replacements.length }} segments
+    </p>
+    <div v-if="replacements.length" class="max-h-48 overflow-y-auto flex flex-col gap-xs">
+      <p class="text-labelSmall text-on-surface-variant">
+        Preview (first {{ Math.min(3, replacements.length) }} segments)
+      </p>
+      <p
+        v-for="row in replacements.slice(0, 3)"
+        :key="row.index"
+        class="text-bodyMedium text-on-surface whitespace-pre-wrap"
+      >
+        {{ row.text }}
+      </p>
+    </div>
+    <template #footer>
+      <Button :disabled="saving" @click="closeReplace">Cancel</Button>
+      <Button variant="primary" :disabled="saving || !matchCount" @click="replaceAll">{{
+        saving ? "Saving…" : "Replace all"
       }}</Button>
     </template>
   </Modal>

@@ -825,7 +825,7 @@ async fn redo_diarization_inner(
                 trim_start_ms: trim.trim_start_ms,
                 trim_end_ms: trim.trim_end_ms.unwrap_or(0),
                 precise_word_timestamps: matches!(config.engine, crate::config::Engine::WhisperCpp)
-                    && config.precise_word_timestamps,
+                    && (config.precise_word_timestamps || config.diarize),
             },
         )?;
         let new_key = cache::compute_key(&key_params);

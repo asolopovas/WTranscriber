@@ -244,6 +244,7 @@ mod tests {
         assert!(text.contains("Alice: Corrected sentence."));
         assert!(text.contains("Alice: Second sentence."));
         assert!(!text.contains("SPEAKER_01"));
+        assert_segment_corrections(&source);
         assert_eq!(meta::load(&source).unwrap().trim_start_ms, 1000);
         assert_eq!(meta::load(&source).unwrap().trim_end_ms, Some(9000));
         let listing = crate::browser::list(dir.path()).unwrap();
@@ -258,6 +259,63 @@ mod tests {
             Some("test-key")
         );
         crate::paths::clear_test_overrides();
+    }
+
+    fn assert_segment_corrections(source: &Path) {
+        let changed = diagnostics::set_transcript_speaker(
+            "test-key".into(),
+            source.to_path_buf(),
+            0,
+            "Bob".into(),
+        )
+        .unwrap();
+        assert_eq!(changed.utterances[0].speaker.as_deref(), Some("Bob"));
+        assert_eq!(changed.utterances[1].speaker.as_deref(), Some("Alice"));
+        assert_eq!(changed.words[0].speaker.as_deref(), Some("Bob"));
+        assert_eq!(changed.speakers_detected, 2);
+        let replaced = diagnostics::replace_transcript_text(
+            "test-key".into(),
+            source.to_path_buf(),
+            "sentence".into(),
+            "phrase".into(),
+        )
+        .unwrap();
+        assert_eq!(replaced.utterances[0].start_ms, 1000);
+        assert_eq!(replaced.utterances[0].end_ms, 2000);
+        let text = std::fs::read_to_string(text_path(source)).unwrap();
+        assert!(text.contains("Bob: Corrected phrase."));
+        assert!(text.contains("Alice: Second phrase."));
+        assert_eq!(
+            load(source).unwrap().unwrap().transcript.words[0].text,
+            "Corrected phrase."
+        );
+        assert!(
+            diagnostics::replace_transcript_text(
+                "test-key".into(),
+                source.to_path_buf(),
+                String::new(),
+                "bad".into()
+            )
+            .is_err()
+        );
+        assert!(
+            diagnostics::set_transcript_speaker(
+                "test-key".into(),
+                source.to_path_buf(),
+                99,
+                "Bob".into()
+            )
+            .is_err()
+        );
+        assert!(
+            diagnostics::set_transcript_speaker(
+                "test-key".into(),
+                source.to_path_buf(),
+                0,
+                " ".into()
+            )
+            .is_err()
+        );
     }
 
     #[test]

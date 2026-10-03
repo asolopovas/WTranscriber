@@ -130,7 +130,7 @@ fn run_blocking(
             trim_start_ms: trim.trim_start_ms,
             trim_end_ms: trim.trim_end_ms.unwrap_or(0),
             precise_word_timestamps: matches!(config.engine, Engine::WhisperCpp)
-                && config.precise_word_timestamps,
+                && (config.precise_word_timestamps || config.diarize),
         },
     )?;
     let key = compute_key(&key_params);

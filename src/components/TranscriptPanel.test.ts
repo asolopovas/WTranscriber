@@ -7,6 +7,8 @@ import TranscriptPanel from "./TranscriptPanel.vue";
 vi.mock("@/api", () => ({
   api: {
     renameSpeaker: vi.fn(),
+    setTranscriptSpeaker: vi.fn(),
+    replaceTranscriptText: vi.fn(),
     updateTranscriptText: vi.fn(),
     readAudioSegment: vi.fn(),
     formatTranscript: vi.fn(),
@@ -56,6 +58,38 @@ afterEach(() => {
 });
 
 describe("TranscriptPanel", () => {
+  it("changes the speaker on one segment without renaming every occurrence", async () => {
+    open();
+    await wrapper.get('[title="Rename speaker"]').trigger("click");
+    await wrapper.get("select").setValue("segment");
+    await wrapper.get("input").setValue("Alice");
+    vi.mocked(api.setTranscriptSpeaker).mockResolvedValueOnce(transcript);
+    await wrapper.get("input").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(api.setTranscriptSpeaker).toHaveBeenCalledWith("key", "/audio.wav", 0, "Alice");
+    expect(api.renameSpeaker).not.toHaveBeenCalled();
+  });
+
+  it("previews replacements across the transcript and retains a failed draft", async () => {
+    open();
+    await wrapper.get('[title="Find and replace"]').trigger("click");
+    const fields = wrapper.findAll("input");
+    await fields[0].setValue(".");
+    await fields[1].setValue("!");
+    expect(wrapper.text()).toContain("2 matches in 2 segments");
+    const replace = () =>
+      wrapper.findAll("button").find((button) => button.text() === "Replace all")!;
+    vi.mocked(api.replaceTranscriptText).mockRejectedValueOnce(new Error("disk full"));
+    await replace().trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).toContain("Could not replace text");
+    expect((fields[0].element as HTMLInputElement).value).toBe(".");
+    vi.mocked(api.replaceTranscriptText).mockResolvedValueOnce(transcript);
+    await replace().trigger("click");
+    await flushPromises();
+    expect(api.replaceTranscriptText).toHaveBeenLastCalledWith("key", "/audio.wav", ".", "!");
+    expect(wrapper.emitted("updated")).toHaveLength(1);
+  });
   it("renames through a modal, retaining the draft if saving fails", async () => {
     open();
     await wrapper.get('[title="Rename speaker"]').trigger("click");

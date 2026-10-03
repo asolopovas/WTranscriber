@@ -86,6 +86,20 @@ export const api = {
     invokeParsed<Transcript | null>("history_load", NullableTranscriptSchema, { key, input }),
   renameSpeaker: (key: string, old: string, name: string, input?: string) =>
     invokeParsed<Transcript>("rename_speaker", TranscriptSchema, { key, old, new: name, input }),
+  setTranscriptSpeaker: (key: string, input: string, index: number, name: string) =>
+    invokeParsed<Transcript>("set_transcript_speaker", TranscriptSchema, {
+      key,
+      input,
+      index,
+      name,
+    }),
+  replaceTranscriptText: (key: string, input: string, find: string, replacement: string) =>
+    invokeParsed<Transcript>("replace_transcript_text", TranscriptSchema, {
+      key,
+      input,
+      find,
+      replacement,
+    }),
   updateTranscriptText: (key: string, input: string, index: number, text: string) =>
     invokeParsed<Transcript>("update_transcript_text", TranscriptSchema, {
       key,

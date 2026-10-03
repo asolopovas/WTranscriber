@@ -389,7 +389,7 @@ test("renames a transcript speaker and copies the transcript", async ({ page }) 
   await page.getByRole("button", { name: "SPEAKER_01", exact: true }).click();
   const modal = page.getByRole("dialog", { name: "Rename speaker" });
   await expect(modal).toBeVisible();
-  const editor = modal.getByRole("textbox", { name: "Speaker name" });
+  const editor = modal.getByRole("combobox", { name: "Speaker name" });
   await expect(editor).toBeFocused();
   await editor.fill("Alice");
   await editor.press("Enter");
@@ -456,7 +456,6 @@ test("edits a completed segment and plays only its audio range", async ({ page }
   await page.getByRole("button", { name: "Save text", exact: true }).click();
   await expect(page.getByText("Corrected opening remarks.", { exact: true })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Saved to .txt" })).toBeVisible();
-  await page.getByRole("switch", { name: "Include context" }).click();
   await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
   await expect.poll(() => commandCount(page, "read_audio_segment")).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Stop segment 2", exact: true })).toBeVisible();
@@ -496,10 +495,10 @@ test("keeps the saved trim after processing finishes", async ({ page }) => {
   expect(await commandCount(page, "apply_trim")).toBe(0);
 });
 
-test("plays surrounding context and remembers the exact-range preference", async ({ page }) => {
+test("plays exact ranges even when the old padding preference is enabled", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("wt.transcriptPlaybackContext", "true"));
   await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
-  const context = page.getByRole("switch", { name: "Include context" });
-  await expect(context).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Include context" })).toHaveCount(0);
   await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
   await expect
     .poll(() =>
@@ -507,16 +506,48 @@ test("plays surrounding context and remembers the exact-range preference", async
         window.__WT_TEST__.commandCalls.some(
           (call) =>
             call.command === "read_audio_segment" &&
-            call.args.startMs === 1000 &&
-            call.args.endMs === 7000,
+            call.args.startMs === 2000 &&
+            call.args.endMs === 4000,
         ),
       ),
     )
     .toBe(true);
-  await context.click();
-  await expect(page.getByRole("button", { name: "Play segment 2", exact: true })).toBeVisible();
-  await expect(page.getByText("Exact saved range", { exact: true })).toBeVisible();
+});
+
+test("corrects one speaker and replaces text across the current transcript", async ({
+  page,
+}, testInfo) => {
+  const openTranscript = () =>
+    rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await openTranscript();
+  await page.getByRole("button", { name: "SPEAKER_01", exact: true }).click();
+  const speakerDialog = page.getByRole("dialog", { name: "Rename speaker" });
+  await speakerDialog.getByRole("combobox", { name: "Apply to" }).selectOption("segment");
+  await speakerDialog.getByRole("combobox", { name: "Speaker name" }).fill("Alice");
+  await expect(speakerDialog.locator("..")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("single-speaker-desktop.png") });
+  await speakerDialog.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "SPEAKER_02", exact: true })).toBeVisible();
+  expect(await commandCount(page, "rename_speaker")).toBe(0);
+  await page.getByRole("button", { name: "Find and replace", exact: true }).click();
+  const replaceDialog = page.getByRole("dialog", { name: "Find and replace" });
+  await replaceDialog.getByRole("textbox", { name: "Find", exact: true }).fill(".");
+  await replaceDialog.getByRole("textbox", { name: "Replace with", exact: true }).fill("!");
+  await expect(replaceDialog.getByText("2 matches in 2 segments", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    replaceDialog.getByRole("button", { name: "Replace all", exact: true }),
+  ).toBeInViewport();
+  await expect(replaceDialog.locator("..")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("replace-mobile.png") });
+  await replaceDialog.getByRole("button", { name: "Replace all", exact: true }).click();
+  await expect(replaceDialog).not.toBeVisible();
+  await expect(page.getByText("Opening remarks!", { exact: true })).toBeVisible();
+  await expect(page.getByText("Follow up answer!", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close transcript", exact: true }).click();
-  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
-  await expect(context).not.toBeChecked();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openTranscript();
+  await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible();
+  await expect(page.getByText("Opening remarks!", { exact: true })).toBeVisible();
 });

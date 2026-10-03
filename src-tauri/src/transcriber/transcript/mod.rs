@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::diarizer;
 
 use self::lang::{detect_script_lang, resolve_language};
-use self::words::{group_words, smooth_flickers};
+use self::words::group_words;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transcript {
@@ -79,6 +79,50 @@ pub struct Segment {
 pub use diarizer::Segment as DiarSegment;
 
 impl Transcript {
+    pub fn set_utterance_speaker(&mut self, index: usize, name: &str) -> crate::error::Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(crate::error::Error::Config("speaker name is empty".into()));
+        }
+        let utterance = self.utterances.get_mut(index).ok_or_else(|| {
+            crate::error::Error::Config("transcript segment no longer exists".into())
+        })?;
+        for word in &mut self.words {
+            if word.speaker == utterance.speaker
+                && (utterance.start_ms..utterance.end_ms).contains(&word.start_ms)
+            {
+                word.speaker = Some(name.to_owned());
+            }
+        }
+        utterance.speaker = Some(name.to_owned());
+        self.recount_speakers();
+        Ok(())
+    }
+
+    fn recount_speakers(&mut self) {
+        self.speakers_detected = self
+            .utterances
+            .iter()
+            .filter_map(|u| u.speaker.as_ref())
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+    }
+
+    pub fn replace_text(&mut self, find: &str, replacement: &str) -> crate::error::Result<()> {
+        if find.is_empty() {
+            return Err(crate::error::Error::Config("search text is empty".into()));
+        }
+        for index in 0..self.utterances.len() {
+            if self.utterances[index].text.contains(find) {
+                let text = self.utterances[index].text.replace(find, replacement);
+                if text != self.utterances[index].text {
+                    self.edit_utterance(index, &text)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn edit_utterance(&mut self, index: usize, text: &str) -> crate::error::Result<()> {
         let utterance = self.utterances.get_mut(index).ok_or_else(|| {
             crate::error::Error::Config("transcript segment no longer exists".into())
@@ -114,6 +158,7 @@ impl Transcript {
                 w.speaker = Some(new.to_owned());
             }
         }
+        self.recount_speakers();
         hits
     }
 }
@@ -147,7 +192,6 @@ pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Tr
         w.speaker = label_for(id);
     }
 
-    smooth_flickers(&mut words);
     if meta.duration_ms > 0 {
         for word in &mut words {
             word.start_ms = word.start_ms.min(meta.duration_ms);
@@ -233,7 +277,6 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
         }
     }
 
-    smooth_flickers(&mut words);
     if meta.duration_ms > 0 {
         for word in &mut words {
             word.start_ms = word.start_ms.min(meta.duration_ms);
@@ -269,7 +312,7 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
 #[cfg(test)]
 mod tests {
     use super::lang::{detect_script_lang, resolve_language};
-    use super::words::{group_words, is_sentence_end, join_words, smooth_flickers};
+    use super::words::{group_words, is_sentence_end, join_words};
     use super::*;
 
     #[test]
@@ -296,23 +339,57 @@ mod tests {
     }
 
     #[test]
-    fn smooths_isolated_flicker() {
-        let mut words = vec![
-            word("a", 0, 1, Some("A")),
-            word("b", 1, 2, Some("B")),
-            word("c", 2, 3, Some("A")),
+    fn preserves_short_replies_and_alternating_sentence_speakers() {
+        let words = vec![
+            word("A statement.", 0, 1000, None),
+            word("Yeah.", 1000, 1500, None),
+            word("Another statement.", 1500, 2500, None),
+            word("Well, basically--", 2500, 3500, None),
+            word("Where was he at?", 3500, 4500, None),
         ];
-        smooth_flickers(&mut words);
-        assert_eq!(words[1].speaker.as_deref(), Some("A"));
+        let diar: Vec<_> = words
+            .iter()
+            .enumerate()
+            .map(|(i, w)| DiarSegment {
+                speaker: (i % 2) as u32,
+                start_sec: w.start_ms as f64 / 1000.0,
+                end_sec: w.end_ms as f64 / 1000.0,
+            })
+            .collect();
+        let meta = Meta {
+            duration_ms: 5000,
+            ..Meta::default()
+        };
+        let segments: Vec<_> = words
+            .iter()
+            .map(|w| Segment {
+                text: w.text.clone(),
+                start_ms: w.start_ms,
+                end_ms: w.end_ms,
+                tokens: Vec::new(),
+            })
+            .collect();
+        for transcript in [
+            build(&segments, &diar, meta.clone()),
+            rediarize_words(words, &diar, meta),
+        ] {
+            assert_eq!(transcript.speakers_detected, 2);
+            assert_eq!(transcript.utterances.len(), 5);
+            assert_eq!(
+                transcript.utterances[1].speaker.as_deref(),
+                Some("SPEAKER_02")
+            );
+            assert_eq!(
+                transcript.utterances[3].speaker.as_deref(),
+                Some("SPEAKER_02")
+            );
+        }
     }
 
     #[test]
-    fn smooth_flickers_noop_for_short_inputs() {
-        let mut empty: Vec<Word> = Vec::new();
-        smooth_flickers(&mut empty);
-        let mut single = vec![word("a", 0, 1, Some("A"))];
-        smooth_flickers(&mut single);
-        assert_eq!(single[0].speaker.as_deref(), Some("A"));
+    fn sentence_grouping_does_not_span_long_silence() {
+        let words = [word("hello", 0, 500, None), word("again", 3000, 3500, None)];
+        assert_eq!(group_words(&words).len(), 2);
     }
 
     #[test]

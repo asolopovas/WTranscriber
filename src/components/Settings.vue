@@ -246,8 +246,8 @@ async function resetAppData() {
               <div>
                 <div class="text-titleSmall text-on-surface">Precise word timings</div>
                 <p class="text-bodyMedium text-on-surface-variant">
-                  Ask Whisper for token-level timestamps. This can be much slower on mobile; leave
-                  off for faster large-v3-turbo transcription.
+                  Enable Whisper word timings even without speaker detection. Speaker detection
+                  always requests word timings. This can be slower on mobile.
                 </p>
               </div>
               <Toggle v-model="config.precise_word_timestamps" aria-label="Precise word timings" />

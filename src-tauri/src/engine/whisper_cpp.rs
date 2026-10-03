@@ -391,7 +391,7 @@ pub fn run(
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(lang_arg);
-    if config.precise_word_timestamps {
+    if config.precise_word_timestamps || config.diarize {
         params.set_token_timestamps(true);
         params.set_split_on_word(true);
         params.set_max_len(1);

@@ -6,16 +6,18 @@
 
 1. Cache probe — key over source mtime, model, language, speakers, trim, timestamp mode (`transcriber/cache.rs`); hit serves immediately.
 2. Slab streaming — `audio_toolkit/stream.rs` decodes via ffmpeg/symphonia into ~60 s slabs (10 s calibration first slab; durations in `transcriber/job/slab.rs`). Slab ends snap to the lowest-energy point within ±1.5 s of the nominal boundary (`SNAP_SEARCH_SEC`).
-3. VAD gate — no-speech slabs are skipped before any engine runs (silero VAD, fail-open if the model is absent; `WT_NO_VAD_GATE=1` disables; `job/streaming.rs`).
+3. VAD gate — no-speech slabs are skipped before any engine runs (Silero VAD, fail-open if the model is absent; `WT_NO_VAD_GATE=1` disables; `job/streaming.rs`). Speech-bearing chunks retain their complete audio because hard speech-span cuts dropped quiet words in the real-recording check.
 4. Engine dispatch per slab (`engine/whisper_cpp.rs`, `engine/processor.rs`); `engine::resolve_device` (`engine/mod.rs`) gives CLI and GUI the same cuda-fallback decision:
    - whisper-cpp + device=cuda → `wt-whisper-cuda-worker.exe` in persistent `--serve` mode (model loaded once per job); falls back to one-shot spawn per slab when the serve worker is absent.
    - whisper-cpp + cpu → in-process whisper-rs.
    - sherpa engines (parakeet, gigaam, qwen3-asr) → in-process with the resolved ONNX provider (`runtimes/dependencies.rs`). Unsupported CUDA requests change the job device to CPU before dispatch and emit a `transcribe:warning` event; they must not select an external executable merely because the original request was CUDA. Explicit `WT_USE_SUBPROCESS=1` remains available for subprocess diagnostics.
-   - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity.
+   - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity. Diarization always requests word timings, even when the optional timing setting is off.
 5. Dedup — per-segment and cross-segment token collapse against whisper repetition loops (`job/postprocess.rs`, `dedup.rs`).
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
-7. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcriber/transcript/`).
+7. Diarization + merge — per-word or per-segment speaker lookup, speaker-preserving sentence grouping (`transcriber/transcript/`).
 8. Cache store, durable `.meta` transcript, and adjacent text export.
+
+Speaker assignment preserves short responses and alternating turns. The former isolated-entry smoothing rule could relabel whole sentences and one-word replies; it is removed from both initial transcription and re-diarization. Sentence grouping also splits across long timestamp gaps. Speech detection is probabilistic and word times remain model estimates, not forced alignment. Previously saved results remain unchanged until explicitly reprocessed.
 
 Postprocessing also handles phrase-sized Whisper tokens and tokenless segment loops. Three or more low-confidence copies within 30 seconds can collapse to the first copy, retaining intervening text; isolated and distant repetitions remain. This is a heuristic, not a claim about what was spoken. Previously saved transcripts are kept intact, and the revised cache-key version forces a fresh run when transcription is explicitly requested again.
 

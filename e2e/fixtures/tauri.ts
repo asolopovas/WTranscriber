@@ -244,6 +244,15 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
           seedTranscript.utterances[Number(index)].text = String(text);
           return structuredClone(seedTranscript);
         },
+        set_transcript_speaker: ({ index, name }) => {
+          seedTranscript.utterances[Number(index)].speaker = String(name);
+          return structuredClone(seedTranscript);
+        },
+        replace_transcript_text: ({ find, replacement }) => {
+          for (const u of seedTranscript.utterances)
+            u.text = u.text.split(String(find)).join(String(replacement));
+          return structuredClone(seedTranscript);
+        },
         read_audio_bytes: () => silentWav(),
         read_audio_segment: ({ startMs, endMs }) =>
           silentWav((Number(endMs) - Number(startMs)) / 1000),

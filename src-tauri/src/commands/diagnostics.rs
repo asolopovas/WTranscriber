@@ -142,6 +142,40 @@ fn persist_edit(key: &str, input: Option<&std::path::Path>, transcript: &Transcr
 }
 
 #[tauri::command]
+pub fn set_transcript_speaker(
+    key: String,
+    input: PathBuf,
+    index: usize,
+    name: String,
+) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
+        .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
+    transcript.set_utterance_speaker(index, &name)?;
+    persist_edit(&key, Some(&input), &transcript)?;
+    Ok(transcript)
+}
+
+#[tauri::command]
+pub fn replace_transcript_text(
+    key: String,
+    input: PathBuf,
+    find: String,
+    replacement: String,
+) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
+        .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
+    transcript.replace_text(&find, &replacement)?;
+    persist_edit(&key, Some(&input), &transcript)?;
+    Ok(transcript)
+}
+
+#[tauri::command]
 pub fn update_transcript_text(
     key: String,
     input: PathBuf,

@@ -1,19 +1,5 @@
 use super::{Utterance, Word};
 
-pub(super) fn smooth_flickers(words: &mut [Word]) {
-    let n = words.len();
-    if n < 3 {
-        return;
-    }
-    for i in 1..n - 1 {
-        if words[i].speaker != words[i - 1].speaker && words[i - 1].speaker == words[i + 1].speaker
-        {
-            let prev = words[i - 1].speaker.clone();
-            words[i].speaker.clone_from(&prev);
-        }
-    }
-}
-
 pub(super) fn is_sentence_end(text: &str) -> bool {
     text.trim_end_matches(['"', '\'', ')', ']', '}', '\u{201D}', '\u{2019}'])
         .chars()
@@ -44,7 +30,7 @@ pub(super) fn group_words(words: &[Word]) -> Vec<Utterance> {
         };
 
     for w in &words[1..] {
-        if w.speaker != cur_spk || prev_end {
+        if w.speaker != cur_spk || prev_end || w.start_ms.saturating_sub(cur_end) > 800 {
             flush(&mut out, cur_start, cur_end, &cur_spk, &parts);
             cur_start = w.start_ms;
             cur_spk.clone_from(&w.speaker);

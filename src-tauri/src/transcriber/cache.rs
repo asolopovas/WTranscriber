@@ -101,7 +101,7 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "measured-timings-v3\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "speaker-turns-word-timings-v4\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.source_path.display(),
         p.mtime_ns,
         p.model,

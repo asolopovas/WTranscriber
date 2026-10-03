@@ -5,25 +5,15 @@ import {
   waitForPlayableAudio,
 } from "./audioSegmentCache";
 
-describe("playback context", () => {
-  it("includes nearby speech for the reported early timestamps", () => {
-    expect(segmentPlaybackRange({ start_ms: 176080, end_ms: 177080 }, 2200157, true)).toEqual({
-      start: 175080,
-      end: 180080,
+describe("exact playback ranges", () => {
+  it("adds no padding and clamps to recording bounds", () => {
+    expect(segmentPlaybackRange({ start_ms: 815271, end_ms: 817271 }, 1133934)).toEqual({
+      start: 815271,
+      end: 817271,
     });
-    expect(segmentPlaybackRange({ start_ms: 340120, end_ms: 345120 }, 2200157, true)).toEqual({
-      start: 339120,
-      end: 348120,
-    });
-  });
-  it("keeps context within the recording and supports exact ranges", () => {
-    expect(segmentPlaybackRange({ start_ms: 500, end_ms: 1900 }, 2000, true)).toEqual({
+    expect(segmentPlaybackRange({ start_ms: -100, end_ms: 3000 }, 2000)).toEqual({
       start: 0,
       end: 2000,
-    });
-    expect(segmentPlaybackRange({ start_ms: 500, end_ms: 1900 }, 2000, false)).toEqual({
-      start: 500,
-      end: 1900,
     });
   });
 });
