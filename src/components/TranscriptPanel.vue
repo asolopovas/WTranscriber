@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Transcript } from "@/types";
 import { api } from "@/api";
 import {
   createAudioSegmentCache,
+  segmentPlaybackRange,
   mediaErrorMessage,
   waitForPlayableAudio,
 } from "@utils/audioSegmentCache";
@@ -14,6 +15,7 @@ import SlidingPanel from "@components/SlidingPanel.vue";
 import Icon from "@components/ui/Icon.vue";
 import Button from "@components/ui/Button.vue";
 import Modal from "@components/ui/Modal.vue";
+import Toggle from "@components/ui/Toggle.vue";
 import ErrorBanner from "@components/ui/ErrorBanner.vue";
 
 const props = defineProps<{
@@ -117,6 +119,10 @@ const audio = ref<HTMLAudioElement | null>(null);
 const audioSrc = ref("");
 const activeSegment = ref<number | null>(null);
 const audioLoading = ref(false);
+const includeContext = ref(true);
+try {
+  includeContext.value = localStorage.getItem("wt.transcriptPlaybackContext") !== "false";
+} catch {}
 const fragments = createAudioSegmentCache((start, end) =>
   api.readAudioSegment(props.sourcePath, start, end),
 );
@@ -147,10 +153,11 @@ function stopPlayback() {
 }
 
 function segmentRange(index: number) {
-  const segment = props.transcript.utterances[index];
-  const end = Math.floor(Math.min(segment.end_ms, props.transcript.duration_ms));
-  const start = Math.floor(Math.max(0, Math.min(segment.start_ms, end)));
-  return { start, end };
+  return segmentPlaybackRange(
+    props.transcript.utterances[index],
+    props.transcript.duration_ms,
+    includeContext.value,
+  );
 }
 
 function prefetch(index: number) {
@@ -158,6 +165,14 @@ function prefetch(index: number) {
   const { start, end } = segmentRange(index);
   if (end > start) void fragments.load(start, end).catch(() => {});
 }
+
+watch(includeContext, (enabled) => {
+  stopPlayback();
+  try {
+    localStorage.setItem("wt.transcriptPlaybackContext", String(enabled));
+  } catch {}
+  prefetch(0);
+});
 
 onMounted(() => prefetch(0));
 
@@ -284,6 +299,12 @@ async function copyTranscript() {
         />
       </div>
     </template>
+    <div class="flex flex-wrap items-center gap-xs text-labelSmall text-on-surface-variant">
+      <Toggle v-model="includeContext" aria-label="Include context" />
+      <span>Include context</span>
+      <span v-if="includeContext">1 s before · 3 s after</span>
+      <span v-else>Exact saved range</span>
+    </div>
     <ErrorBanner v-if="localError && !speaker">{{ localError }}</ErrorBanner>
     <audio
       v-if="audioSrc"

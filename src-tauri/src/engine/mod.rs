@@ -194,6 +194,13 @@ fn build_segments(
     if let Some(seg) = chunk::coalesce_segment(
         &result.tokens,
         stamps.iter().copied().map(f64::from),
+        result
+            .durations
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .copied()
+            .map(f64::from),
         audio_dur_sec,
     ) {
         return vec![seg];

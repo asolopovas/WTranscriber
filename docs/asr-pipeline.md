@@ -19,6 +19,8 @@
 
 Postprocessing also handles phrase-sized Whisper tokens and tokenless segment loops. Three or more low-confidence copies within 30 seconds can collapse to the first copy, retaining intervening text; isolated and distant repetitions remain. This is a heuristic, not a claim about what was spoken. Previously saved transcripts are kept intact, and the revised cache-key version forces a fresh run when transcription is explicitly requested again.
 
+Sherpa/Parakeet token durations, when supplied, determine word ends. Subword durations are merged into the word span; the next word's start is only a fallback when measured durations are unavailable. Final word ranges are clamped to recording duration. This prevents sentence playback from including a long silent gap after its last word. CLI JSON exports live under the source folder's `.meta/` directory. `--no-cache` bypasses durable and disposable transcript caches, clears matching partial work, and keeps the previous saved transcript until its replacement succeeds.
+
 Diarization receives the same requested/resolved device. Sortformer selects CUDA in CUDA builds and honours explicit CPU selection; TitaNet selects the supported ONNX provider for both segmentation and embedding. GPU initialisation errors retry on CPU before reporting failure. Small VAD and language probes stay on CPU to avoid unnecessary GPU transfers and session overhead.
 
 Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count (default 4). Engine warnings reach the UI through `progress::Sink::warn` → `transcribe:warning`.

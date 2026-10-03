@@ -22,6 +22,8 @@ pub struct SherpaResult {
     pub tokens: Vec<String>,
     #[serde(default)]
     pub timestamps: Vec<f64>,
+    #[serde(default)]
+    pub durations: Vec<f64>,
 }
 
 pub const fn binary_name() -> &'static str {

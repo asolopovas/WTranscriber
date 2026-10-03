@@ -59,10 +59,22 @@ pub async fn run(job: &Job) -> Result<Transcript> {
 }
 
 pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript> {
+    run_with_cache_policy(job, sink, true).await
+}
+
+pub async fn run_fresh_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript> {
+    run_with_cache_policy(job, sink, false).await
+}
+
+async fn run_with_cache_policy(
+    job: &Job,
+    sink: Arc<dyn Sink>,
+    use_cache: bool,
+) -> Result<Transcript> {
     let input = job.input.clone();
     let config = job.config.clone();
 
-    tokio::task::spawn_blocking(move || run_blocking(&input, &config, sink.as_ref()))
+    tokio::task::spawn_blocking(move || run_blocking(&input, &config, sink.as_ref(), use_cache))
         .await
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }
@@ -99,7 +111,12 @@ fn try_serve_from_cache(
     Ok(Some(cached))
 }
 
-fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
+fn run_blocking(
+    input: &Path,
+    config: &Config,
+    sink: &dyn Sink,
+    use_cache: bool,
+) -> Result<Transcript> {
     sink.phase(Phase::CacheCheck);
     let speakers = config.speakers.unwrap_or(0);
     let trim = audio::meta::load_checked(input)?.unwrap_or_default();
@@ -121,7 +138,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     engine::preflight(config)?;
     let _engine_guard = EngineShutdown;
 
-    if let Some(cached) = try_serve_from_cache(&key, input, config, sink)? {
+    if use_cache && let Some(cached) = try_serve_from_cache(&key, input, config, sink)? {
         super::saved::store(&key, input, &cached)?;
         return Ok(cached);
     }
@@ -129,6 +146,9 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
         return Err(crate::error::Error::Cancelled);
     }
 
+    if !use_cache {
+        super::partial::clear(&key)?;
+    }
     sink.phase(Phase::LoadingAudio);
     let window = compute_trim_window(input, &trim);
     let device_label = config.device.as_str().to_owned();

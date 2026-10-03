@@ -1,3 +1,14 @@
+export function segmentPlaybackRange(
+  segment: { start_ms: number; end_ms: number },
+  durationMs: number,
+  includeContext: boolean,
+) {
+  const end = Math.floor(Math.max(0, Math.min(segment.end_ms, durationMs)));
+  const start = Math.floor(Math.max(0, Math.min(segment.start_ms, end)));
+  if (!includeContext || end <= start) return { start, end };
+  return { start: Math.max(0, start - 1000), end: Math.min(Math.floor(durationMs), end + 3000) };
+}
+
 export function createAudioSegmentCache(
   read: (startMs: number, endMs: number) => Promise<ArrayBuffer>,
   maxBytes = 8 * 1024 * 1024,

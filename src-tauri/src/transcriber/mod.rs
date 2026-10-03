@@ -8,5 +8,5 @@ pub mod export;
 pub mod partial;
 pub mod saved;
 
-pub use job::{Job, run, run_with_sink};
+pub use job::{Job, run, run_fresh_with_sink, run_with_sink};
 pub use transcript::{Meta, Segment, Token, Transcript, Utterance, Word, rediarize_words};

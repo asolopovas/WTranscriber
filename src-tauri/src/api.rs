@@ -7,7 +7,8 @@ pub use crate::{
     transcriber::{
         Transcript, Utterance, Word,
         cache::{self as transcript_cache},
-        partial as transcript_partial, run as transcribe, run_with_sink as transcribe_with_sink,
+        partial as transcript_partial, run as transcribe,
+        run_fresh_with_sink as transcribe_fresh_with_sink, run_with_sink as transcribe_with_sink,
     },
 };
 

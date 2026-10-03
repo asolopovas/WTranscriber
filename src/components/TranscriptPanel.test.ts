@@ -34,6 +34,7 @@ function open() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  localStorage.clear();
   frames = [];
   vi.mocked(api.readAudioSegment).mockResolvedValue(new ArrayBuffer(0));
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
@@ -97,6 +98,7 @@ describe("TranscriptPanel", () => {
     expect(wrapper.find("textarea").exists()).toBe(false);
   });
   it("requests the original range, plays a bounded WAV, and reuses cached fragments", async () => {
+    localStorage.setItem("wt.transcriptPlaybackContext", "false");
     open();
     await wrapper.get('[title="Play segment 2"]').trigger("click");
     await flushPromises();

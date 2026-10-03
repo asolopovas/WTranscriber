@@ -38,7 +38,7 @@ impl From<DiarizerArg> for DiarizerChoice {
     version,
     about = "WTranscriber CLI \u{2014} offline audio transcription + diarization",
     long_about = "WTranscriber CLI \u{2014} offline audio transcription + diarization.\n\n\
-Accepts one or more audio files and writes a JSON transcript next to each input.\n\
+Accepts one or more audio files and writes JSON transcripts under each input folder’s .meta directory.\n\
 Models are downloaded on demand into ~/.local/share/wtranscriber/models.\n\
 A rolling log is written to ~/.local/share/wtranscriber/wt.log (same as the GUI).",
     after_help = "Examples:\n  \
@@ -467,26 +467,6 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
         )));
     }
 
-    if no_cache {
-        let speakers = config.speakers.unwrap_or(0);
-        let key_params = api::transcript_cache::build_key_params(
-            &canonical,
-            api::transcript_cache::KeyOptions {
-                model: &config.model,
-                language: &config.language,
-                speakers,
-                no_diarize: !config.diarize,
-                trim_start_ms: 0,
-                trim_end_ms: 0,
-                precise_word_timestamps: matches!(config.engine, Engine::WhisperCpp)
-                    && config.precise_word_timestamps,
-            },
-        )?;
-        let key = api::transcript_cache::compute_key(&key_params);
-        let _ = api::transcript_cache::invalidate(&key);
-        let _ = api::transcript_partial::clear(&key);
-    }
-
     let job = Job {
         input: canonical.clone(),
         config: config.clone(),
@@ -494,7 +474,11 @@ async fn transcribe_one(input: &Path, config: &Config, no_cache: bool, rename: b
 
     eprintln!("transcribing: {}", canonical.display());
     let sink: Arc<dyn Sink> = Arc::new(CliSink::new(canonical.clone()));
-    let transcript = api::transcribe_with_sink(&job, sink).await?;
+    let transcript = if no_cache {
+        api::transcribe_fresh_with_sink(&job, sink).await?
+    } else {
+        api::transcribe_with_sink(&job, sink).await?
+    };
     let dst = output_path(&canonical, &config.model);
     write_transcript(&dst, &transcript)?;
     println!("{}", dst.display());
@@ -522,11 +506,16 @@ fn output_path(input: &Path, model: &str) -> PathBuf {
         |s| s.to_string_lossy().into_owned(),
     );
     let stamp = chrono::Local::now().format("%Y-%m-%d_%H%M%S");
-    parent.join(format!("{stem}_{model}_{stamp}.json"))
+    parent
+        .join(".meta")
+        .join(format!("{stem}_{model}_{stamp}.json"))
 }
 
 fn write_transcript(path: &Path, transcript: &Transcript) -> Result<()> {
     let raw = serde_json::to_vec_pretty(transcript)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(path, raw)?;
     Ok(())
 }

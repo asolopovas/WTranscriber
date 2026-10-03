@@ -148,6 +148,12 @@ pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Tr
     }
 
     smooth_flickers(&mut words);
+    if meta.duration_ms > 0 {
+        for word in &mut words {
+            word.start_ms = word.start_ms.min(meta.duration_ms);
+            word.end_ms = word.end_ms.max(word.start_ms).min(meta.duration_ms);
+        }
+    }
     let mut utterances = group_words(&words);
     for u in &mut utterances {
         u.language = detect_script_lang(&u.text);
@@ -228,6 +234,12 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
     }
 
     smooth_flickers(&mut words);
+    if meta.duration_ms > 0 {
+        for word in &mut words {
+            word.start_ms = word.start_ms.min(meta.duration_ms);
+            word.end_ms = word.end_ms.max(word.start_ms).min(meta.duration_ms);
+        }
+    }
     let mut utterances = group_words(&words);
     for u in &mut utterances {
         u.language = detect_script_lang(&u.text);

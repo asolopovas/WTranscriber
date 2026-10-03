@@ -82,7 +82,12 @@ pub fn split_chunks(samples: &[f32], sec: f64) -> Vec<Chunk<'_>> {
 }
 
 pub fn segments_from_sherpa(r: &super::sherpa::SherpaResult, chunk_dur_sec: f64) -> Vec<Segment> {
-    if let Some(seg) = coalesce_segment(&r.tokens, r.timestamps.iter().copied(), chunk_dur_sec) {
+    if let Some(seg) = coalesce_segment(
+        &r.tokens,
+        r.timestamps.iter().copied(),
+        r.durations.iter().copied(),
+        chunk_dur_sec,
+    ) {
         return vec![seg];
     }
     let text = r.text.trim();
@@ -103,11 +108,22 @@ struct Word {
     end: f64,
 }
 
-pub fn coalesce_segment<I>(tokens: &[String], timestamps: I, audio_dur_sec: f64) -> Option<Segment>
+pub fn coalesce_segment<I, D>(
+    tokens: &[String],
+    timestamps: I,
+    durations: D,
+    audio_dur_sec: f64,
+) -> Option<Segment>
 where
     I: IntoIterator<Item = f64>,
+    D: IntoIterator<Item = f64>,
 {
     let stamps: Vec<f64> = timestamps.into_iter().collect();
+    let lengths: Vec<f64> = durations.into_iter().collect();
+    let measured = lengths.len() == tokens.len()
+        && lengths
+            .iter()
+            .all(|length| length.is_finite() && *length >= 0.0);
     if tokens.is_empty() || tokens.len() != stamps.len() {
         return None;
     }
@@ -121,17 +137,31 @@ where
         if is_boundary || words.is_empty() {
             words.push(Word {
                 text: piece.to_owned(),
-                start: stamps[i],
-                end: 0.0,
+                start: stamps[i].clamp(0.0, audio_dur_sec),
+                end: if measured {
+                    (stamps[i] + lengths[i]).clamp(0.0, audio_dur_sec)
+                } else {
+                    0.0
+                },
             });
         } else {
-            words.last_mut().unwrap().text.push_str(piece);
+            let word = words.last_mut().unwrap();
+            word.text.push_str(piece);
+            if measured {
+                word.end = word
+                    .end
+                    .max((stamps[i] + lengths[i]).clamp(0.0, audio_dur_sec));
+            }
         }
     }
     if words.is_empty() {
         return None;
     }
     for i in 0..words.len() {
+        if measured {
+            words[i].end = words[i].end.max(words[i].start);
+            continue;
+        }
         words[i].end = if i + 1 < words.len() {
             words[i + 1].start
         } else {
@@ -278,7 +308,7 @@ mod tests {
     fn coalesce_segment_groups_subword_tokens() {
         let tokens = vec![" hello".into(), " world".into()];
         let stamps = vec![0.0, 0.5];
-        let seg = coalesce_segment(&tokens, stamps, 1.0).unwrap();
+        let seg = coalesce_segment(&tokens, stamps, [], 1.0).unwrap();
         assert_eq!(seg.text, "hello world");
         assert_eq!(seg.tokens.len(), 2);
         assert_eq!(seg.tokens[0].start_ms, 0);
@@ -290,14 +320,29 @@ mod tests {
     fn coalesce_segment_merges_continuation_tokens() {
         let tokens = vec![" hel".into(), "lo".into(), " world".into()];
         let stamps = vec![0.0, 0.2, 0.5];
-        let seg = coalesce_segment(&tokens, stamps, 1.0).unwrap();
+        let seg = coalesce_segment(&tokens, stamps, [], 1.0).unwrap();
         assert_eq!(seg.text, "hello world");
         assert_eq!(seg.tokens.len(), 2);
     }
 
     #[test]
     fn coalesce_segment_rejects_mismatched_lengths() {
-        assert!(coalesce_segment(&["a".into()], [0.0, 0.1], 1.0).is_none());
-        assert!(coalesce_segment(&[], std::iter::empty::<f64>(), 1.0).is_none());
+        assert!(coalesce_segment(&["a".into()], [0.0, 0.1], [], 1.0).is_none());
+        assert!(coalesce_segment(&[], std::iter::empty::<f64>(), [], 1.0).is_none());
+    }
+    #[test]
+    fn measured_durations_do_not_extend_words_through_silence() {
+        let tokens = vec![" Good".into(), " morning.".into(), " Hello".into()];
+        let segment = coalesce_segment(&tokens, [8.8, 9.1, 12.0], [0.3, 0.6, 0.4], 15.0).unwrap();
+        assert_eq!(segment.tokens[1].end_ms, 9700);
+        assert_eq!(segment.tokens[2].end_ms, 12400);
+    }
+
+    #[test]
+    fn measured_durations_merge_subwords_and_clamp_to_recording_end() {
+        let tokens = vec![" hel".into(), "lo".into(), " world".into()];
+        let segment = coalesce_segment(&tokens, [0.1, 0.2, 0.8], [0.1, 0.2, 1.0], 1.0).unwrap();
+        assert_eq!(segment.tokens[0].end_ms, 400);
+        assert_eq!(segment.tokens[1].end_ms, 1000);
     }
 }

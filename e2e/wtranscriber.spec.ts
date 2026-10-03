@@ -419,6 +419,7 @@ test("edits a completed segment and plays only its audio range", async ({ page }
   await page.getByRole("button", { name: "Save text", exact: true }).click();
   await expect(page.getByText("Corrected opening remarks.", { exact: true })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Saved to .txt" })).toBeVisible();
+  await page.getByRole("switch", { name: "Include context" }).click();
   await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
   await expect.poll(() => commandCount(page, "read_audio_segment")).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Stop segment 2", exact: true })).toBeVisible();
@@ -456,4 +457,29 @@ test("keeps the saved trim after processing finishes", async ({ page }) => {
   await page.getByRole("button", { name: /Cut: 00:05/ }).click();
   await expect(dialog.getByText("selected 00:55", { exact: true })).toBeVisible();
   expect(await commandCount(page, "apply_trim")).toBe(0);
+});
+
+test("plays surrounding context and remembers the exact-range preference", async ({ page }) => {
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  const context = page.getByRole("switch", { name: "Include context" });
+  await expect(context).toBeChecked();
+  await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__WT_TEST__.commandCalls.some(
+          (call) =>
+            call.command === "read_audio_segment" &&
+            call.args.startMs === 1000 &&
+            call.args.endMs === 7000,
+        ),
+      ),
+    )
+    .toBe(true);
+  await context.click();
+  await expect(page.getByRole("button", { name: "Play segment 2", exact: true })).toBeVisible();
+  await expect(page.getByText("Exact saved range", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close transcript", exact: true }).click();
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await expect(context).not.toBeChecked();
 });
