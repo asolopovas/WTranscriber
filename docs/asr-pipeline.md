@@ -14,7 +14,7 @@
    - Whisper word-timestamp mode emits one token per segment; downstream merge relies on that granularity. Diarization always requests word timings, even when the optional timing setting is off.
 5. Dedup — per-segment and cross-segment token collapse against whisper repetition loops (`job/postprocess.rs`, `dedup.rs`).
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
-7. Diarization + merge — per-word or per-segment speaker lookup, speaker-preserving sentence grouping (`transcriber/transcript/`).
+7. All diarizers receive only the saved trim. Native Sortformer/TitaNet use an isolated cropped WAV; results are clamped to that audio and shifted to source time exactly once. Re-diarization follows the same path and excludes saved words outside the current trim. Diarization + merge — per-word or per-segment speaker lookup, speaker-preserving sentence grouping (`transcriber/transcript/`).
 8. Cache store, durable `.meta` transcript, and adjacent text export.
 
 Speaker assignment preserves short responses and alternating turns. The former isolated-entry smoothing rule could relabel whole sentences and one-word replies; it is removed from both initial transcription and re-diarization. Sentence grouping also splits across long timestamp gaps. Speech detection is probabilistic and word times remain model estimates, not forced alignment. Previously saved results remain unchanged until explicitly reprocessed.
@@ -123,3 +123,5 @@ Expected result: each run produces a JSON transcript with a sensible `language`,
 ## Optional desktop alignment and speaker pipeline
 
 The [WhisperX + Community-1 pipeline](quality-pipeline.md) keeps the selected native ASR model, adds forced word alignment and uses Community-1 exclusive speaker turns. It also supports realigning existing transcripts during re-diarization.
+
+Completed recordings expose **Retranscribe** on the row action and overflow menu. It captures current settings, bypasses transcript and partial caches, backs up the saved result, and transcribes the saved trim again. Ordinary transcription may still reuse a matching cache.

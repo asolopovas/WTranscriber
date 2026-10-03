@@ -25,7 +25,7 @@ The default interpreter is `quality/.venv/bin/python` under the application's da
 - Assign each aligned word by greatest temporal overlap with Community-1's exclusive timeline, then split at speaker changes, sentence ends and long gaps. Do not smooth away short replies or guess speakers for words without overlap.
 - Preserve words that cannot be aligned, leave their speaker unassigned and report a warning. Their fallback timing is approximate. Forced alignment cannot recover words absent from the ASR text or guarantee correct identities in overlapping speech.
 - Respect a known speaker count; otherwise use automatic detection. Two speakers in an excerpt do not imply only two speakers in the whole recording.
-- Retain the selected ASR model and release its worker before loading Python models. The alignment model is released before diarization to reduce GPU memory pressure.
+- Retain the selected ASR model choice and release both in-process native model caches and external workers before loading Python models. The alignment model is released before diarization to reduce GPU memory pressure. Both Python stages run in inference mode. If a CUDA allocation fails, that stage releases its GPU objects and retries once on CPU with the same model and audio. A live warning explains the slower execution; other errors are not retried.
 
 The previous JSON and text export are backed up under the source's `.meta/backups/before-quality-*` directory before successful replacement. Saved trims are never rewritten. Cancellation or model failure leaves the existing transcript intact. The cache key includes the diarizer and quality pipeline version, so switching backends cannot reuse a result from another diarizer.
 

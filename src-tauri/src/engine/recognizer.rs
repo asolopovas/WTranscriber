@@ -34,6 +34,15 @@ pub struct Loaded {
 static CACHE: OnceLock<Mutex<Option<Loaded>>> = OnceLock::new();
 static CUDA_DISABLED: AtomicBool = AtomicBool::new(false);
 
+pub fn shutdown() {
+    if let Some(cache) = CACHE.get() {
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+}
+
 fn cache() -> &'static Mutex<Option<Loaded>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }

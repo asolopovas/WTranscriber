@@ -85,6 +85,7 @@ type TranscriptionRequest = {
   entry: DirEntry;
   config: Config;
   cacheKey?: string;
+  force?: boolean;
 };
 
 const queue = useTranscriptionQueue<TranscriptionRequest>({
@@ -531,8 +532,8 @@ async function executeTranscription(job: TranscriptionRequest) {
   try {
     const result = cacheKey
       ? await api.redoDiarization(target.path, cacheKey, jobConfig)
-      : await api.transcribeFile(target.path, jobConfig);
-    if (cacheKey && selectedPath.value === target.path) transcript.value = result;
+      : await api.transcribeFile(target.path, jobConfig, job.force);
+    if ((cacheKey || job.force) && selectedPath.value === target.path) transcript.value = result;
     await refreshListing();
     if (jobConfig.auto_rename) {
       const renamed = audioEntries.value.find((entry) => entry.path === target.path) ?? target;
@@ -553,7 +554,7 @@ async function stopTranscribe(entry: DirEntry) {
   await queue.cancel(entry.path);
 }
 
-async function transcribeAll(targets?: DirEntry[]) {
+async function transcribeAll(targets?: DirEntry[], force = false) {
   if (!config.value) return;
   const items = (targets ?? untranscribedEntries.value).filter(
     (entry) => entry.is_audio && !busy.value[entry.path],
@@ -566,7 +567,7 @@ async function transcribeAll(targets?: DirEntry[]) {
   }
   error.value = null;
   const jobConfig = { ...config.value };
-  await queue.enqueue(items.map((entry) => ({ entry: { ...entry }, config: jobConfig })));
+  await queue.enqueue(items.map((entry) => ({ entry: { ...entry }, config: jobConfig, force })));
 }
 
 const audioPathsList = () => audioEntries.value.map((e) => e.path);
@@ -988,6 +989,7 @@ const selectedProgress = computed(() =>
               @choose="chooseEntry"
               @view="viewEntry"
               @transcribe="runTranscribe"
+              @retranscribe="(entry) => transcribeAll([entry], true)"
               @stop="stopTranscribe"
               @trim="openTrim"
               @auto-rename="autoRename"

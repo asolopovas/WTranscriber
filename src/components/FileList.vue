@@ -61,6 +61,7 @@ const emit = defineEmits<{
   (e: "choose", entry: DirEntry): void;
   (e: "view", entry: DirEntry): void;
   (e: "transcribe", entry: DirEntry): void;
+  (e: "retranscribe", entry: DirEntry): void;
   (e: "stop", entry: DirEntry): void;
   (e: "trim", entry: DirEntry): void;
   (e: "auto-rename", entry: DirEntry): void;
@@ -226,8 +227,8 @@ defineExpose({
             variant="ghost-primary"
             shape="circle"
             size="md"
-            title="Transcribe"
-            @click="emit('transcribe', entry)"
+            :title="entry.cache_key ? 'Retranscribe' : 'Transcribe'"
+            @click="entry.cache_key ? emit('retranscribe', entry) : emit('transcribe', entry)"
           >
             <TranscribeIcon :size="24" />
           </Button>
@@ -348,6 +349,17 @@ defineExpose({
           Export…
         </MenuItem>
         <div class="md:hidden my-unit border-t border-outline-variant/40"></div>
+        <MenuItem
+          v-if="activeMenuEntry.cache_key"
+          icon="refresh"
+          :disabled="busy[activeMenuEntry.path]"
+          @click="
+            emit('retranscribe', activeMenuEntry);
+            closeMenu();
+          "
+        >
+          Retranscribe
+        </MenuItem>
         <MenuItem
           icon="groups"
           :disabled="!activeMenuEntry.cache_key"

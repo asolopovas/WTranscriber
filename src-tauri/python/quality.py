@@ -11,8 +11,8 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 PROTOCOL = sys.stdout
 
 
-def progress(phase, percent):
-    PROTOCOL.write(json.dumps({"phase": phase, "percent": percent}) + "\n")
+def progress(phase, percent, warning=None):
+    PROTOCOL.write(json.dumps({"phase": phase, "percent": percent, "warning": warning}) + "\n")
     PROTOCOL.flush()
 
 
@@ -52,7 +52,7 @@ def make_words(segments, turns, offset, limit):
 def alignment_windows(utterances, start, end):
     windows = []
     for u in utterances:
-        if not u["text"].strip() or u["end_ms"] <= start or u["start_ms"] >= end:
+        if not u["text"].strip() or u["start_ms"] < start or u["end_ms"] > end:
             continue
         a = max(0, (u["start_ms"] - start) / 1000)
         b = min((end - start) / 1000, (u["end_ms"] - start) / 1000)
@@ -73,6 +73,43 @@ def release(torch):
         torch.cuda.empty_cache()
 
 
+def run_stage(torch, device, phase, label, operation):
+    try:
+        with torch.inference_mode():
+            return operation(device)
+    except torch.cuda.OutOfMemoryError:
+        if device != "cuda":
+            raise
+    release(torch)
+    progress(phase, 0, f"GPU memory ran out during {label}. Retrying on CPU with the same model; this may take longer.")
+    with torch.inference_mode():
+        return operation("cpu")
+
+
+def align_words(whisperx, torch, language, segments, audio, device):
+    def attempt(target):
+        aligner, metadata = whisperx.load_align_model(language_code=language, device=target,
+                                                      model_name="WAV2VEC2_ASR_LARGE_LV60K_960H" if language == "en" else None)
+        return whisperx.align(segments, aligner, metadata, audio, target,
+                              interpolate_method="ignore", return_char_alignments=False)
+
+    aligned = run_stage(torch, device, "transcribing", "word alignment", attempt)
+    release(torch)
+    return aligned["segments"]
+
+
+def detect_speakers(Pipeline, torch, token, audio, speakers, device, hook):
+    def attempt(target):
+        pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=token)
+        pipeline.to(torch.device(target))
+        return pipeline({"waveform": torch.from_numpy(audio[None, :]), "sample_rate": 16000},
+                        num_speakers=speakers or None, hook=hook)
+
+    output = run_stage(torch, device, "diarizing", "speaker detection", attempt)
+    release(torch)
+    return output
+
+
 def run(request):
     import numpy as np
     import torch
@@ -91,7 +128,7 @@ def run(request):
     audio = whisperx.load_audio(request["wav"])
     duration = round(len(audio) / 16)
     start = min(duration, request.get("start_ms", 0))
-    end = min(duration, request.get("end_ms") or duration)
+    end = min(duration, duration if request.get("end_ms") is None else request["end_ms"])
     if end <= start:
         raise ValueError("The selected trim contains no audio.")
     selected = np.ascontiguousarray(audio[start * 16:end * 16])
@@ -106,17 +143,9 @@ def run(request):
     progress("transcribing", 60)
     original_text = "".join("".join(s["text"].split()) for s in segments)
     if segments:
-        aligner, metadata = whisperx.load_align_model(language_code=language, device=device,
-                                                      model_name="WAV2VEC2_ASR_LARGE_LV60K_960H" if language == "en" else None)
-        aligned = whisperx.align(segments, aligner, metadata, selected, device,
-                                 interpolate_method="ignore", return_char_alignments=False)
-        del aligner
-        release(torch)
-        segments = aligned["segments"]
+        segments = align_words(whisperx, torch, language, segments, selected, device)
     progress("transcribing", 100)
     progress("diarizing", 0)
-    pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-community-1", token=token)
-    pipeline.to(torch.device(device))
     last = [0.0]
 
     def hook(step_name, step_artifact, file=None, total=None, completed=None):
@@ -127,8 +156,7 @@ def run(request):
                 last[0] = pct
                 progress("diarizing", pct)
 
-    output = pipeline({"waveform": torch.from_numpy(selected[None, :]), "sample_rate": 16000},
-                      num_speakers=request.get("speakers") or None, hook=hook)
+    output = detect_speakers(Pipeline, torch, token, selected, request.get("speakers"), device, hook)
     turns = [(turn.start + start / 1000, turn.end + start / 1000, speaker) for turn, _, speaker in
              output.exclusive_speaker_diarization.itertracks(yield_label=True)]
     words, unaligned = make_words(segments, turns, start, end)
@@ -136,6 +164,8 @@ def run(request):
     if aligned_text != original_text:
         raise RuntimeError("Alignment changed or omitted transcript text. The existing transcript has been kept.")
     warnings = []
+    if any(u["start_ms"] < start < u["end_ms"] or u["start_ms"] < end < u["end_ms"] for u in previous["utterances"]):
+        warnings.append("Some previous segments cross the current trim boundary and were excluded. Retranscribe to recognise speech up to the new trim edges.")
     if unaligned:
         warnings.append(f"{unaligned} words could not be aligned: their timing remains approximate and their speaker is unassigned.")
     uncertain = sum(w["confidence"] < 0.3 for w in words)

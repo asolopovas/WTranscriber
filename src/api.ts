@@ -69,9 +69,10 @@ export const api = {
     invokeParsed<AudioMeta>("load_audio_meta", AudioMetaSchema, { path }),
   saveAudioMeta: (path: string, meta: AudioMeta) =>
     invoke<void>("save_audio_meta", { path, meta: AudioMetaSchema.parse(meta) }),
-  transcribeFile: (input: string, config: Config) =>
+  transcribeFile: (input: string, config: Config, force = false) =>
     invokeParsed<Transcript>("transcribe_file", TranscriptSchema, {
       input,
+      force,
       config: ConfigSchema.parse(config),
     }),
   redoDiarization: (input: string, oldCacheKey: string, config: Config) =>

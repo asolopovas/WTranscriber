@@ -460,6 +460,7 @@ pub async fn transcribe_file(
     app: AppHandle,
     input: PathBuf,
     mut config: Config,
+    force: Option<bool>,
 ) -> Result<Transcript> {
     sync_engine(&mut config);
     validate_transcription_model(&config)?;
@@ -472,7 +473,11 @@ pub async fn transcribe_file(
                 context.sink.warn(&note);
             }
             let job = Job { input, config };
-            let result = transcriber::run_with_sink(&job, context.sink.clone()).await;
+            let result = if force.unwrap_or(false) {
+                transcriber::run_fresh_with_sink(&job, context.sink.clone()).await
+            } else {
+                transcriber::run_with_sink(&job, context.sink.clone()).await
+            };
             finish_transcribe_run(result, &context)
         })
         .await
@@ -797,22 +802,13 @@ async fn redo_diarization_inner(
         }
         sink.phase(Phase::Diarizing);
         let speakers = config.speakers.unwrap_or(0);
-        let wav = audio::ensure_cached_wav(&input)?;
+        let trim = audio::meta::load_checked(&input)?.unwrap_or_default();
         let backend = diarizer::new_with_choice(speakers, config.diarizer, config.device)?;
         let backend_name = backend.name();
         sink.set_diarize_backend(&backend_name);
-        let mut on_progress = |pct: f64| sink.report_pct(Phase::Diarizing, pct);
-        let cancelled = || sink.is_cancelled();
         let diar_t0 = std::time::Instant::now();
-        let segs = backend
-            .diarize(
-                &wav,
-                speakers,
-                cached.duration_ms as f64 / 1000.0,
-                &cancelled,
-                &mut on_progress,
-            )
-            .map_err(|e| Error::Transcribe(format!("diarize: {e}")))?;
+        let segs =
+            diarizer::trimmed::run(backend.as_ref(), &input, &trim, speakers, sink.as_ref())?;
         logfile::info(&format!(
             "re-diarized: {backend_name} · {} segments · {:.1}s",
             segs.len(),
@@ -823,7 +819,6 @@ async fn redo_diarization_inner(
             return Err(Error::Cancelled);
         }
         sink.phase(Phase::Writing);
-        let trim = audio::meta::load_checked(&input)?.unwrap_or_default();
         let key_params = cache::build_key_params(
             &input,
             cache::KeyOptions {
@@ -841,7 +836,15 @@ async fn redo_diarization_inner(
         let new_key = cache::compute_key(&key_params);
 
         let new_transcript = rediarize_words(
-            cached.words.clone(),
+            cached
+                .words
+                .iter()
+                .filter(|w| {
+                    w.start_ms >= trim.trim_start_ms
+                        && trim.trim_end_ms.is_none_or(|end| w.end_ms <= end)
+                })
+                .cloned()
+                .collect(),
             &segs,
             transcriber::Meta {
                 model: cached.model.clone(),

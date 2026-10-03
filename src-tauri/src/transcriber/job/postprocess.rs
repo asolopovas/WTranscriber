@@ -3,6 +3,18 @@ use crate::transcriber::{
     transcript::{Segment, Token},
 };
 
+pub(super) fn clamp_to_trim(segments: &mut [Segment], start: u64, end: u64) {
+    let end = end.max(start);
+    for segment in segments {
+        segment.start_ms = segment.start_ms.clamp(start, end);
+        segment.end_ms = segment.end_ms.clamp(segment.start_ms, end);
+        for token in &mut segment.tokens {
+            token.start_ms = token.start_ms.clamp(start, end);
+            token.end_ms = token.end_ms.clamp(token.start_ms, end);
+        }
+    }
+}
+
 pub(super) fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
         let mut phrase_changed = false;
@@ -162,6 +174,23 @@ mod tests {
             end_ms: end,
             tokens,
         }
+    }
+
+    #[test]
+    fn retains_recognised_edge_text_when_timestamps_overshoot_trim() {
+        let mut segments = vec![seg(
+            "Edge words.",
+            999,
+            2015,
+            vec![tok("Edge words.", 999, 2015)],
+        )];
+        clamp_to_trim(&mut segments, 1000, 2000);
+        assert_eq!(segments[0].text, "Edge words.");
+        assert_eq!((segments[0].start_ms, segments[0].end_ms), (1000, 2000));
+        assert_eq!(
+            (segments[0].tokens[0].start_ms, segments[0].tokens[0].end_ms),
+            (1000, 2000)
+        );
     }
 
     #[test]

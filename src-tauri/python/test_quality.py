@@ -1,9 +1,44 @@
 import unittest
+import contextlib
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
-from quality import alignment_windows, make_words
+from quality import alignment_windows, make_words, run_stage
 
 
 class QualityTests(unittest.TestCase):
+    def test_cuda_oom_retries_same_stage_on_cpu_after_cleanup(self):
+        class OOM(Exception):
+            pass
+        torch = SimpleNamespace(inference_mode=contextlib.nullcontext,
+                                cuda=SimpleNamespace(OutOfMemoryError=OOM))
+        operation = Mock(side_effect=[OOM("memory exhausted"), "aligned words"])
+        with patch("quality.release") as release, patch("quality.progress") as progress:
+            self.assertEqual(run_stage(torch, "cuda", "transcribing", "alignment", operation), "aligned words")
+            self.assertEqual([call.args[0] for call in operation.call_args_list], ["cuda", "cpu"])
+            release.assert_called_once_with(torch)
+            self.assertIn("same model", progress.call_args.args[2])
+
+    def test_other_errors_are_not_retried(self):
+        class OOM(Exception):
+            pass
+        torch = SimpleNamespace(inference_mode=contextlib.nullcontext,
+                                cuda=SimpleNamespace(OutOfMemoryError=OOM))
+        operation = Mock(side_effect=ValueError("invalid audio"))
+        with self.assertRaisesRegex(ValueError, "invalid audio"):
+            run_stage(torch, "cuda", "transcribing", "alignment", operation)
+        operation.assert_called_once_with("cuda")
+
+    def test_cpu_memory_error_is_not_retried(self):
+        class OOM(Exception):
+            pass
+        torch = SimpleNamespace(inference_mode=contextlib.nullcontext,
+                                cuda=SimpleNamespace(OutOfMemoryError=OOM))
+        operation = Mock(side_effect=OOM("memory exhausted"))
+        with self.assertRaises(OOM):
+            run_stage(torch, "cpu", "transcribing", "alignment", operation)
+        operation.assert_called_once_with("cpu")
+
     def test_question_and_answer_keep_different_speakers(self):
         segments = [{"start": 380, "end": 383, "text": "You like the sports? I love football, jiu-jitsu.", "words": [
             {"word": "sports?", "start": 380.6, "end": 380.9, "score": 0.9},
@@ -37,6 +72,16 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(words[0]["confidence"], 0)
         self.assertIsNone(words[0]["speaker"])
         self.assertEqual(count, 1)
+
+    def test_alignment_excludes_text_crossing_trim_edges(self):
+        windows = alignment_windows([
+            {"start_ms": 900, "end_ms": 1100, "text": "Before trim."},
+            {"start_ms": 1200, "end_ms": 1800, "text": "Inside trim."},
+            {"start_ms": 1900, "end_ms": 2100, "text": "After trim."}], 1000, 2000)
+        self.assertEqual(len(windows), 1)
+        self.assertEqual(windows[0]["text"], "Inside trim.")
+        self.assertEqual(windows[0]["start"], 0)
+        self.assertEqual(windows[0]["end"], 1)
 
     def test_alignment_has_context_but_stays_in_trim(self):
         windows = alignment_windows([

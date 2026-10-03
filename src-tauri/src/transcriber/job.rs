@@ -152,6 +152,7 @@ fn run_blocking(
     }
 
     if !use_cache {
+        super::saved::backup(input)?;
         super::partial::clear(&key)?;
     }
     sink.phase(Phase::LoadingAudio);
@@ -173,6 +174,11 @@ fn run_blocking(
         (scanned_end * 1000.0) as u64
     };
 
+    postprocess::clamp_to_trim(
+        &mut segments,
+        window.start_ms,
+        window.end_ms_opt.unwrap_or(duration_ms),
+    );
     if super::quality::enabled(config) {
         let language = if st.detected_language.is_empty() {
             config.language.clone()
@@ -189,14 +195,7 @@ fn run_blocking(
         if sink.is_cancelled() {
             return Err(crate::error::Error::Cancelled);
         }
-        run_diarize_phase(
-            input,
-            sink,
-            config,
-            speakers,
-            window.total_dur_ms,
-            scanned_end,
-        )
+        run_diarize_phase(input, sink, config, speakers, &trim)
     } else {
         (Vec::new(), None)
     };

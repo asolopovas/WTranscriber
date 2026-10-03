@@ -138,6 +138,12 @@ fn worker_proc_slot() -> &'static Mutex<Option<WorkerProc>> {
 }
 
 pub fn shutdown_worker() {
+    if let Some(cache) = CTX.get() {
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
     if let Ok(mut slot) = worker_proc_slot().lock() {
         kill_worker(&mut slot);
     }

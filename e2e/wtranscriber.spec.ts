@@ -173,6 +173,29 @@ test("retries failed files and ignores duplicate starts while they are active", 
   await expect(page.getByText("test transcription failed", { exact: true })).toHaveCount(0);
 });
 
+test("retranscribes a completed recording without reusing its cached transcript", async ({
+  page,
+}, testInfo) => {
+  const row = rowNamed(page, "board_meeting");
+  await expect(row.getByTitle("Retranscribe", { exact: true })).toBeVisible();
+  await row.getByTitle("More", { exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("retranscribe.png") });
+  await page
+    .getByRole("button", { name: "Retranscribe", exact: true })
+    .filter({ has: page.getByText("refresh", { exact: true }) })
+    .click();
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(1);
+  const call = await page.evaluate(() =>
+    window.__WT_TEST__.commandCalls.find((call) => call.command === "transcribe_file"),
+  );
+  expect(call?.args).toMatchObject({ force: true });
+  expect(await commandCount(page, "redo_diarization")).toBe(0);
+  await finishTranscriptions(page);
+  await expect(page.getByRole("heading", { name: "Transcript", exact: true })).toBeVisible();
+  await row.getByTitle("Retranscribe", { exact: true }).click();
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
+});
+
 test("offers local quality alignment without replacing the native ASR model", async ({
   page,
 }, testInfo) => {

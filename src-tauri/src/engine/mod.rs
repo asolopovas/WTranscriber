@@ -18,6 +18,7 @@ use crate::{
 };
 
 pub fn shutdown() {
+    recognizer::shutdown();
     #[cfg(not(target_os = "ios"))]
     whisper_cpp::shutdown_worker();
 }

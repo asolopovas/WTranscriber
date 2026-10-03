@@ -37,6 +37,8 @@ struct Output {
 struct Progress {
     phase: Phase,
     percent: f64,
+    #[serde(default)]
+    warning: Option<String>,
 }
 
 struct Worker(Child);
@@ -84,6 +86,7 @@ pub fn run(
     sink: &dyn Sink,
     previous: &Transcript,
 ) -> Result<Transcript> {
+    crate::engine::shutdown();
     let python = python()?;
     if sink.is_cancelled() {
         return Err(Error::Cancelled);
@@ -177,6 +180,9 @@ fn wait_worker(worker: &mut Worker, errors: &Path, sink: &dyn Sink) -> Result<()
         }
         match recv.recv_timeout(Duration::from_millis(100)) {
             Ok(p) => {
+                if let Some(warning) = p.warning {
+                    sink.warn(&warning);
+                }
                 if phase != p.phase {
                     phase = p.phase;
                     sink.phase(phase);

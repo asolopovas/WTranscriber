@@ -104,7 +104,7 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "quality-pipeline-v5\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "trimmed-diarization-v7\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.diarizer,
         p.source_path.display(),
         p.mtime_ns,

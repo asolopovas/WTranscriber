@@ -1,6 +1,7 @@
 mod sherpa;
 #[cfg(not(target_os = "ios"))]
 mod sortformer_onnx;
+pub mod trimmed;
 
 use std::path::Path;
 
