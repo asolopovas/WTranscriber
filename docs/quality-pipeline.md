@@ -19,7 +19,7 @@ The default interpreter is `quality/.venv/bin/python` under the application's da
 ## Timing and speaker behaviour
 
 - Decode once to the existing cached mono 16 kHz WAV; load that audio in memory for alignment and diarization.
-- Native ASR receives the saved trim. Alignment uses that same range and adds the trim offset back exactly once. Diarization uses the same complete trim, so unrelated voices outside it do not affect speaker clustering.
+- Native ASR receives the saved trim. Alignment uses that same range and adds the trim offset back exactly once. Fresh ASR timestamp estimates are clamped to the audio trim before alignment, preserving recognised edge words when model times overshoot by a few milliseconds. Diarization uses the same complete trim, so unrelated voices outside it do not affect speaker clustering.
 - English uses the larger `WAV2VEC2_ASR_LARGE_LV60K_960H` alignment model; other languages use WhisperX's language-specific defaults.
 - Align nearby sentences together in bounded windows, with up to one second of analysis context inside the trim. This is not playback padding: output segments start and end at the aligned words.
 - Assign each aligned word by greatest temporal overlap with Community-1's exclusive timeline, then split at speaker changes, sentence ends and long gaps. Do not smooth away short replies or guess speakers for words without overlap.
