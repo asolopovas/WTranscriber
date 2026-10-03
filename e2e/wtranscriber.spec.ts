@@ -420,16 +420,16 @@ test("edits a completed segment and plays only its audio range", async ({ page }
   await expect(page.getByText("Corrected opening remarks.", { exact: true })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "Saved to .txt" })).toBeVisible();
   await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
-  await expect
-    .poll(() => page.locator("audio").evaluate((element: HTMLAudioElement) => element.currentTime))
-    .toBeGreaterThanOrEqual(2);
+  await expect.poll(() => commandCount(page, "read_audio_segment")).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole("button", { name: "Stop segment 2", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Play segment 2", exact: true })).toBeVisible();
   const stopped = await page.locator("audio").evaluate((element: HTMLAudioElement) => ({
     paused: element.paused,
     time: element.currentTime,
   }));
   expect(stopped.paused).toBe(true);
-  expect(stopped.time).toBeLessThan(4.5);
+  expect(stopped.time).toBeLessThanOrEqual(2.01);
+  expect(await commandCount(page, "read_audio_bytes")).toBe(0);
   await page.screenshot({ path: testInfo.outputPath("transcript-desktop.png") });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath("transcript-mobile.png") });

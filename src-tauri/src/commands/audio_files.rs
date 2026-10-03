@@ -80,6 +80,19 @@ pub async fn read_audio_bytes(path: PathBuf) -> Result<tauri::ipc::Response> {
     .map_err(|e| Error::Transcribe(format!("read_audio_bytes join: {e}")))?
 }
 
+#[tauri::command]
+pub async fn read_audio_segment(
+    path: PathBuf,
+    start_ms: u64,
+    end_ms: u64,
+) -> Result<tauri::ipc::Response> {
+    tokio::task::spawn_blocking(move || {
+        audio::playback_segment(&path, start_ms, end_ms).map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| Error::Transcribe(format!("read_audio_segment join: {e}")))?
+}
+
 fn safe_filename(filename: &str) -> String {
     filename
         .chars()

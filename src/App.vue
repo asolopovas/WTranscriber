@@ -990,7 +990,7 @@ const selectedProgress = computed(() =>
 
           <TranscriptPanel
             v-if="transcript"
-            :key="selectedPath"
+            :key="`${selectedPath}:${selectedEntry?.modified_ms}:${selectedEntry?.size_bytes}`"
             :transcript="transcript"
             :source-path="selectedPath"
             :cache-key="selectedEntry?.cache_key ?? null"

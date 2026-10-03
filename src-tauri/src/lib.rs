@@ -219,6 +219,7 @@ pub fn run() {
             commands::files::add_to_workdir,
             commands::audio_files::save_recording,
             commands::audio_files::read_audio_bytes,
+            commands::audio_files::read_audio_segment,
             commands::diagnostics::history_load,
             commands::diagnostics::rename_speaker,
             commands::diagnostics::update_transcript_text,

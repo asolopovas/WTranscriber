@@ -8,7 +8,7 @@ vi.mock("@/api", () => ({
   api: {
     renameSpeaker: vi.fn(),
     updateTranscriptText: vi.fn(),
-    readAudioBytes: vi.fn(),
+    readAudioSegment: vi.fn(),
     formatTranscript: vi.fn(),
   },
 }));
@@ -35,8 +35,9 @@ function open() {
 beforeEach(() => {
   vi.resetAllMocks();
   frames = [];
-  vi.mocked(api.readAudioBytes).mockResolvedValue(new ArrayBuffer(0));
+  vi.mocked(api.readAudioSegment).mockResolvedValue(new ArrayBuffer(0));
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(4);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -95,25 +96,26 @@ describe("TranscriptPanel", () => {
     );
     expect(wrapper.find("textarea").exists()).toBe(false);
   });
-  it("uses absolute segment times, stops at the end, and reuses the audio blob", async () => {
+  it("requests the original range, plays a bounded WAV, and reuses cached fragments", async () => {
     open();
     await wrapper.get('[title="Play segment 2"]').trigger("click");
     await flushPromises();
     const audio = wrapper.get("audio").element as HTMLAudioElement;
-    expect(audio.currentTime).toBe(3);
-    audio.currentTime = 4;
+    expect(api.readAudioSegment).toHaveBeenCalledWith("/audio.wav", 3000, 4000);
+    expect(audio.currentTime).toBe(0);
+    audio.currentTime = 1;
     frames[frames.length - 1]?.(0);
     await flushPromises();
     expect(wrapper.find('[title="Play segment 2"]').exists()).toBe(true);
     expect(audio.pause).toHaveBeenCalled();
     await wrapper.get('[title="Play segment 1"]').trigger("click");
     await flushPromises();
-    expect(audio.currentTime).toBe(1);
-    expect(api.readAudioBytes).toHaveBeenCalledTimes(1);
+    expect((wrapper.get("audio").element as HTMLAudioElement).currentTime).toBe(0);
+    expect(api.readAudioSegment).toHaveBeenCalledTimes(2);
   });
   it("ignores a pending audio read after the viewer closes", async () => {
     let resolve!: (value: ArrayBuffer) => void;
-    vi.mocked(api.readAudioBytes).mockReturnValue(
+    vi.mocked(api.readAudioSegment).mockReturnValue(
       new Promise((done) => {
         resolve = done;
       }),
@@ -125,5 +127,18 @@ describe("TranscriptPanel", () => {
     await flushPromises();
     expect(URL.createObjectURL).not.toHaveBeenCalled();
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+  });
+
+  it("ignores initial time updates and waits for canplay before starting", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(0);
+    open();
+    await wrapper.get('[title="Play segment 1"]').trigger("click");
+    await flushPromises();
+    await wrapper.get("audio").trigger("timeupdate");
+    expect(wrapper.find('[title="Stop segment 1"]').exists()).toBe(true);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    await wrapper.get("audio").trigger("canplay");
+    await flushPromises();
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
   });
 });

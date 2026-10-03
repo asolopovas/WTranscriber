@@ -18,7 +18,11 @@ const I16_SCALE: f32 = 1.0 / i16::MAX as f32;
 
 pub fn read_pcm16_wav(path: &Path) -> Result<Vec<f32>> {
     let mut r = BufReader::new(File::open(path)?);
+    let size = pcm_data_size(&mut r)?;
+    stream_pcm_to_f32(&mut r, size as usize / 2)
+}
 
+fn pcm_data_size(r: &mut (impl Read + Seek)) -> Result<u32> {
     let mut header = [0u8; 12];
     r.read_exact(&mut header)?;
     if &header[0..4] != b"RIFF" {
@@ -91,8 +95,7 @@ pub fn read_pcm16_wav(path: &Path) -> Result<Vec<f32>> {
                 if bits != 16 {
                     return Err(Error::Transcribe(format!("not 16-bit: {bits}")));
                 }
-                let count = (size as usize) / 2;
-                return stream_pcm_to_f32(&mut r, count);
+                return Ok(size);
             }
             _ => {
                 let skip = i64::from(size) + i64::from(size % 2);
@@ -131,10 +134,23 @@ pub fn write_pcm16_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result
     fs_utils::ensure_parent_dir(path)?;
     let mut w = BufWriter::with_capacity(256 * 1024, File::create(path)?);
 
+    let data_size = u32::try_from(samples.len() * 2).unwrap_or(u32::MAX);
+    write_pcm_header(&mut w, sample_rate, data_size)?;
+
+    for s in samples {
+        let v = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        w.write_all(&v.to_le_bytes())?;
+    }
+    w.flush()?;
+    Ok(())
+}
+
+fn write_pcm_header(w: &mut impl Write, sample_rate: u32, data_size: u32) -> Result<()> {
     let byte_rate = sample_rate * u32::from(CHANNELS) * u32::from(BITS) / 8;
     let block_align = CHANNELS * BITS / 8;
-    let data_size = u32::try_from(samples.len() * 2).unwrap_or(u32::MAX);
-    let chunk_size = 36 + data_size;
+    let chunk_size = data_size
+        .checked_add(36)
+        .ok_or_else(|| Error::Transcribe("audio fragment is too large".into()))?;
 
     w.write_all(b"RIFF")?;
     w.write_all(&chunk_size.to_le_bytes())?;
@@ -149,12 +165,40 @@ pub fn write_pcm16_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result
     w.write_all(b"data")?;
     w.write_all(&data_size.to_le_bytes())?;
 
-    for s in samples {
-        let v = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
-        w.write_all(&v.to_le_bytes())?;
-    }
-    w.flush()?;
     Ok(())
+}
+
+pub(super) fn read_pcm16_wav_segment(path: &Path, start_ms: u64, end_ms: u64) -> Result<Vec<u8>> {
+    if end_ms <= start_ms {
+        return Err(Error::Config(
+            "audio segment end must follow its start".into(),
+        ));
+    }
+    let mut reader = BufReader::new(File::open(path)?);
+    let declared_size = u64::from(pcm_data_size(&mut reader)?);
+    let data_start = reader.stream_position()?;
+    let available = reader
+        .get_ref()
+        .metadata()?
+        .len()
+        .saturating_sub(data_start)
+        .min(declared_size);
+    let frames = available / 2;
+    let start = (start_ms.saturating_mul(u64::from(WHISPER_SAMPLE_RATE)) / 1000).min(frames);
+    let end = (end_ms.saturating_mul(u64::from(WHISPER_SAMPLE_RATE)) / 1000).min(frames);
+    if end <= start {
+        return Err(Error::Config(
+            "audio segment is outside the recording".into(),
+        ));
+    }
+    let size = u32::try_from((end - start) * 2)
+        .map_err(|_| Error::Config("audio fragment is too large".into()))?;
+    let mut bytes = Vec::with_capacity(size as usize + 44);
+    write_pcm_header(&mut bytes, WHISPER_SAMPLE_RATE, size)?;
+    reader.seek(SeekFrom::Start(data_start + start * 2))?;
+    bytes.resize(size as usize + 44, 0);
+    reader.read_exact(&mut bytes[44..])?;
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -199,5 +243,55 @@ mod tests {
         assert!((read[0] - 1.0).abs() < 1e-3);
         assert!((read[1] - -1.0).abs() < 1e-3);
         assert!(read[2].abs() < 1e-3);
+    }
+    #[test]
+    fn extracts_only_requested_samples_as_a_complete_wav() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.wav");
+        let mut samples = vec![-0.5; 16000];
+        samples.extend(vec![0.5; 16000]);
+        write_pcm16_wav(&source, &samples, WHISPER_SAMPLE_RATE).unwrap();
+        let bytes = read_pcm16_wav_segment(&source, 900, 1100).unwrap();
+        assert_eq!(&bytes[..4], b"RIFF");
+        assert_eq!(bytes.len(), 44 + 3200 * 2);
+        let fragment = dir.path().join("fragment.wav");
+        std::fs::write(&fragment, bytes).unwrap();
+        let decoded = read_pcm16_wav(&fragment).unwrap();
+        assert_eq!(decoded.len(), 3200);
+        assert!(decoded[..1600].iter().all(|value| *value < -0.49));
+        assert!(decoded[1600..].iter().all(|value| *value > 0.49));
+    }
+
+    #[test]
+    fn clips_to_track_end_and_rejects_empty_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.wav");
+        write_pcm16_wav(&source, &vec![0.25; 16000], WHISPER_SAMPLE_RATE).unwrap();
+        assert_eq!(
+            read_pcm16_wav_segment(&source, 900, 2000).unwrap().len(),
+            44 + 1600 * 2
+        );
+        assert!(read_pcm16_wav_segment(&source, 1000, 2000).is_err());
+        assert!(read_pcm16_wav_segment(&source, 500, 400).is_err());
+        assert!(read_pcm16_wav_segment(&source, 500, 500).is_err());
+    }
+
+    #[test]
+    fn extracts_audio_after_extra_padded_riff_chunks() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.wav");
+        write_pcm16_wav(&source, &vec![0.25; 16000], WHISPER_SAMPLE_RATE).unwrap();
+        let mut bytes = std::fs::read(&source).unwrap();
+        let mut junk = b"JUNK".to_vec();
+        junk.extend(3_u32.to_le_bytes());
+        junk.extend([1, 2, 3, 0]);
+        bytes.splice(36..36, junk);
+        let riff_size = u32::try_from(bytes.len() - 8).unwrap();
+        bytes[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        std::fs::write(&source, bytes).unwrap();
+        assert_eq!(
+            read_pcm16_wav_segment(&source, 0, 100).unwrap().len(),
+            44 + 1600 * 2
+        );
     }
 }

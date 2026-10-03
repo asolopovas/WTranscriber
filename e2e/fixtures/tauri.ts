@@ -150,8 +150,8 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
         },
       });
 
-      function silentWav() {
-        const data = new Uint8Array(60 * 16000 * 2 + 44);
+      function silentWav(seconds = 60) {
+        const data = new Uint8Array(Math.round(seconds * 16000) * 2 + 44);
         const view = new DataView(data.buffer);
         for (const [offset, text] of [
           [0, "RIFF"],
@@ -245,6 +245,8 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
           return structuredClone(seedTranscript);
         },
         read_audio_bytes: () => silentWav(),
+        read_audio_segment: ({ startMs, endMs }) =>
+          silentWav((Number(endMs) - Number(startMs)) / 1000),
         probe_audio: () => 60000,
         load_audio_meta: ({ path }) =>
           audioMeta.get(String(path)) ?? { trim_start_ms: 0, trim_end_ms: null, duration_ms: null },

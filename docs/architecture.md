@@ -58,6 +58,8 @@ Trim-editor saves are non-destructive. Duration probes and trim changes update t
 
 Completed transcripts persist as `.meta/<audio filename>.transcript.json`, with `<audio filename>.txt` beside the recording. Completion, re-diarization, segment edits, and speaker renames synchronise the text file. The local JSON remains available after clearing the disposable transcript cache. Recording renames move both files and trim metadata. Transcript playback uses original-recording timestamps; edited text keeps the segment's original time range rather than inventing word timings.
 
+Fragment playback reads only the requested time range from a native-decoded mono PCM WAV cache, returning a standalone WAV through binary IPC. The WebView keeps at most eight fragments within an 8 MiB cache, preloads the first and next segments, and waits for `canplay` before starting at fragment time zero. Changing source size or modification time remounts the player; the native cache key also tracks these values. Native decoding publishes complete files atomically to prevent playback from reading a partially written cache file. Media failures retain the decoder's error code and message for diagnosis.
+
 - Rust edition 2024; use current idioms such as `LazyLock` and `let-else`.
 - No comments in code. Prefer clearer names, smaller functions, tests, and docs.
 - No `sleep` in scripts; poll with bounded timeouts.

@@ -131,6 +131,8 @@ export const api = {
     ),
   readAudioBytes: (path: string) =>
     invokeParsed<ArrayBuffer>("read_audio_bytes", ArrayBufferSchema, { path }),
+  readAudioSegment: (path: string, startMs: number, endMs: number) =>
+    invokeParsed<ArrayBuffer>("read_audio_segment", ArrayBufferSchema, { path, startMs, endMs }),
   logRenderer: (payload: {
     level: "error" | "warn" | "info";
     message: string;

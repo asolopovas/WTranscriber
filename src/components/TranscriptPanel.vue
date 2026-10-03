@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Transcript } from "@/types";
 import { api } from "@/api";
-import { audioMimeType } from "@utils/audio";
+import {
+  createAudioSegmentCache,
+  mediaErrorMessage,
+  waitForPlayableAudio,
+} from "@utils/audioSegmentCache";
 import { copyTextToClipboard } from "@utils/clipboard";
 import { fmtMs as fmt } from "@utils/format";
 import { fieldClass } from "@styles/fields";
@@ -113,18 +117,28 @@ const audio = ref<HTMLAudioElement | null>(null);
 const audioSrc = ref("");
 const activeSegment = ref<number | null>(null);
 const audioLoading = ref(false);
-let loadingAudio: Promise<void> | null = null;
+const fragments = createAudioSegmentCache((start, end) =>
+  api.readAudioSegment(props.sourcePath, start, end),
+);
+let playbackAbort: AbortController | null = null;
 let playRequest = 0;
 let frame: number | null = null;
 let segmentEndMs = 0;
 
 function checkPlaybackBoundary() {
-  if (activeSegment.value !== null && audio.value && audio.value.currentTime * 1000 >= segmentEndMs)
+  if (
+    !audioLoading.value &&
+    activeSegment.value !== null &&
+    audio.value &&
+    audio.value.currentTime * 1000 >= segmentEndMs
+  )
     stopPlayback();
 }
 
 function stopPlayback() {
   playRequest += 1;
+  playbackAbort?.abort();
+  playbackAbort = null;
   audio.value?.pause();
   activeSegment.value = null;
   audioLoading.value = false;
@@ -132,22 +146,20 @@ function stopPlayback() {
   frame = null;
 }
 
-async function ensureAudio() {
-  if (audioSrc.value) return;
-  if (!loadingAudio) {
-    loadingAudio = (async () => {
-      const bytes = await api.readAudioBytes(props.sourcePath);
-      if (disposed) return;
-      audioSrc.value = URL.createObjectURL(
-        new Blob([new Uint8Array(bytes)], { type: audioMimeType(props.sourcePath) }),
-      );
-      await nextTick();
-    })().finally(() => {
-      loadingAudio = null;
-    });
-  }
-  await loadingAudio;
+function segmentRange(index: number) {
+  const segment = props.transcript.utterances[index];
+  const end = Math.floor(Math.min(segment.end_ms, props.transcript.duration_ms));
+  const start = Math.floor(Math.max(0, Math.min(segment.start_ms, end)));
+  return { start, end };
 }
+
+function prefetch(index: number) {
+  if (disposed || !props.transcript.utterances[index]) return;
+  const { start, end } = segmentRange(index);
+  if (end > start) void fragments.load(start, end).catch(() => {});
+}
+
+onMounted(() => prefetch(0));
 
 async function playSegment(index: number) {
   if (activeSegment.value === index) {
@@ -160,19 +172,28 @@ async function playSegment(index: number) {
   audioLoading.value = true;
   localError.value = null;
   try {
-    await ensureAudio();
-    if (disposed || request !== playRequest || !audio.value) return;
-    const segment = props.transcript.utterances[index];
-    const endMs = Math.min(segment.end_ms, props.transcript.duration_ms);
-    const startMs = Math.max(0, Math.min(segment.start_ms, endMs));
-    if (endMs <= startMs) {
+    const { start, end } = segmentRange(index);
+    if (end <= start) {
       stopPlayback();
       return;
     }
-    segmentEndMs = endMs;
-    audio.value.currentTime = startMs / 1000;
-    await audio.value.play();
+    const blob = await fragments.load(start, end);
     if (disposed || request !== playRequest) return;
+    const oldSrc = audioSrc.value;
+    audioSrc.value = URL.createObjectURL(blob);
+    await nextTick();
+    if (oldSrc) URL.revokeObjectURL(oldSrc);
+    if (disposed || request !== playRequest || !audio.value) return;
+    const element = audio.value;
+    playbackAbort = new AbortController();
+    await waitForPlayableAudio(element, playbackAbort.signal);
+    if (disposed || request !== playRequest) return;
+    const endMs = end - start;
+    segmentEndMs = endMs;
+    element.currentTime = 0;
+    await element.play();
+    if (disposed || request !== playRequest) return;
+    prefetch(index + 1);
     const tick = () => {
       if (!audio.value || request !== playRequest) return;
       if (audio.value.currentTime * 1000 >= endMs || audio.value.ended) {
@@ -192,17 +213,22 @@ async function playSegment(index: number) {
   }
 }
 
-function audioError() {
+function audioEnded(event: Event) {
+  if (event.target === audio.value) stopPlayback();
+}
+
+function audioError(event: Event) {
+  const element = event.target as HTMLAudioElement;
+  if (disposed || element !== audio.value || activeSegment.value === null) return;
+  const message = mediaErrorMessage(element);
+  console.error(message);
   stopPlayback();
-  audioLoading.value = false;
-  localError.value =
-    "Could not play this recording. Check that the source audio is available and try again.";
-  if (audioSrc.value) URL.revokeObjectURL(audioSrc.value);
-  audioSrc.value = "";
+  localError.value = message;
 }
 
 onBeforeUnmount(() => {
   disposed = true;
+  fragments.clear();
   stopPlayback();
   if (audioSrc.value) URL.revokeObjectURL(audioSrc.value);
 });
@@ -261,10 +287,12 @@ async function copyTranscript() {
     <ErrorBanner v-if="localError && !speaker">{{ localError }}</ErrorBanner>
     <audio
       v-if="audioSrc"
+      :key="audioSrc"
       ref="audio"
       :src="audioSrc"
+      preload="auto"
       class="hidden"
-      @ended="stopPlayback"
+      @ended="audioEnded"
       @timeupdate="checkPlaybackBoundary"
       @error="audioError"
     ></audio>
