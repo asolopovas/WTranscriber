@@ -102,6 +102,11 @@ pub fn list(path: &Path) -> Result<DirListing> {
                     duration_ms = m.duration_ms;
                 }
             }
+            if let Ok(Some(saved)) = crate::transcriber::saved::load(&path) {
+                cache_key = Some(saved.key);
+                utterances = Some(saved.transcript.utterances.len());
+                duration_ms = Some(saved.transcript.duration_ms);
+            }
         }
 
         entries.push(DirEntry {

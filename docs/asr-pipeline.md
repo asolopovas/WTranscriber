@@ -15,7 +15,9 @@
 5. Dedup — per-segment and cross-segment token collapse against whisper repetition loops (`job/postprocess.rs`, `dedup.rs`).
 6. Partial save/resume — atomic per-slab snapshots (`transcriber/partial.rs`); resume skips below `resume_floor`.
 7. Diarization + merge — per-word speaker lookup, flicker smoothing, sentence grouping (`transcriber/transcript/`).
-8. Cache store and JSON export.
+8. Cache store, durable `.meta` transcript, and adjacent text export.
+
+Postprocessing also handles phrase-sized Whisper tokens and tokenless segment loops. Three or more low-confidence copies within 30 seconds can collapse to the first copy, retaining intervening text; isolated and distant repetitions remain. This is a heuristic, not a claim about what was spoken. Previously saved transcripts are kept intact, and the revised cache-key version forces a fresh run when transcription is explicitly requested again.
 
 Diarization receives the same requested/resolved device. Sortformer selects CUDA in CUDA builds and honours explicit CPU selection; TitaNet selects the supported ONNX provider for both segmentation and embedding. GPU initialisation errors retry on CPU before reporting failure. Small VAD and language probes stay on CPU to avoid unnecessary GPU transfers and session overhead.
 

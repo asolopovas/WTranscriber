@@ -5,6 +5,17 @@ use crate::transcriber::{
 
 pub(super) fn apply_dedup(segments: &mut Vec<Segment>) {
     for seg in segments.iter_mut() {
+        let mut phrase_changed = false;
+        for token in &mut seg.tokens {
+            if token.text.split_whitespace().count() > 1 {
+                let text = dedup::collapse_in_text(&token.text);
+                phrase_changed |= text != token.text;
+                token.text = text;
+            }
+        }
+        if phrase_changed {
+            rebuild_from_tokens(seg);
+        }
         if seg.tokens.len() >= 2 {
             let before = seg.tokens.len();
             let collapsed = dedup::collapse_repeats(&seg.tokens);
@@ -18,7 +29,33 @@ pub(super) fn apply_dedup(segments: &mut Vec<Segment>) {
         }
     }
     collapse_across_segments(segments);
+    collapse_tokenless_segments(segments);
     segments.retain(|s| !s.tokens.is_empty() || !s.text.trim().is_empty());
+}
+
+fn collapse_tokenless_segments(segments: &mut [Segment]) {
+    let tokens: Vec<Token> = segments
+        .iter()
+        .map(|seg| Token {
+            text: seg.text.clone(),
+            start_ms: seg.start_ms,
+            end_ms: seg.end_ms,
+            confidence: 0.0,
+        })
+        .collect();
+    let kept = dedup::collapse_phrase_loops(&tokens);
+    let mut next = kept.iter().peekable();
+    for (seg, token) in segments.iter_mut().zip(&tokens) {
+        if next.peek().is_some_and(|kept| {
+            kept.start_ms == token.start_ms
+                && kept.end_ms == token.end_ms
+                && kept.text == token.text
+        }) {
+            next.next();
+        } else if seg.tokens.is_empty() {
+            seg.text.clear();
+        }
+    }
 }
 
 fn collapse_across_segments(segments: &mut [Segment]) {
@@ -29,7 +66,9 @@ fn collapse_across_segments(segments: &mut [Segment]) {
     if flat.len() < 2 {
         return;
     }
-    let collapsed = dedup::collapse_bridged_repeats(&dedup::collapse_repeats(&flat));
+    let collapsed = dedup::collapse_phrase_loops(&dedup::collapse_bridged_repeats(
+        &dedup::collapse_repeats(&flat),
+    ));
     if collapsed.len() == flat.len() {
         return;
     }
@@ -254,5 +293,80 @@ mod tests {
             "dedup should leave at most one 'hello' run, got {:?}",
             segs[0].text
         );
+    }
+    #[test]
+    fn collapses_sentence_token_loops_with_short_bridges() {
+        let mut segments = vec![
+            seg(
+                "What the hell?",
+                1000,
+                4000,
+                vec![tok("What the hell?", 1000, 4000)],
+            ),
+            seg(
+                "What the hell?",
+                11000,
+                15000,
+                vec![tok("What the hell?", 11000, 15000)],
+            ),
+            seg(
+                "What the hell?",
+                15000,
+                17000,
+                vec![tok("What the hell?", 15000, 17000)],
+            ),
+            seg(
+                "This is not the end.",
+                17000,
+                20000,
+                vec![tok("This is not the end.", 17000, 20000)],
+            ),
+            seg(
+                "What the hell?",
+                20000,
+                26000,
+                vec![tok("What the hell?", 20000, 26000)],
+            ),
+        ];
+        for segment in &mut segments {
+            for token in &mut segment.tokens {
+                token.confidence = 0.0;
+            }
+        }
+        apply_dedup(&mut segments);
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "What the hell?");
+        assert_eq!(segments[0].start_ms, 1000);
+        assert_eq!(segments[1].text, "This is not the end.");
+    }
+
+    #[test]
+    fn keeps_isolated_and_distant_sentence_repetition() {
+        let mut segments = vec![
+            seg("What the hell?", 1000, 2000, vec![]),
+            seg("What the hell?", 3000, 4000, vec![]),
+            seg("What the hell?", 90000, 92000, vec![]),
+        ];
+        apply_dedup(&mut segments);
+        assert_eq!(segments.len(), 3);
+    }
+
+    #[test]
+    fn handles_repetition_inside_a_single_sentence_token_and_tokenless_loops() {
+        let mut segments = vec![seg(
+            "What the hell? What the hell? What the hell?",
+            0,
+            9000,
+            vec![tok("What the hell? What the hell? What the hell?", 0, 9000)],
+        )];
+        apply_dedup(&mut segments);
+        assert_eq!(segments[0].text, "What the hell?");
+        let mut segments = vec![
+            seg("What the hell?", 0, 1000, vec![]),
+            seg("What the hell?", 1000, 2000, vec![]),
+            seg("What the hell?", 2000, 3000, vec![]),
+        ];
+        apply_dedup(&mut segments);
+        assert_eq!(segments.len(), 1);
     }
 }

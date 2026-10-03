@@ -69,8 +69,6 @@ export const api = {
     invokeParsed<AudioMeta>("load_audio_meta", AudioMetaSchema, { path }),
   saveAudioMeta: (path: string, meta: AudioMeta) =>
     invoke<void>("save_audio_meta", { path, meta: AudioMetaSchema.parse(meta) }),
-  applyTrim: (path: string) =>
-    invokeParsed<number | null>("apply_trim", NullableNumberSchema, { path }),
   transcribeFile: (input: string, config: Config) =>
     invokeParsed<Transcript>("transcribe_file", TranscriptSchema, {
       input,
@@ -84,10 +82,17 @@ export const api = {
     }),
   cancelTranscribe: (input: string) =>
     invokeParsed<boolean>("cancel_transcribe", BooleanSchema, { input }),
-  historyLoad: (key: string) =>
-    invokeParsed<Transcript | null>("history_load", NullableTranscriptSchema, { key }),
-  renameSpeaker: (key: string, old: string, name: string) =>
-    invokeParsed<Transcript>("rename_speaker", TranscriptSchema, { key, old, new: name }),
+  historyLoad: (key: string, input?: string) =>
+    invokeParsed<Transcript | null>("history_load", NullableTranscriptSchema, { key, input }),
+  renameSpeaker: (key: string, old: string, name: string, input?: string) =>
+    invokeParsed<Transcript>("rename_speaker", TranscriptSchema, { key, old, new: name, input }),
+  updateTranscriptText: (key: string, input: string, index: number, text: string) =>
+    invokeParsed<Transcript>("update_transcript_text", TranscriptSchema, {
+      key,
+      input,
+      index,
+      text,
+    }),
   suggestFilename: (transcript: Transcript) =>
     invokeParsed<Suggestion>("suggest_filename", SuggestionSchema, {
       transcript: TranscriptSchema.parse(transcript),

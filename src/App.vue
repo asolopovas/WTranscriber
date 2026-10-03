@@ -330,16 +330,6 @@ async function onRecordingSaved(path: string) {
   error.value = null;
 }
 
-async function onRenameSpeaker(payload: { old: string; name: string }) {
-  const key = selectedEntry.value?.cache_key;
-  if (!key || !transcript.value) return;
-  try {
-    transcript.value = await api.renameSpeaker(key, payload.old, payload.name);
-  } catch (e) {
-    error.value = `rename speaker failed: ${String(e)}`;
-  }
-}
-
 function closeTranscript() {
   transcript.value = null;
   selectedPath.value = "";
@@ -359,13 +349,13 @@ function viewEntry(entry: DirEntry) {
     transcript.value = null;
     error.value = null;
   }
-  if (entry.cache_key) void loadCached(entry.cache_key);
+  if (entry.cache_key) void loadCached(entry.cache_key, entry.path);
 }
 
-async function loadCached(key: string) {
+async function loadCached(key: string, path: string) {
   try {
-    const t = await api.historyLoad(key);
-    if (t) transcript.value = t;
+    const t = await api.historyLoad(key, path);
+    if (t && selectedPath.value === path) transcript.value = t;
   } catch (e) {
     error.value = String(e);
   }
@@ -607,7 +597,7 @@ async function autoRename(entry?: DirEntry, opts?: { silent?: boolean; transcrip
   autoRenamingPath.value = target.path;
   try {
     let t = opts?.transcript ?? (selectedPath.value === target.path ? transcript.value : null);
-    if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
+    if (!t && target.cache_key) t = await api.historyLoad(target.cache_key, target.path);
     if (!t) {
       if (!opts?.silent) {
         await message("Transcribe first to enable auto-rename.", {
@@ -767,7 +757,7 @@ async function onTrimSaved(payload?: {
 async function loadTranscriptFor(target: DirEntry): Promise<Transcript | null> {
   let t = transcript.value;
   if (!t || (selectedEntry.value && selectedEntry.value.path !== target.path)) {
-    if (target.cache_key) t = await api.historyLoad(target.cache_key);
+    if (target.cache_key) t = await api.historyLoad(target.cache_key, target.path);
   }
   return t ?? null;
 }
@@ -1000,10 +990,12 @@ const selectedProgress = computed(() =>
 
           <TranscriptPanel
             v-if="transcript"
+            :key="selectedPath"
             :transcript="transcript"
+            :source-path="selectedPath"
             :cache-key="selectedEntry?.cache_key ?? null"
             @close="closeTranscript"
-            @rename-speaker="onRenameSpeaker"
+            @updated="(value) => (transcript = value)"
           />
         </section>
 
@@ -1052,7 +1044,7 @@ const selectedProgress = computed(() =>
     />
     <TrimDialog
       :target="trimTarget"
-      @close="trimTarget = null"
+      @close="onTrimSaved()"
       @saved="onTrimSaved"
       @error="(msg) => (error = msg)"
     />

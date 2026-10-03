@@ -22,11 +22,7 @@ pub async fn probe_duration(path: PathBuf) -> Option<u64> {
     tokio::task::spawn_blocking(move || {
         let ms = audio::probe_duration_ms(&path)?;
         if path.exists() {
-            let mut meta = audio::meta::load(&path).unwrap_or_default();
-            if meta.duration_ms != Some(ms) {
-                meta.duration_ms = Some(ms);
-                let _ = audio::meta::save(&path, &meta);
-            }
+            let _ = audio::meta::update_duration(&path, ms);
         }
         Some(ms)
     })
@@ -43,13 +39,13 @@ pub async fn audio_waveform(path: PathBuf, bins: usize) -> Result<Vec<f32>> {
 }
 
 #[tauri::command]
-pub fn load_audio_meta(path: PathBuf) -> audio::AudioMeta {
-    audio::meta::load(&path).unwrap_or_default()
+pub fn load_audio_meta(path: PathBuf) -> Result<audio::AudioMeta> {
+    Ok(audio::meta::load_checked(&path)?.unwrap_or_default())
 }
 
 #[tauri::command]
 pub fn save_audio_meta(path: PathBuf, meta: audio::AudioMeta) -> Result<()> {
-    audio::meta::save(&path, &meta)
+    audio::meta::save_trim(&path, &meta)
 }
 
 #[tauri::command]

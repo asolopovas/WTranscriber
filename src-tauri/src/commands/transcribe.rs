@@ -781,7 +781,7 @@ async fn redo_diarization_inner(
     sink: Arc<TranscribeSink>,
 ) -> Result<Transcript> {
     tokio::task::spawn_blocking(move || -> Result<Transcript> {
-        let cached = cache::load(&old_cache_key)?
+        let cached = transcriber::saved::load_for_key(&old_cache_key, Some(&input))?
             .ok_or_else(|| Error::Config("no cached transcript to re-diarize".into()))?;
         if sink.is_cancelled() {
             return Err(Error::Cancelled);
@@ -814,7 +814,7 @@ async fn redo_diarization_inner(
             return Err(Error::Cancelled);
         }
         sink.phase(Phase::Writing);
-        let trim = audio::meta::load(&input).unwrap_or_default();
+        let trim = audio::meta::load_checked(&input)?.unwrap_or_default();
         let key_params = cache::build_key_params(
             &input,
             cache::KeyOptions {

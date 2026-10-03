@@ -67,8 +67,19 @@ pub async fn run_with_sink(job: &Job, sink: Arc<dyn Sink>) -> Result<Transcript>
         .map_err(|e| crate::error::Error::Transcribe(format!("task: {e}")))?
 }
 
-fn try_serve_from_cache(key: &str, config: &Config, sink: &dyn Sink) -> Result<Option<Transcript>> {
-    let Some(cached) = cache::load(key)? else {
+fn try_serve_from_cache(
+    key: &str,
+    input: &Path,
+    config: &Config,
+    sink: &dyn Sink,
+) -> Result<Option<Transcript>> {
+    let saved = super::saved::load(input)?.filter(|saved| saved.key == key);
+    let cached = if let Some(saved) = saved {
+        Some(saved.transcript)
+    } else {
+        cache::load(key)?
+    };
+    let Some(cached) = cached else {
         return Ok(None);
     };
     if config.diarize && cached.speakers_detected == 0 {
@@ -91,7 +102,7 @@ fn try_serve_from_cache(key: &str, config: &Config, sink: &dyn Sink) -> Result<O
 fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transcript> {
     sink.phase(Phase::CacheCheck);
     let speakers = config.speakers.unwrap_or(0);
-    let trim = audio::meta::load(input).unwrap_or_default();
+    let trim = audio::meta::load_checked(input)?.unwrap_or_default();
     let key_params = build_key_params(
         input,
         KeyOptions {
@@ -110,7 +121,8 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     engine::preflight(config)?;
     let _engine_guard = EngineShutdown;
 
-    if let Some(cached) = try_serve_from_cache(&key, config, sink)? {
+    if let Some(cached) = try_serve_from_cache(&key, input, config, sink)? {
+        super::saved::store(&key, input, &cached)?;
         return Ok(cached);
     }
     if sink.is_cancelled() {

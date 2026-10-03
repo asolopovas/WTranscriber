@@ -17,6 +17,25 @@ const emit = defineEmits<{ (e: "close"): void }>();
 function onBackdrop() {
   emit("close");
 }
+
+function trapFocus(event: KeyboardEvent) {
+  const dialog = (event.currentTarget as HTMLElement).querySelector('[role="dialog"]');
+  const controls = Array.from(
+    dialog?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]',
+    ) ?? [],
+  ).filter((element) => element.getClientRects().length > 0);
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (!first || !last) return;
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
 </script>
 
 <template>
@@ -31,12 +50,14 @@ function onBackdrop() {
       class="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-margin"
       @click.self="backdropClose && onBackdrop()"
       @keydown.escape="backdropClose && emit('close')"
+      @keydown.tab="trapFocus"
     >
       <div
         class="bg-surface-container rounded-xl border border-outline-variant/40 w-full max-w-[90vw] flex flex-col overflow-hidden shadow-2xl"
         :style="{ maxWidth: width }"
         role="dialog"
         aria-modal="true"
+        :aria-label="title"
       >
         <header
           v-if="title || showClose || $slots.header"

@@ -1,11 +1,20 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
+    sync::{Mutex, MutexGuard},
 };
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+
+static META_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    META_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[allow(clippy::struct_field_names)]
@@ -43,15 +52,45 @@ fn legacy_meta_path(audio: &Path) -> PathBuf {
 }
 
 pub fn load(audio: &Path) -> Option<AudioMeta> {
-    let p = meta_path(audio);
-    let raw = match std::fs::read_to_string(&p) {
+    load_checked(audio).ok().flatten()
+}
+
+pub fn load_checked(audio: &Path) -> Result<Option<AudioMeta>> {
+    let _guard = lock();
+    load_unlocked(audio)
+}
+
+fn load_unlocked(audio: &Path) -> Result<Option<AudioMeta>> {
+    let raw = match std::fs::read_to_string(meta_path(audio)) {
         Ok(raw) => raw,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::read_to_string(legacy_meta_path(audio)).ok()?
+            match std::fs::read_to_string(legacy_meta_path(audio)) {
+                Ok(raw) => raw,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(err) => return Err(err.into()),
+            }
         }
-        Err(_) => return None,
+        Err(err) => return Err(err.into()),
     };
-    serde_json::from_str(&raw).ok()
+    Ok(Some(serde_json::from_str(&raw)?))
+}
+
+pub fn update_duration(audio: &Path, duration_ms: u64) -> Result<()> {
+    let _guard = lock();
+    let mut meta = load_unlocked(audio)?.unwrap_or_default();
+    if meta.duration_ms != Some(duration_ms) {
+        meta.duration_ms = Some(duration_ms);
+        save_unlocked(audio, &meta)?;
+    }
+    Ok(())
+}
+
+pub fn save_trim(audio: &Path, trim: &AudioMeta) -> Result<()> {
+    let _guard = lock();
+    let mut meta = load_unlocked(audio)?.unwrap_or_default();
+    meta.trim_start_ms = trim.trim_start_ms;
+    meta.trim_end_ms = trim.trim_end_ms;
+    save_unlocked(audio, &meta)
 }
 
 fn remove_if_exists(path: &Path) -> Result<()> {
@@ -63,6 +102,7 @@ fn remove_if_exists(path: &Path) -> Result<()> {
 }
 
 pub fn rename(source: &Path, destination: &Path) -> Result<()> {
+    let _guard = lock();
     let cached = meta_path(source);
     let legacy = legacy_meta_path(source);
     let from = if cached.exists() { &cached } else { &legacy };
@@ -76,6 +116,11 @@ pub fn rename(source: &Path, destination: &Path) -> Result<()> {
 }
 
 pub fn save(audio: &Path, meta: &AudioMeta) -> Result<()> {
+    let _guard = lock();
+    save_unlocked(audio, meta)
+}
+
+fn save_unlocked(audio: &Path, meta: &AudioMeta) -> Result<()> {
     let p = meta_path(audio);
     if meta.is_default() {
         remove_if_exists(&legacy_meta_path(audio))?;
@@ -239,5 +284,44 @@ mod tests {
             std::fs::read_to_string(legacy_meta_path(&audio)).unwrap(),
             r#"{"trim_start_ms":250}"#
         );
+    }
+    #[test]
+    fn duration_updates_and_trim_saves_preserve_each_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("clip.wav");
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                for duration in 10000..10050 {
+                    update_duration(&source, duration).unwrap();
+                }
+            });
+            scope.spawn(|| {
+                for start in 1000..1050 {
+                    save_trim(
+                        &source,
+                        &AudioMeta {
+                            trim_start_ms: start,
+                            trim_end_ms: Some(9000),
+                            duration_ms: None,
+                        },
+                    )
+                    .unwrap();
+                }
+            });
+        });
+        let meta = load(&source).unwrap();
+        assert_eq!(meta.trim_start_ms, 1049);
+        assert_eq!(meta.trim_end_ms, Some(9000));
+        assert_eq!(meta.duration_ms, Some(10049));
+    }
+
+    #[test]
+    fn probe_update_does_not_replace_invalid_metadata_with_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("clip.wav");
+        crate::fs_utils::ensure_parent_dir(&meta_path(&source)).unwrap();
+        std::fs::write(meta_path(&source), b"invalid json").unwrap();
+        assert!(update_duration(&source, 10000).is_err());
+        assert_eq!(std::fs::read(meta_path(&source)).unwrap(), b"invalid json");
     }
 }

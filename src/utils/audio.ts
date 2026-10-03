@@ -164,3 +164,23 @@ const PHASE_LABELS: Record<TranscribeProgress["phase"], string> = {
 export function phaseLabel(p: TranscribeProgress["phase"]): string {
   return PHASE_LABELS[p];
 }
+
+export function audioMimeType(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return (
+    (
+      {
+        mp3: "audio/mpeg",
+        m4a: "audio/mp4",
+        mp4: "audio/mp4",
+        aac: "audio/aac",
+        wav: "audio/wav",
+        flac: "audio/flac",
+        ogg: "audio/ogg",
+        oga: "audio/ogg",
+        opus: "audio/ogg",
+        webm: "audio/webm",
+      } as Record<string, string>
+    )[ext] ?? "audio/*"
+  );
+}

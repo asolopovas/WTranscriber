@@ -1,26 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { api } from "@/api";
+import { audioMimeType } from "@utils/audio";
 
-function guessMime(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return (
-    (
-      {
-        mp3: "audio/mpeg",
-        m4a: "audio/mp4",
-        mp4: "audio/mp4",
-        aac: "audio/aac",
-        wav: "audio/wav",
-        flac: "audio/flac",
-        ogg: "audio/ogg",
-        oga: "audio/ogg",
-        opus: "audio/ogg",
-        webm: "audio/webm",
-      } as Record<string, string>
-    )[ext] ?? "audio/*"
-  );
-}
 import type { AudioMeta, DirEntry } from "@/types";
 import { fmtMs } from "@utils/format";
 import { fieldClass } from "@styles/fields";
@@ -32,10 +14,8 @@ import Spinner from "@components/icons/Spinner.vue";
 import CancelIcon from "@components/icons/CancelIcon.vue";
 import SaveIcon from "@components/icons/SaveIcon.vue";
 
-const applying = ref(false);
 const initialStart = ref(0);
 const initialEnd = ref(0);
-const initialDuration = ref(0);
 let seekScrubActive = false;
 
 const props = defineProps<{ target: DirEntry | null }>();
@@ -97,7 +77,7 @@ async function loadAudioBlob(target: DirEntry, version: number) {
   try {
     const bytes = await api.readAudioBytes(target.path);
     if (version !== loadVersion) return;
-    const blob = new Blob([new Uint8Array(bytes)], { type: guessMime(target.path) });
+    const blob = new Blob([new Uint8Array(bytes)], { type: audioMimeType(target.path) });
     if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
     currentObjectUrl = URL.createObjectURL(blob);
     audioSrc.value = currentObjectUrl;
@@ -146,7 +126,6 @@ async function load(target: DirEntry) {
     peaks.value = peaksArr;
     initialStart.value = s;
     initialEnd.value = e;
-    initialDuration.value = dur;
     playOffsetMs = s;
     playheadMs.value = s;
     await renderWaveform();
@@ -414,7 +393,7 @@ function markOut() {
 }
 
 function handleShortcut(ev: KeyboardEvent) {
-  if (!open.value || loading.value || applying.value || ev.defaultPrevented) return;
+  if (!open.value || loading.value || ev.defaultPrevented) return;
   const target = ev.composedPath()[0];
   if (
     target instanceof HTMLElement &&
@@ -507,47 +486,11 @@ async function persistMeta(target: DirEntry): Promise<boolean> {
 }
 
 async function commit() {
-  if (!props.target) return;
+  if (!props.target || loading.value) return;
   const target = props.target;
   if (!(await persistMeta(target))) return;
   cleanup();
   emit("saved", { path: target.path, durationMs: null, trimmed: false });
-}
-
-async function applyPermanent() {
-  if (!props.target) return;
-  const target = props.target;
-  const willTrim = start.value > 0 || end.value < duration.value;
-  if (!willTrim) {
-    localError.value = "nothing to trim — selection covers the whole track";
-    return;
-  }
-  const ok = window.confirm(
-    `Replace ${target.name} with the trimmed version (${fmtMs(
-      Math.max(0, end.value - start.value),
-    )})? This rewrites the original file and cannot be undone.`,
-  );
-  if (!ok) return;
-  applying.value = true;
-  localError.value = null;
-  try {
-    if (isDirty() && !(await persistMeta(target))) return;
-    pause();
-    const newDuration = await api.applyTrim(target.path);
-    initialStart.value = 0;
-    initialEnd.value = 0;
-    initialDuration.value = 0;
-    cleanup();
-    emit("saved", {
-      path: target.path,
-      durationMs: newDuration ?? null,
-      trimmed: true,
-    });
-  } catch (err) {
-    localError.value = String(err);
-  } finally {
-    applying.value = false;
-  }
 }
 
 function cleanup() {
@@ -573,8 +516,8 @@ function cleanup() {
 }
 
 async function close() {
-  if (props.target && isDirty()) {
-    await persistMeta(props.target);
+  if (props.target && !loading.value && isDirty()) {
+    if (!(await persistMeta(props.target))) return;
   }
   cleanup();
   emit("close");
@@ -728,18 +671,6 @@ async function close() {
           @click="markOut"
         >
           <Icon name="last_page" :size="22" />
-        </Button>
-        <span class="w-px self-stretch bg-outline-variant/40 mx-xs"></span>
-        <Button
-          variant="neutral"
-          shape="circle"
-          size="lg"
-          title="Apply trim permanently (rewrites the original file)"
-          :disabled="applying || !target"
-          @click="applyPermanent"
-        >
-          <Spinner v-if="applying" :size="20" />
-          <Icon v-else name="content_cut" :size="20" />
         </Button>
         <Button variant="neutral" shape="circle" size="lg" title="Cancel" @click="close">
           <CancelIcon :size="20" />

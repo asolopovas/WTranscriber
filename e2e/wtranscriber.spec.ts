@@ -350,7 +350,9 @@ test("seeks in the trim editor with a saved step and leaves arrow keys in fields
 test("renames a transcript speaker and copies the transcript", async ({ page }) => {
   await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
   await page.getByRole("button", { name: "SPEAKER_01", exact: true }).click();
-  const editor = page.getByRole("textbox");
+  const modal = page.getByRole("dialog", { name: "Rename speaker" });
+  await expect(modal).toBeVisible();
+  const editor = modal.getByRole("textbox", { name: "Speaker name" });
   await expect(editor).toBeFocused();
   await editor.fill("Alice");
   await editor.press("Enter");
@@ -408,4 +410,50 @@ test("records synthetic input, saves mono 16 kHz WAV bytes, and releases its med
   expect(view.getUint32(24, true)).toBe(16000);
   expect(bytes.length).toBe(364);
   expect(view.getInt16(44, true)).toBe(4095);
+});
+
+test("edits a completed segment and plays only its audio range", async ({ page }, testInfo) => {
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await page.getByRole("button", { name: "Edit segment 1", exact: true }).click();
+  await page.getByRole("textbox", { name: "Segment text" }).fill("Corrected opening remarks.");
+  await page.getByRole("button", { name: "Save text", exact: true }).click();
+  await expect(page.getByText("Corrected opening remarks.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Saved to .txt" })).toBeVisible();
+  await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
+  await expect
+    .poll(() => page.locator("audio").evaluate((element: HTMLAudioElement) => element.currentTime))
+    .toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole("button", { name: "Play segment 2", exact: true })).toBeVisible();
+  const stopped = await page.locator("audio").evaluate((element: HTMLAudioElement) => ({
+    paused: element.paused,
+    time: element.currentTime,
+  }));
+  expect(stopped.paused).toBe(true);
+  expect(stopped.time).toBeLessThan(4.5);
+  await page.screenshot({ path: testInfo.outputPath("transcript-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("transcript-mobile.png") });
+  await page.getByRole("button", { name: "Close transcript", exact: true }).click();
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await expect(page.getByText("Corrected opening remarks.", { exact: true })).toBeVisible();
+});
+
+test("keeps the saved trim after processing finishes", async ({ page }) => {
+  const row = rowNamed(page, "field_notes");
+  await row.getByTitle("More", { exact: true }).click();
+  await page.getByRole("button", { name: "Cut / select range", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("selected 01:00", { exact: true })).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("i");
+  await dialog.getByTitle("Save", { exact: true }).click();
+  await row.getByTitle("Transcribe", { exact: true }).click();
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(1);
+  await finishTranscriptions(page);
+  await expect(row.getByTitle("Transcript ready — view")).toBeVisible();
+  await expect(row.getByText("trimmed", { exact: true })).toBeVisible();
+  await row.getByTitle("More", { exact: true }).click();
+  await page.getByRole("button", { name: /Cut: 00:05/ }).click();
+  await expect(dialog.getByText("selected 00:55", { exact: true })).toBeVisible();
+  expect(await commandCount(page, "apply_trim")).toBe(0);
 });

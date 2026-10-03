@@ -101,7 +101,7 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "phrase-cleanup-v2\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.source_path.display(),
         p.mtime_ns,
         p.model,
@@ -169,6 +169,7 @@ pub fn overwrite_transcript(key: &str, transcript: &Transcript) -> Result<()> {
 }
 
 pub fn store(mut entry: Entry, transcript: &Transcript) -> Result<PathBuf> {
+    super::saved::store(&entry.key, &entry.source_path, transcript)?;
     let path = transcript_path(&entry.key)?;
     let raw = serde_json::to_vec_pretty(transcript)?;
     entry.size_bytes = raw.len() as u64;

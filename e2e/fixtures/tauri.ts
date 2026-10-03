@@ -240,6 +240,10 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
           }
           return structuredClone(seedTranscript);
         },
+        update_transcript_text: ({ index, text }) => {
+          seedTranscript.utterances[Number(index)].text = String(text);
+          return structuredClone(seedTranscript);
+        },
         read_audio_bytes: () => silentWav(),
         probe_audio: () => 60000,
         load_audio_meta: ({ path }) =>

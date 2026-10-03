@@ -167,6 +167,43 @@ pub fn collapse_in_text(text: &str) -> String {
     }
 }
 
+pub fn collapse_phrase_loops(tokens: &[Token]) -> Vec<Token> {
+    let mut keep = vec![true; tokens.len()];
+    for (i, token) in tokens.iter().enumerate() {
+        if !keep[i] || token.text.split_whitespace().count() < 3 || token.confidence > 0.1 {
+            continue;
+        }
+        let phrase = canon(&token.text);
+        let mut repeats = Vec::new();
+        let mut bridge_words = 0;
+        for (j, next) in tokens.iter().enumerate().skip(i + 1) {
+            if next.start_ms.saturating_sub(token.end_ms) > 30_000 {
+                break;
+            }
+            if canon(&next.text) == phrase && next.confidence <= 0.1 {
+                repeats.push(j);
+                bridge_words = 0;
+            } else {
+                bridge_words += next.text.split_whitespace().count();
+                if bridge_words > 6 {
+                    break;
+                }
+            }
+        }
+        if repeats.len() >= 2 {
+            for j in repeats {
+                keep[j] = false;
+            }
+        }
+    }
+    tokens
+        .iter()
+        .zip(keep)
+        .filter(|(_, keep)| *keep)
+        .map(|(token, _)| token.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

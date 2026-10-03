@@ -79,6 +79,28 @@ pub struct Segment {
 pub use diarizer::Segment as DiarSegment;
 
 impl Transcript {
+    pub fn edit_utterance(&mut self, index: usize, text: &str) -> crate::error::Result<()> {
+        let utterance = self.utterances.get_mut(index).ok_or_else(|| {
+            crate::error::Error::Config("transcript segment no longer exists".into())
+        })?;
+        text.trim().clone_into(&mut utterance.text);
+        self.words.retain(|word| {
+            word.speaker != utterance.speaker
+                || !(utterance.start_ms..utterance.end_ms).contains(&word.start_ms)
+        });
+        if !utterance.text.is_empty() {
+            self.words.push(Word {
+                text: utterance.text.clone(),
+                start_ms: utterance.start_ms,
+                end_ms: utterance.end_ms,
+                speaker: utterance.speaker.clone(),
+                confidence: 0.0,
+            });
+            self.words.sort_by_key(|word| word.start_ms);
+        }
+        Ok(())
+    }
+
     pub fn rename_speaker(&mut self, old: &str, new: &str) -> usize {
         let mut hits = 0_usize;
         for u in &mut self.utterances {

@@ -54,6 +54,10 @@ Touch all relevant layers in one change:
 
 Audio trim selections and probed duration persist as JSON in the recording folder's `.meta/` subdirectory (`<audio filename>.wtmeta.json`). These files are user metadata, not disposable cache. Legacy sidecars beside recordings remain readable and move into `.meta/` when saved or renamed. The trim editor restores these selections when reopened.
 
+Trim-editor saves are non-destructive. Duration probes and trim changes update their own fields under a shared lock, so probing cannot replace a newer selection. Importing an audio file also copies its trim metadata. The explicit native permanent-trim command remains separate from the editor.
+
+Completed transcripts persist as `.meta/<audio filename>.transcript.json`, with `<audio filename>.txt` beside the recording. Completion, re-diarization, segment edits, and speaker renames synchronise the text file. The local JSON remains available after clearing the disposable transcript cache. Recording renames move both files and trim metadata. Transcript playback uses original-recording timestamps; edited text keeps the segment's original time range rather than inventing word timings.
+
 - Rust edition 2024; use current idioms such as `LazyLock` and `let-else`.
 - No comments in code. Prefer clearer names, smaller functions, tests, and docs.
 - No `sleep` in scripts; poll with bounded timeouts.

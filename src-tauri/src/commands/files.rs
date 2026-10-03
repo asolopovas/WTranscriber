@@ -55,6 +55,9 @@ fn add_to_workdir_blocking(source: &Path, workdir: &Path) -> Result<PathBuf> {
         ))
     })?;
     std::fs::copy(source, &dst)?;
+    if let Some(trim) = meta::load_checked(source)? {
+        meta::save(&dst, &trim)?;
+    }
     logfile::info(&format!(
         "add_to_workdir {} -> {}",
         source.display(),
@@ -140,7 +143,13 @@ pub fn rename_file(source: PathBuf, new_name: String) -> Result<PathBuf> {
     }
     std::fs::rename(&source, &dst)?;
     if let Err(e) = meta::rename(&source, &dst) {
-        logfile::warn(&format!("sidecar rename failed: {e}"));
+        std::fs::rename(&dst, &source)?;
+        return Err(e);
+    }
+    if let Err(e) = transcriber::saved::rename(&source, &dst) {
+        meta::rename(&dst, &source)?;
+        std::fs::rename(&dst, &source)?;
+        return Err(e);
     }
     if let Err(e) = transcriber::cache::rename_source(&source, &dst) {
         logfile::warn(&format!("cache index rename failed: {e}"));
@@ -307,5 +316,54 @@ mod tests {
             assert!(!sidecar.exists());
             assert!(!dir.path().join("new name.wav.wtmeta.json").exists());
         }
+    }
+    #[test]
+    fn rename_rolls_back_audio_and_trim_if_transcript_destination_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("old.wav");
+        let destination = dir.path().join("new.wav");
+        std::fs::write(&source, b"audio").unwrap();
+        meta::save(
+            &source,
+            &meta::AudioMeta {
+                trim_start_ms: 1234,
+                ..meta::AudioMeta::default()
+            },
+        )
+        .unwrap();
+        std::fs::write(transcriber::saved::text_path(&source), b"old transcript").unwrap();
+        std::fs::write(
+            transcriber::saved::text_path(&destination),
+            b"existing transcript",
+        )
+        .unwrap();
+        assert!(rename_file(source.clone(), "new.wav".into()).is_err());
+        assert!(source.exists());
+        assert!(!destination.exists());
+        assert_eq!(meta::load(&source).unwrap().trim_start_ms, 1234);
+        assert_eq!(
+            std::fs::read(transcriber::saved::text_path(&destination)).unwrap(),
+            b"existing transcript"
+        );
+    }
+
+    #[test]
+    fn importing_recording_preserves_its_saved_trim() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("audio.wav");
+        std::fs::write(&source, b"audio").unwrap();
+        meta::save(
+            &source,
+            &meta::AudioMeta {
+                trim_start_ms: 1234,
+                trim_end_ms: Some(5000),
+                duration_ms: Some(9000),
+            },
+        )
+        .unwrap();
+        let copied = add_to_workdir_blocking(&source, &dir.path().join("work")).unwrap();
+        let trim = meta::load(&copied).unwrap();
+        assert_eq!(trim.trim_start_ms, 1234);
+        assert_eq!(trim.trim_end_ms, Some(5000));
     }
 }

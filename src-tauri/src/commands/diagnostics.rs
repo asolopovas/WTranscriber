@@ -1,6 +1,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use serde::Serialize;
+use std::path::PathBuf;
 
 use crate::{
     audio, browser,
@@ -99,25 +100,60 @@ fn remove_path(path: &std::path::Path) -> Result<u64> {
 }
 
 #[tauri::command]
-pub fn history_load(key: String) -> Result<Option<Transcript>> {
-    transcriber::cache::load(&key)
+pub fn history_load(key: String, input: Option<PathBuf>) -> Result<Option<Transcript>> {
+    transcriber::saved::load_for_key(&key, input.as_deref())
 }
 
 #[tauri::command]
-pub fn rename_speaker(key: String, old: String, new: String) -> Result<Transcript> {
+pub fn rename_speaker(
+    key: String,
+    old: String,
+    new: String,
+    input: Option<PathBuf>,
+) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let new = new.trim().to_owned();
     if new.is_empty() {
         return Err(crate::error::Error::Config(
             "new speaker name is empty".into(),
         ));
     }
-    let mut transcript = transcriber::cache::load(&key)?.ok_or_else(|| {
-        crate::error::Error::Config(format!("no cached transcript for key {key}"))
-    })?;
+    let mut transcript =
+        transcriber::saved::load_for_key(&key, input.as_deref())?.ok_or_else(|| {
+            crate::error::Error::Config(format!("no cached transcript for key {key}"))
+        })?;
     let hits = transcript.rename_speaker(&old, &new);
-    transcriber::cache::overwrite_transcript(&key, &transcript)?;
+    persist_edit(&key, input.as_deref(), &transcript)?;
     logfile::info(&format!(
         "rename_speaker '{old}' -> '{new}' ({hits} utterances) [{key}]"
     ));
+    Ok(transcript)
+}
+
+fn persist_edit(key: &str, input: Option<&std::path::Path>, transcript: &Transcript) -> Result<()> {
+    let source = transcriber::saved::source_for_key(key, input)?;
+    transcriber::saved::store(key, &source, transcript)?;
+    if transcriber::cache::load(key)?.is_some() {
+        transcriber::cache::overwrite_transcript(key, transcript)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_transcript_text(
+    key: String,
+    input: PathBuf,
+    index: usize,
+    text: String,
+) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
+        .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
+    transcript.edit_utterance(index, &text)?;
+    persist_edit(&key, Some(&input), &transcript)?;
     Ok(transcript)
 }
