@@ -16,6 +16,9 @@ declare global {
       savedConfigs: unknown[];
       emit: (event: string, payload: unknown) => void;
       finishTranscriptions: () => void;
+      failTranscription: (input: string) => void;
+      started: string[];
+      transcriptionConfigs: unknown[];
     };
   }
 }
@@ -49,10 +52,10 @@ const files = [
 ];
 
 const transcript = {
-  model: "sherpa-whisper-turbo",
+  model: "whisper-cpp-large-v3-turbo-q8",
   language: "en",
   duration_ms: 4_200_000,
-  diarizer: "nemo-sortformer",
+  diarizer: "sortformer-onnx",
   device: "cuda",
   speakers_detected: 2,
   utterances: [
@@ -63,32 +66,35 @@ const transcript = {
 };
 
 const config = {
-  model: "sherpa-whisper-turbo",
-  engine: "whisper-onnx",
+  model: "whisper-cpp-large-v3-turbo-q8",
+  engine: "whisper-cpp",
   language: "en",
   device: "cuda",
   threads: 8,
   diarize: true,
   speakers: null,
-  diarizer: "auto",
+  diarizer: "sortformer-onnx",
   auto_rename: false,
   last_dir: audioDir,
   use_persistent_models: true,
+  has_seen_persistent_prompt: true,
+  debug_logging: false,
+  precise_word_timestamps: true,
 };
 
 const models = [
   [
-    "sherpa-whisper-turbo",
+    "whisper-cpp-large-v3-turbo-q8",
     "asr",
-    "whisper-onnx",
+    "whisper-cpp",
     "Whisper large-v3-turbo (ONNX, multilingual)",
     true,
   ],
-  ["sherpa-zipformer-en", "asr", "zipformer", "Zipformer English", false],
+  ["parakeet-tdt-0.6b-v3-int8", "asr", "parakeet", "Parakeet multilingual", false],
   [
-    "nemo-sortformer-v2",
+    "sortformer-v2-onnx-4spk",
     "diarizer",
-    "nemo-sortformer",
+    "sortformer-onnx",
     "NVIDIA NeMo Sortformer 4-speaker v2",
     true,
   ],
@@ -121,6 +127,9 @@ async function installTauriMocks(page: Page) {
       const rows = seedFiles.map((file) => ({ ...file }));
       const cancelled = new Set<string>();
       const pending = new Map<string, () => void>();
+      const failed = new Set<string>();
+      const started: string[] = [];
+      const transcriptionConfigs: unknown[] = [];
       let nextCallback = 1;
       let nextEvent = 1;
 
@@ -160,6 +169,8 @@ async function installTauriMocks(page: Page) {
         load_config: () => seedConfig,
         save_config: (args) => savedConfigs.push(args.config) && null,
         list_models: () => seedModels,
+        essential_models: () => [],
+        start_essentials: () => null,
         audio_waveform: () => Array.from({ length: 160 }, (_, i) => 0.15 + ((i * 17) % 80) / 100),
         default_dir: () => "C:\\audio",
         list_directory: () => ({ path: "C:\\audio", parent: null, entries: rows }),
@@ -173,10 +184,11 @@ async function installTauriMocks(page: Page) {
           return "C:\\audio\\added.wav";
         },
         log_path: () => "C:\\logs\\wt.log",
-        log_tail: () => "transcribe ok\nnemo-sortformer\n",
+        log_tail: () => "transcribe ok\nsortformer-onnx\n",
         log_clear: () => null,
         reset_transcript_cache: () => 3,
         reset_audio_cache: () => 2,
+        reset_app_data: () => ({ cache_entries_removed: 3, workdir_entries_removed: 2 }),
         "plugin:event|listen": (args) => {
           const event = args.event as string;
           listeners[event] = [...(listeners[event] ?? []), args.handler as number];
@@ -204,21 +216,32 @@ async function installTauriMocks(page: Page) {
           commandLog.push(cmd);
           if (cmd === "transcribe_file") {
             const input = args.input as string;
+            started.push(input);
+            transcriptionConfigs.push(args.config);
+            cancelled.delete(input);
             emit("transcribe:progress", {
               path: input,
               phase: "transcribing",
               displayPct: 12,
               elapsedSec: 2,
-              etaSec: 10,
+              totalSec: 12,
             });
             await new Promise<void>((resolve) => pending.set(input, resolve));
             pending.delete(input);
             if (cancelled.has(input)) throw "cancelled";
+            if (failed.delete(input)) throw "test transcription failed";
             markTranscribed(input);
             return {
               ...seedTranscript,
               duration_ms: rows.find((file) => file.path === input)?.duration_ms ?? 0,
             };
+          }
+          if (cmd === "cancel_transcribe") {
+            const input = args.input as string;
+            if (!pending.has(input)) return false;
+            cancelled.add(input);
+            pending.get(input)?.();
+            return true;
           }
           if (cmd === "cancel_all_transcribes") {
             for (const input of pending.keys()) cancelled.add(input);
@@ -230,7 +253,18 @@ async function installTauriMocks(page: Page) {
           throw new Error(`unhandled invoke ${cmd}`);
         },
       };
-      window.__WT_TEST__ = { commandLog, savedConfigs, emit, finishTranscriptions };
+      window.__WT_TEST__ = {
+        commandLog,
+        savedConfigs,
+        emit,
+        finishTranscriptions,
+        started,
+        transcriptionConfigs,
+        failTranscription(input) {
+          failed.add(input);
+          pending.get(input)?.();
+        },
+      };
     },
     { seedFiles: files, seedTranscript: transcript, seedConfig: config, seedModels: models },
   );
@@ -243,8 +277,8 @@ const commandCount = (page: Page, cmd: string) =>
     cmd,
   );
 const selectByLabel = (page: Page, label: string) =>
-  page.locator("label").filter({ hasText: label }).locator("select");
-const rowNamed = (page: Page, name: string) => page.getByRole("row").filter({ hasText: name });
+  page.getByRole("combobox", { name: new RegExp(`^${label}`) });
+const rowNamed = (page: Page, name: string) => page.getByRole("listitem").filter({ hasText: name });
 
 async function finishTranscriptions(page: Page) {
   await page.evaluate(() => window.__WT_TEST__.finishTranscriptions());
@@ -265,19 +299,19 @@ test("loads persisted GPU transcription configuration", async ({ page }) => {
 test("loads compatible model choices", async ({ page }) => {
   const model = selectByLabel(page, "Model");
 
-  await expect(model).toHaveValue("sherpa-whisper-turbo");
+  await expect(model).toHaveValue("whisper-cpp-large-v3-turbo-q8");
   await expect(model.getByRole("option", { name: "Whisper large-v3-turbo" })).toHaveCount(1);
-  await expect(model.getByRole("option", { name: "Zipformer English" })).toHaveCount(1);
+  await expect(model.getByRole("option", { name: "Parakeet multilingual" })).toHaveCount(1);
 });
 
 test("runs the folder queue and updates rows", async ({ page }) => {
   await page.getByRole("button", { name: /Transcribe all/ }).click();
   await expect.poll(() => commandCount(page, "transcribe_file"), { timeout: 5_000 }).toBe(1);
-  await expect(page.getByRole("button", { name: /Transcribe all/ })).toBeDisabled();
+  await expect(rowNamed(page, "field_notes").getByTitle("Stop", { exact: true })).toBeVisible();
   await finishTranscriptions(page);
   await expect.poll(() => commandCount(page, "transcribe_file"), { timeout: 5_000 }).toBe(2);
   await finishTranscriptions(page);
-  await expect(rowNamed(page, "interview")).toContainText("transcribed");
+  await expect(rowNamed(page, "interview").getByTitle("Transcript ready — view")).toBeVisible();
 });
 
 test("stops an in-flight transcription", async ({ page }) => {
@@ -285,11 +319,83 @@ test("stops an in-flight transcription", async ({ page }) => {
   await row.locator('button[title="Transcribe"]').click();
   await expect(row.getByRole("button", { name: /Stop/ })).toBeVisible();
   await row.getByRole("button", { name: /Stop/ }).click();
-  await expect.poll(() => commands(page)).toContain("cancel_all_transcribes");
+  await expect.poll(() => commands(page)).toContain("cancel_transcribe");
+});
+
+test("appends remaining files without interrupting the active transcription", async ({ page }) => {
+  const first = rowNamed(page, "interview");
+  const second = rowNamed(page, "field_notes");
+  await first.getByTitle("Transcribe", { exact: true }).click();
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(1);
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await expect(first.getByTitle("Stop", { exact: true })).toBeVisible();
+  await expect(second.getByTitle("Stop", { exact: true })).toBeVisible();
+  expect(await commandCount(page, "transcribe_file")).toBe(1);
+  expect(await commandCount(page, "cancel_all_transcribes")).toBe(0);
+  expect(await commandCount(page, "cancel_transcribe")).toBe(0);
+  await finishTranscriptions(page);
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
+  await expect(first.getByTitle("Transcript ready — view")).toBeVisible();
+  await finishTranscriptions(page);
+  await expect(second.getByTitle("Transcript ready — view")).toBeVisible();
+});
+
+test("queued jobs keep the settings captured when they were added", async ({ page }) => {
+  await rowNamed(page, "interview").getByTitle("Transcribe", { exact: true }).click();
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await selectByLabel(page, "Speakers").selectOption("2");
+  await finishTranscriptions(page);
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
+  const captured = await page.evaluate(() => window.__WT_TEST__.transcriptionConfigs);
+  expect(captured).toHaveLength(2);
+  expect(captured[1]).toMatchObject({ speakers: null });
+  await finishTranscriptions(page);
+  await expect(rowNamed(page, "field_notes").getByTitle("Transcript ready — view")).toBeVisible();
+});
+
+test("cancelling a queued file preserves the active file", async ({ page }) => {
+  const first = rowNamed(page, "interview");
+  const second = rowNamed(page, "field_notes");
+  await first.getByTitle("Transcribe", { exact: true }).click();
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await second.getByTitle("Stop", { exact: true }).click();
+  await expect(second.getByTitle("Transcribe", { exact: true })).toBeVisible();
+  await expect(first.getByTitle("Stop", { exact: true })).toBeVisible();
+  expect(await commandCount(page, "cancel_transcribe")).toBe(0);
+  await finishTranscriptions(page);
+  await expect(first.getByTitle("Transcript ready — view")).toBeVisible();
+  expect(await commandCount(page, "transcribe_file")).toBe(1);
+});
+
+test("cancelling an active file continues unrelated queued work", async ({ page }) => {
+  const first = rowNamed(page, "interview");
+  const second = rowNamed(page, "field_notes");
+  await first.getByTitle("Transcribe", { exact: true }).click();
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await first.getByTitle("Stop", { exact: true }).click();
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
+  expect(await commandCount(page, "cancel_all_transcribes")).toBe(0);
+  await expect(second.getByTitle("Stop", { exact: true })).toBeVisible();
+  await finishTranscriptions(page);
+  await expect(second.getByTitle("Transcript ready — view")).toBeVisible();
+});
+
+test("a failed active file does not stop the remaining queue", async ({ page }) => {
+  const first = rowNamed(page, "interview");
+  const second = rowNamed(page, "field_notes");
+  await first.getByTitle("Transcribe", { exact: true }).click();
+  await page.getByRole("button", { name: /Transcribe all/ }).click();
+  await page.evaluate(() => {
+    window.__WT_TEST__.failTranscription(window.__WT_TEST__.started[0]);
+  });
+  await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
+  await finishTranscriptions(page);
+  await expect(second.getByTitle("Transcript ready — view")).toBeVisible();
+  await expect(first.getByTitle("Transcript ready — view")).toHaveCount(0);
 });
 
 test("previews cached transcript details", async ({ page }) => {
-  await rowNamed(page, "board_meeting").click();
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
   await expect.poll(() => commands(page)).toContain("history_load");
   await expect(page.getByRole("heading", { name: "Transcript" })).toBeVisible();
   await expect(page.getByText("Opening remarks.")).toBeVisible();
@@ -314,8 +420,7 @@ test("persists transcription options and resets caches", async ({ page }) => {
     .toBe(true);
 
   await page.getByRole("button", { name: "Settings" }).click();
-  for (const name of ["Reset transcript cache", "Reset audio cache"])
-    await page.getByRole("button", { name }).click();
-  await expect.poll(() => commands(page)).toContain("reset_transcript_cache");
-  await expect.poll(() => commands(page)).toContain("reset_audio_cache");
+  await page.getByRole("button", { name: "Clear cache", exact: true }).click();
+  await expect.poll(() => commands(page)).toContain("reset_app_data");
+  await expect(page.getByText("App data cleared", { exact: false })).toBeVisible();
 });

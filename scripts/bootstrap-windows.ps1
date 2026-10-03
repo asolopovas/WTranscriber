@@ -20,7 +20,7 @@ function Add-Path($dir) {
     if ($env:Path -notlike "*$dir*") { $env:Path += ";$dir" }
 }
 
-function Winget-Install($id) {
+function Winget-Install($id, $scope = 'machine') {
     $listed = & winget list --id $id --exact --disable-interactivity 2>$null
     if ($listed -and ($listed -match [regex]::Escape($id))) {
         Write-Host "-> $id already installed (skipping)"
@@ -28,7 +28,7 @@ function Winget-Install($id) {
     }
     Write-Host "-> winget install $id"
     winget install --id $id --source winget --silent --accept-package-agreements --accept-source-agreements `
-        --scope machine --disable-interactivity 2>&1 | Out-Host
+        --scope $scope --disable-interactivity 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) { throw "winget failed for $id" }
 }
 
@@ -58,7 +58,7 @@ if (-not (Have rustup)) {
 
 if (-not (Have bun)) {
     Write-Host '-> Bun' -ForegroundColor Cyan
-    Winget-Install 'Oven-sh.Bun'
+    Winget-Install 'Oven-sh.Bun' 'user'
 }
 Add-Path "$env:USERPROFILE\.bun\bin"
 
@@ -66,6 +66,12 @@ if (-not (Have node)) {
     Write-Host '-> Node.js' -ForegroundColor Cyan
     Winget-Install 'OpenJS.NodeJS.LTS'
     Add-Path 'C:\Program Files\nodejs'
+}
+
+if (-not (Have pwsh)) {
+    Write-Host '-> PowerShell 7 (runtime setup scripts)'
+    Winget-Install 'Microsoft.PowerShell'
+    Add-Path 'C:\Program Files\PowerShell\7'
 }
 
 $nsis = 'C:\Program Files (x86)\NSIS\makensis.exe'

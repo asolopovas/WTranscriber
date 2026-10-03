@@ -144,10 +144,10 @@ pub fn ffmpeg_stream(
         cmd.arg("-ss").arg(format_ms(start_ms));
     }
     cmd.arg("-i").arg(input);
-    if let Some(end) = end_ms {
-        if end > start_ms {
-            cmd.arg("-t").arg(format_ms(end - start_ms));
-        }
+    if let Some(end) = end_ms
+        && end > start_ms
+    {
+        cmd.arg("-t").arg(format_ms(end - start_ms));
     }
     cmd.args([
         "-vn",

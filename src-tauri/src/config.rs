@@ -91,7 +91,7 @@ impl Device {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiarizerChoice {
     #[serde(
@@ -100,15 +100,10 @@ pub enum DiarizerChoice {
         alias = "nemo",
         alias = "nemo-python"
     )]
+    #[default]
     SortformerOnnx,
     #[serde(alias = "sherpa", alias = "eres2net")]
     Titanet,
-}
-
-impl Default for DiarizerChoice {
-    fn default() -> Self {
-        Self::SortformerOnnx
-    }
 }
 
 impl DiarizerChoice {

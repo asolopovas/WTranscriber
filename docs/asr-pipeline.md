@@ -19,6 +19,16 @@
 
 Thread cap: GPU decode caps engine threads at 2 (`engine/runtime.rs`), keyed on the resolved provider; CPU paths use the requested count (default 4). Engine warnings reach the UI through `progress::Sink::warn` → `transcribe:warning`.
 
+## GUI queue ownership
+
+Manual transcription, folder/selection batches, and re-diarization share `useTranscriptionQueue`. Enqueueing appends jobs and ignores paths already pending; it never resets active work. Each job captures its settings when enqueued. Pending files are immediately busy, so repeated clicks cannot create duplicate work. The queue records `queued`, `running`, `cancelling`, and terminal `succeeded`, `failed`, or `cancelled` states. A failed job does not prevent later jobs from starting.
+
+Rust's `commands/transcription_queue.rs` independently bounds native execution to one job across transcription and re-diarization. This protects shared engine caches, subprocess ownership, and model memory. The worker owns its cancellation registration and execution guard until the native operation has actually finished, even if its IPC caller disappears. Cancelling pending work removes it without waiting for the active job; cancelling active work signals only that job and retains its slot while the worker shuts down. `cancel_transcribe` is scoped to one path; `cancel_all_transcribes` remains an explicit backend operation.
+
+The previous implementation had separate manual and batch lifecycles, treated a row's Stop action as cancel-all, replaced cancellation tokens for duplicate paths, and released the native lock while cancelled work continued in a detached task. That allowed unrelated progress to be cleared and shared engine shutdown to overlap subsequent jobs. Starting a batch alone did not explicitly request cancellation; the original incident has no matching captured runtime trace, so these verified defects are covered separately by regression tests.
+
+The lifecycle follows the single-owner state transitions and completion guard used in [Handy's recording coordinator](https://github.com/cjpais/Handy/blob/main/src-tauri/src/transcription_coordinator.rs), adapted to independent file jobs. [Tokio's blocking-task contract](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html) requires waiting for already-running native work rather than assuming cancellation aborts it. [p-queue](https://github.com/sindresorhus/p-queue#api) provides the comparable additive admission, bounded concurrency and per-task cancellation model; the Vue composable keeps those semantics without another runtime dependency. Queue unit tests use controlled completion signals; the Playwright suite exercises adding remaining files during active transcription and cancellation/failure isolation through the actual UI with mocked IPC.
+
 ## Defaults
 
 Fresh installs use these catalogue entries (`models/catalog.rs`):

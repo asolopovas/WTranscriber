@@ -13,13 +13,12 @@ use rubato::{
     WindowFunction,
 };
 use symphonia::core::{
-    audio::{AudioBufferRef, Signal},
-    codecs::{CODEC_TYPE_OPUS, DecoderOptions},
+    audio::GenericAudioBufferRef,
+    codecs::audio::{AudioDecoderOptions, well_known::CODEC_ID_OPUS},
     errors::Error as SymphoniaError,
-    formats::{FormatOptions, FormatReader},
+    formats::{FormatOptions, FormatReader, TrackType, probe::Hint},
     io::{MediaSourceStream, MediaSourceStreamOptions},
     meta::MetadataOptions,
-    probe::Hint,
 };
 
 use crate::{
@@ -27,54 +26,41 @@ use crate::{
     error::{Error, Result},
 };
 
-pub fn probe_duration_ms(input: &Path) -> Option<u64> {
-    let file = File::open(input).ok()?;
+fn open_audio(input: &Path) -> Result<Box<dyn FormatReader>> {
+    let file = File::open(input)
+        .map_err(|e| Error::Transcribe(format!("open {}: {e}", input.display())))?;
     let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(ext) = input.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let probed = symphonia::default::get_probe()
-        .format(
+    symphonia::default::get_probe()
+        .probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
-        .ok()?;
-    let mut format = probed.format;
-    let track = format.default_track()?;
-    let track_id = track.id;
-    let sr = track.codec_params.sample_rate? as u64;
-    if let Some(frames) = track.codec_params.n_frames
-        && sr > 0
-    {
-        return Some(frames * 1000 / sr);
-    }
-    if let Some(tb) = track.codec_params.time_base
-        && let Some(n_ts) = track.codec_params.n_frames
-    {
-        let secs = (n_ts as f64) * (tb.numer as f64) / (tb.denom as f64);
-        return Some((secs * 1000.0) as u64);
-    }
+        .map_err(|e| Error::Transcribe(format!("probe: {e}")))
+}
 
-    let mut last_ts = 0_u64;
-    let mut last_dur = 0_u64;
-    loop {
-        match format.next_packet() {
-            Ok(packet) if packet.track_id() == track_id => {
-                last_ts = packet.ts;
-                last_dur = packet.dur;
-            }
-            Ok(_) => {}
-            Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                break;
-            }
-            Err(_) => break,
+pub fn probe_duration_ms(input: &Path) -> Option<u64> {
+    let mut format = open_audio(input).ok()?;
+    let track = format.default_track(TrackType::Audio)?;
+    let track_id = track.id;
+    let time_base = track.time_base?;
+    if let Some(duration) = track.duration {
+        return u64::try_from(time_base.calc_duration(duration)?.as_millis()).ok();
+    }
+    let mut end = track.start_ts;
+    let start = track.start_ts;
+    while let Ok(Some(packet)) = format.next_packet() {
+        if packet.track_id == track_id {
+            end = end.max(packet.pts.saturating_add(packet.dur));
         }
     }
-    let frames = last_ts.saturating_add(last_dur);
-    (sr > 0 && frames > 0).then_some(frames * 1000 / sr)
+    let elapsed = time_base.calc_time(end)?.as_millis() - time_base.calc_time(start)?.as_millis();
+    (elapsed > 0).then(|| u64::try_from(elapsed).ok()).flatten()
 }
 
 pub fn decode_to_wav(input: &Path, output: &Path) -> Result<()> {
@@ -98,61 +84,50 @@ pub fn decode_to_pcm_f32(input: &Path, target_sr: i32) -> Result<Vec<f32>> {
 }
 
 fn decode_to_mono_f32(input: &Path) -> Result<(Vec<f32>, u32)> {
-    let file = File::open(input)
-        .map_err(|e| Error::Transcribe(format!("open {}: {e}", input.display())))?;
-    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
-
-    let mut hint = Hint::new();
-    if let Some(ext) = input.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-
-    let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
-        .map_err(|e| Error::Transcribe(format!("probe: {e}")))?;
-
-    let mut format = probed.format;
+    let mut format = open_audio(input)?;
     let track = format
-        .default_track()
+        .default_track(TrackType::Audio)
         .ok_or_else(|| Error::Transcribe("no default track".into()))?;
     let track_id = track.id;
-    let codec_params = track.codec_params.clone();
+    let delay = track.delay;
+    let codec_params = track
+        .codec_params
+        .as_ref()
+        .and_then(|params| params.audio())
+        .ok_or_else(|| Error::Transcribe("missing audio codec parameters".into()))?;
     let sample_rate = codec_params
         .sample_rate
         .ok_or_else(|| Error::Transcribe("missing sample rate".into()))?;
     let channels = codec_params
         .channels
+        .as_ref()
         .map_or(1, symphonia::core::audio::Channels::count)
         .max(1);
 
-    if codec_params.codec == CODEC_TYPE_OPUS {
-        return decode_opus_to_mono_f32(format, track_id, channels, codec_params.delay);
+    if codec_params.codec == CODEC_ID_OPUS {
+        return decode_opus_to_mono_f32(format, track_id, channels, delay);
     }
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&codec_params, &DecoderOptions::default())
+        .make_audio_decoder(codec_params, &AudioDecoderOptions::default())
         .map_err(|e| Error::Transcribe(format!("decoder: {e}")))?;
 
     let mut samples: Vec<f32> = Vec::new();
+    let mut interleaved = Vec::new();
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) | Err(SymphoniaError::ResetRequired) => break,
             Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
             }
-            Err(SymphoniaError::ResetRequired) => break,
             Err(e) => return Err(Error::Transcribe(format!("packet: {e}"))),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         match decoder.decode(&packet) {
-            Ok(buf) => append_samples(&mut samples, buf, channels),
+            Ok(buf) => append_samples(&mut samples, &buf, &mut interleaved),
             Err(SymphoniaError::DecodeError(_)) => {}
             Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
@@ -182,23 +157,23 @@ fn decode_opus_to_mono_f32(
 
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
+            Ok(Some(p)) => p,
+            Ok(None) | Err(SymphoniaError::ResetRequired) => break,
             Err(SymphoniaError::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
             }
-            Err(SymphoniaError::ResetRequired) => break,
             Err(e) => return Err(Error::Transcribe(format!("opus packet: {e}"))),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
         let frames = decoder
             .decode_float(&packet.data, &mut pcm, false)
             .map_err(|e| Error::Transcribe(format!("opus decode: {e}")))?;
-        let trim_start = pending_skip.saturating_add(packet.trim_start as usize);
+        let trim_start = pending_skip.saturating_add(packet.trim_start.get() as usize);
         pending_skip = 0;
-        let trim_end = packet.trim_end as usize;
+        let trim_end = packet.trim_end.get() as usize;
         if trim_start >= frames {
             continue;
         }
@@ -216,35 +191,18 @@ fn decode_opus_to_mono_f32(
     Ok((samples, 48_000))
 }
 
-fn append_samples(out: &mut Vec<f32>, buf: AudioBufferRef<'_>, channels: usize) {
-    macro_rules! mix {
-        ($buf:expr, $convert:expr) => {{
-            let frames = $buf.frames();
-            for i in 0..frames {
-                let mut sum = 0.0_f32;
-                for ch in 0..channels {
-                    sum += $convert($buf.chan(ch)[i]);
-                }
-                out.push(sum / channels as f32);
-            }
-        }};
+fn append_samples(out: &mut Vec<f32>, buf: &GenericAudioBufferRef<'_>, interleaved: &mut Vec<f32>) {
+    let channels = buf.num_planes();
+    if channels == 0 {
+        return;
     }
-    match buf {
-        AudioBufferRef::F32(b) => mix!(b, |s: f32| s),
-        AudioBufferRef::F64(b) => mix!(b, |s: f64| s as f32),
-        AudioBufferRef::U8(b) => mix!(b, |s: u8| (s as f32 - 128.0) / 128.0),
-        AudioBufferRef::U16(b) => mix!(b, |s: u16| (s as f32 - 32768.0) / 32768.0),
-        AudioBufferRef::U24(b) => mix!(b, |s: symphonia::core::sample::u24| {
-            (s.inner() as f32 - 8_388_608.0) / 8_388_608.0
-        }),
-        AudioBufferRef::U32(b) => mix!(b, |s: u32| (s as f64 - 2_147_483_648.0) as f32
-            / 2_147_483_648.0),
-        AudioBufferRef::S8(b) => mix!(b, |s: i8| s as f32 / 128.0),
-        AudioBufferRef::S16(b) => mix!(b, |s: i16| s as f32 / 32768.0),
-        AudioBufferRef::S24(b) => mix!(b, |s: symphonia::core::sample::i24| s.inner() as f32
-            / 8_388_608.0),
-        AudioBufferRef::S32(b) => mix!(b, |s: i32| s as f32 / 2_147_483_648.0),
-    }
+    interleaved.resize(buf.samples_interleaved(), 0.0);
+    buf.copy_to_slice_interleaved(interleaved.as_mut_slice());
+    out.extend(
+        interleaved
+            .chunks_exact(channels)
+            .map(|frame| frame.iter().copied().sum::<f32>() / channels as f32),
+    );
 }
 
 fn resample(input: &[f32], from: u32, to: u32) -> Result<Vec<f32>> {
@@ -255,7 +213,7 @@ fn resample(input: &[f32], from: u32, to: u32) -> Result<Vec<f32>> {
     let chunk = 1024;
     let params = SincInterpolationParameters {
         sinc_len: 256,
-        f_cutoff: 0.95,
+        f_cutoff: Some(0.95),
         interpolation: SincInterpolationType::Linear,
         oversampling_factor: 256,
         window: WindowFunction::BlackmanHarris2,
@@ -326,8 +284,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn probes_and_decodes_pcm_audio() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.wav");
+        let input = vec![0.25_f32; 16_000];
+        write_pcm16_wav(&path, &input, 16_000).unwrap();
+        assert_eq!(probe_duration_ms(&path), Some(1_000));
+        let (decoded, rate) = decode_to_mono_f32(&path).unwrap();
+        assert_eq!(rate, 16_000);
+        assert_eq!(decoded.len(), input.len());
+        assert!((decoded[8_000] - input[8_000]).abs() < 0.001);
+    }
+
+    #[test]
+    fn decodes_m4a_with_custom_null_and_mp4_sl_descriptors() {
+        let fixture = include_bytes!("fixtures/aac-sl-config.m4a");
+        let descriptor = [6, 128, 128, 128, 1, 2];
+        let offset = fixture
+            .windows(descriptor.len())
+            .position(|window| window == descriptor)
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("voice-note.m4a");
+        for predefined in [0, 1, 2] {
+            let mut audio = fixture.to_vec();
+            audio[offset + descriptor.len() - 1] = predefined;
+            std::fs::write(&path, audio).unwrap();
+            assert!(probe_duration_ms(&path).is_some());
+            let (samples, rate) = decode_to_mono_f32(&path).unwrap();
+            assert_eq!(rate, 16_000);
+            assert!(samples.len() >= 1_600);
+            assert!(samples.iter().all(|sample| sample.is_finite()));
+        }
+    }
+
+    #[test]
+    fn decodes_opus_and_resamples_without_external_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sample.ogg");
+        std::fs::write(&path, include_bytes!("fixtures/opus.ogg")).unwrap();
+        let (samples, rate) = decode_to_mono_f32(&path).unwrap();
+        assert_eq!(rate, 48_000);
+        assert!(samples.len() >= 4_800);
+        assert!(samples.iter().all(|sample| sample.is_finite()));
+        let resampled = decode_to_pcm_f32(&path, 16_000).unwrap();
+        assert!(resampled.len().abs_diff(1_600) < 100);
+    }
+
+    #[test]
     fn resample_empty_returns_empty() {
-        assert!(resample(&[], 44_100, 16_000).unwrap().is_empty());
+        assert_eq!(resample(&[], 44_100, 16_000).unwrap(), Vec::<f32>::new());
     }
 
     #[test]

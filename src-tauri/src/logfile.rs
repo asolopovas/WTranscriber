@@ -159,14 +159,14 @@ pub fn clear() -> Result<()> {
         *guard = None;
     }
     let path = log_path()?;
-    if let Some(parent) = path.parent() {
-        if let Ok(entries) = fs::read_dir(parent) {
-            for e in entries.flatten() {
-                let n = e.file_name();
-                let s = n.to_string_lossy();
-                if s.starts_with("wt-") && s.ends_with(".log") {
-                    let _ = fs::remove_file(e.path());
-                }
+    if let Some(parent) = path.parent()
+        && let Ok(entries) = fs::read_dir(parent)
+    {
+        for e in entries.flatten() {
+            let n = e.file_name();
+            let s = n.to_string_lossy();
+            if s.starts_with("wt-") && s.ends_with(".log") {
+                let _ = fs::remove_file(e.path());
             }
         }
     }

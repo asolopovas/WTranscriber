@@ -211,7 +211,7 @@ fn serve_request(
         .lock()
         .map_err(|e| fail(format!("worker lock: {e}")))?;
     let reusable = slot.as_mut().is_some_and(|w| {
-        w.model_path == model_path && w.child.try_wait().map(|s| s.is_none()).unwrap_or(false)
+        w.model_path == model_path && w.child.try_wait().is_ok_and(|s| s.is_none())
     });
     if !reusable {
         kill_worker(&mut slot);
@@ -443,10 +443,10 @@ pub fn run(
     let mut segs: Vec<Segment> = Vec::new();
     let mut current: Option<Segment> = None;
     fn flush(current: &mut Option<Segment>, segs: &mut Vec<Segment>) {
-        if let Some(seg) = current.take() {
-            if !seg.text.trim().is_empty() {
-                segs.push(seg);
-            }
+        if let Some(seg) = current.take()
+            && !seg.text.trim().is_empty()
+        {
+            segs.push(seg);
         }
     }
 

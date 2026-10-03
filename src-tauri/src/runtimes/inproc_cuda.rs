@@ -126,14 +126,14 @@ fn setup_linux() {
         logfile::warn("inproc-cuda: cuDNN library_dir unresolved");
     }
 
-    if let Ok(sherpa_lib) = sherpa::install_dir(sherpa::Variant::Cuda).map(|d| d.join("lib")) {
-        if sherpa_lib.is_dir() {
-            prepend_to_env("LD_LIBRARY_PATH", &sherpa_lib);
-            logfile::info(&format!(
-                "inproc-cuda: sherpa CUDA lib dir on LD_LIBRARY_PATH: {}",
-                sherpa_lib.display()
-            ));
-        }
+    if let Ok(sherpa_lib) = sherpa::install_dir(sherpa::Variant::Cuda).map(|d| d.join("lib"))
+        && sherpa_lib.is_dir()
+    {
+        prepend_to_env("LD_LIBRARY_PATH", &sherpa_lib);
+        logfile::info(&format!(
+            "inproc-cuda: sherpa CUDA lib dir on LD_LIBRARY_PATH: {}",
+            sherpa_lib.display()
+        ));
     }
 }
 

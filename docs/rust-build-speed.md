@@ -4,6 +4,7 @@
 
 - Do not re-enable LTO in `[profile.release]` (`lto = false`). Heavy work is C++; LTO costs minutes for sub-1% gain.
 - Do not cap `CARGO_BUILD_JOBS`.
+- Linux x86_64 native C++ must use `_GLIBCXX_USE_CXX11_ABI=0`, matching the prebuilt Sherpa/ONNX Runtime archives. `.cargo/config.toml` sets the target-specific `CXXFLAGS`; mixing Whisper's default new ABI with those archives can abort inside `std::regex` during model initialisation. After changing this flag, run `cargo clean --manifest-path src-tauri/Cargo.toml -p whisper-rs-sys` before rebuilding because the upstream build script does not track that environment change.
 - Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just check` runs both in parallel.
 - Profile with `cargo build --timings`; re-measure after each change.
 

@@ -157,7 +157,7 @@ mod tests {
     fn rebuild_from_tokens_clears_when_empty() {
         let mut s = seg("stale", 100, 200, vec![]);
         rebuild_from_tokens(&mut s);
-        assert!(s.text.is_empty());
+        assert_eq!(s.text, "");
     }
 
     #[test]

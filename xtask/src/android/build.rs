@@ -6,7 +6,7 @@ use crate::util::{exe, parallel_build_env, parallel_jobs, root, sh_in};
 
 use super::patch::{
     copy_jni_prebuilts, patch_generated_activities, patch_gradle_build_config,
-    patch_gradle_properties, patch_manifest, patch_plugin_consumer_rules, sign_patch_inline,
+    patch_gradle_properties, patch_manifest, sign_patch_inline,
 };
 use super::paths::{
     abi_for, android_home, apk_release_dir, clang_ext, ndk_bin, ndk_home, prebuilt_dir,
@@ -54,10 +54,13 @@ pub(super) fn build_env(target: &str) -> Result<Vec<(String, String)>> {
 
 pub(super) fn ensure_prebuilts(target: &str) -> Result<()> {
     let pdir = prebuilt_dir(target)?;
-    if pdir.join("libsherpa-onnx-c-api.so").exists() {
+    if pdir.join("libsherpa-onnx-c-api.so").exists()
+        && pdir.join("libonnxruntime.so").exists()
+        && prebuilt_version_matches(&root().join(".android-prebuilt"), sherpa_version())
+    {
         return Ok(());
     }
-    eprintln!("sherpa-onnx prebuilts missing — fetching");
+    eprintln!("sherpa-onnx prebuilts missing or outdated — fetching");
     cmd_prebuilts(None)
 }
 
@@ -69,7 +72,6 @@ pub(super) fn prepare(target: &str, with_sign: bool) -> Result<Vec<(String, Stri
     patch_gradle_build_config()?;
     patch_gradle_properties()?;
     patch_generated_activities()?;
-    patch_plugin_consumer_rules()?;
     purge_other_jni_abis(target)?;
     copy_jni_prebuilts(target)?;
     patch_manifest()?;
@@ -154,15 +156,10 @@ pub(super) fn cmd_build(target: &str) -> Result<()> {
 }
 
 pub(super) fn cmd_prebuilts(version: Option<String>) -> Result<()> {
-    let ver_file = root().join("src-tauri").join("sherpa-version.txt");
-    let version = match version {
-        Some(v) => v.trim_start_matches('v').to_string(),
-        None => fs::read_to_string(&ver_file)
-            .with_context(|| format!("read {}", ver_file.display()))?
-            .trim()
-            .trim_start_matches('v')
-            .to_string(),
-    };
+    let version = version.map_or_else(
+        || sherpa_version().to_string(),
+        |v| v.trim().trim_start_matches('v').to_string(),
+    );
     let dest = root().join(".android-prebuilt");
     let archive_name = format!("sherpa-onnx-v{version}-android.tar.bz2");
     let url = format!(
@@ -174,7 +171,10 @@ pub(super) fn cmd_prebuilts(version: Option<String>) -> Result<()> {
         .join("arm64-v8a")
         .join("libsherpa-onnx-c-api.so");
 
-    if marker.exists() {
+    if marker.exists()
+        && marker.with_file_name("libonnxruntime.so").exists()
+        && prebuilt_version_matches(&dest, &version)
+    {
         println!("android prebuilts already present at {}", dest.display());
         return Ok(());
     }
@@ -201,20 +201,72 @@ pub(super) fn cmd_prebuilts(version: Option<String>) -> Result<()> {
         let mb = fs::metadata(&archive_path)?.len() as f64 / 1024.0 / 1024.0;
         println!("  {mb:.1} MB");
     }
-    println!("extracting {archive_name}");
-    sh_in(
-        &dest,
-        "tar",
-        &["-xjf", &archive_path.file_name().unwrap().to_string_lossy()],
-    )
-    .context("tar -xjf failed (need a tar that handles bz2; available on Win10+, macOS, Linux)")?;
-    fs::write(dest.join(".gitignore"), "*\n")?;
-    if !marker.exists() {
-        bail!(
-            "extraction succeeded but marker missing: {}",
-            marker.display()
-        );
+    let version_stamp = dest.join("version.txt");
+    if version_stamp.exists() {
+        fs::remove_file(&version_stamp)?;
     }
+    let staging = dest.join(format!("staging-{version}"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    println!("extracting {archive_name}");
+    sh_in(&staging, "tar", &["-xjf", &archive_path.to_string_lossy()]).context(
+        "tar -xjf failed (need a tar that handles bz2; available on Win10+, macOS, Linux)",
+    )?;
+    let staged_libraries = staging.join("jniLibs");
+    let staged_marker = staged_libraries
+        .join("arm64-v8a")
+        .join("libsherpa-onnx-c-api.so");
+    if !staged_marker.exists() || !staged_marker.with_file_name("libonnxruntime.so").exists() {
+        bail!("extraction did not contain the expected sherpa-onnx and ONNX Runtime libraries");
+    }
+    let libraries = dest.join("jniLibs");
+    if libraries.exists() {
+        fs::remove_dir_all(&libraries)?;
+    }
+    fs::rename(staged_libraries, libraries)?;
+    fs::remove_dir_all(staging)?;
+    fs::write(dest.join(".gitignore"), "*\n")?;
+    fs::write(version_stamp, &version)?;
     println!("android prebuilts staged at {}", dest.display());
     Ok(())
+}
+
+fn sherpa_version() -> &'static str {
+    include_str!("../../../src-tauri/sherpa-version.txt")
+        .trim()
+        .trim_start_matches('v')
+}
+
+fn prebuilt_version_matches(directory: &std::path::Path, version: &str) -> bool {
+    fs::read_to_string(directory.join("version.txt")).is_ok_and(|cached| cached.trim() == version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prebuilt_cache_requires_matching_version() {
+        let directory = std::env::temp_dir().join(format!(
+            "wtranscriber-prebuilt-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        assert!(!prebuilt_version_matches(&directory, sherpa_version()));
+        fs::write(directory.join("version.txt"), "1.13.2").unwrap();
+        assert!(!prebuilt_version_matches(&directory, sherpa_version()));
+        fs::write(
+            directory.join("version.txt"),
+            format!("{}\n", sherpa_version()),
+        )
+        .unwrap();
+        assert!(prebuilt_version_matches(&directory, sherpa_version()));
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

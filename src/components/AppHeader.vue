@@ -88,7 +88,6 @@ const activeTabLabel = computed(() => TABS.find((t) => t.id === tab.value)?.labe
         size="md"
         icon="playlist_play"
         :icon-size="22"
-        :disabled="queueActive"
         @click="emit('transcribe-all')"
         :title="
           queueActive

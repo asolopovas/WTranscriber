@@ -4,7 +4,7 @@ version = "0.1.14"
 description = "Audio transcription desktop app"
 authors = ["asolopovas"]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.90"
 license = "MIT"
 repository = "https://github.com/asolopovas/WTranscriber"
 publish = false
@@ -51,28 +51,28 @@ hex = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 tempfile = "3"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2"] }
+reqwest = { version = "0.13", default-features = false, features = ["stream", "rustls", "http2"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }
-rubato = "2"
-symphonia = { version = "0.5", features = ["all-codecs", "all-formats"] }
+rubato = "5"
+symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
 opus-decoder = "0.1"
-vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
-base64 = "0.22"
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "tracing", "api-24"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false, features = ["disable-linking"] }
+base64 = "0.23"
 byteorder = "1.5"
-sherpa-onnx = { version = "1.13", default-features = false }
+sherpa-onnx = { version = "=1.13.3", default-features = false }
+sherpa-onnx-sys = { version = "=1.13.3", default-features = false }
 
-[patch.crates-io]
-symphonia-format-isomp4 = { path = "vendor/symphonia-format-isomp4" }
+[package.metadata.cargo-machete]
+ignored = ["ort-sys", "sherpa-onnx-sys"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
-parakeet-rs = { version = "0.3", default-features = false, features = ["sortformer", "ort-defaults"] }
+parakeet-rs = { version = "=0.3.7", default-features = false, features = ["sortformer"] }
 whisper-rs = { version = "0.16", default-features = false }
-ort = { version = "=2.0.0-rc.12", default-features = false }
-ndarray = "0.16"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"

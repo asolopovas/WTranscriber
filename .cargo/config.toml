@@ -10,6 +10,7 @@ xtask = "run --quiet --manifest-path xtask/Cargo.toml --target-dir tmp/xtask-dri
 # `just check` triggers a cold C++ rebuild of whisper.cpp + ggml (~5 min).
 # force = false: the user / `just` can still override.
 CMAKE_GENERATOR = { value = "Ninja", force = false }
+CXXFLAGS_x86_64_unknown_linux_gnu = { value = "-D_GLIBCXX_USE_CXX11_ABI=0", force = false }
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-Wl,-rpath,$ORIGIN", "-C", "link-arg=-Wl,-rpath,$ORIGIN/../lib"]

@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn sanitize_topic_collapses_to_empty_for_pure_punctuation() {
-        assert!(sanitize_topic("!!!").is_empty());
+        assert_eq!(sanitize_topic("!!!"), "");
     }
 
     #[test]

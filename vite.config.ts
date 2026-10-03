@@ -3,7 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vite";
-import { DEV_PORT, HMR_PORT } from "./dev.config";
+import { DEV_PORT, HMR_PORT } from "./dev.config.ts";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 

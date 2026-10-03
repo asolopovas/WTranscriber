@@ -324,10 +324,7 @@ fn slab_has_speech(samples: &[f32]) -> bool {
         constants::FRAME_SAMPLES,
         vad::{self, VoiceActivityDetector as _},
     };
-    if std::env::var("WT_NO_VAD_GATE")
-        .ok()
-        .is_some_and(|v| v == "1")
-    {
+    if std::env::var("WT_NO_VAD_GATE").is_ok_and(|v| v == "1") {
         return true;
     }
     let Ok(model) = vad::model::model_path() else {
@@ -340,7 +337,7 @@ fn slab_has_speech(samples: &[f32]) -> bool {
         return true;
     };
     let mut speech_frames = 0usize;
-    for frame in samples.chunks_exact(FRAME_SAMPLES) {
+    for frame in samples.as_chunks::<FRAME_SAMPLES>().0 {
         match detector.push_frame(frame) {
             Ok(vad::VadFrame::Speech(_)) => {
                 speech_frames += 1;

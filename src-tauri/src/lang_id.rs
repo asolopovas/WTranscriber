@@ -114,7 +114,7 @@ fn voiced_window(samples: &[f32], target_seconds: usize) -> Vec<f32> {
     };
 
     let mut collected: Vec<f32> = Vec::with_capacity(target);
-    for frame in scan_slice.chunks_exact(FRAME_SAMPLES) {
+    for frame in scan_slice.as_chunks::<FRAME_SAMPLES>().0 {
         if let Ok(VadFrame::Speech(out)) = vad.push_frame(frame) {
             collected.extend_from_slice(out);
         }

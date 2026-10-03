@@ -38,6 +38,7 @@ import { applyMissingModelDefaults, applySystemConfigDefaults } from "@utils/mod
 import { useDebouncedSave } from "@composables/useDebouncedSave";
 import { useEssentials } from "@composables/useEssentials";
 import { useFileSelection } from "@composables/useFileSelection";
+import { useTranscriptionQueue } from "@composables/useTranscriptionQueue";
 import { recordOmit, recordSet } from "@utils/records";
 
 const tab = ref<Tab>("transcribe");
@@ -53,13 +54,11 @@ const selectedPath = ref<string>("");
 const selection = useFileSelection();
 const selectedPaths = selection.selected;
 const transcript = ref<Transcript | null>(null);
-const status = ref<"idle" | "running" | "renaming" | "error">("idle");
+const idleStatus = ref<"idle" | "renaming" | "error">("idle");
 const error = ref<string | null>(null);
 const warning = ref<string | null>(null);
 const dragOver = ref(false);
-const busy = ref<Record<string, boolean>>({});
 const progressByPath = ref<Record<string, TranscribeProgress>>({});
-const cancelledPaths = ref<Set<string>>(new Set());
 
 const essentials = useEssentials(models);
 const essentialIds = essentials.ids;
@@ -81,9 +80,23 @@ const probingState = computed(() =>
 );
 
 const dialogOpen = ref(false);
-const queueActive = ref(false);
-const queueTotal = ref(0);
-const queueDone = ref(0);
+type TranscriptionRequest = {
+  entry: DirEntry;
+  config: Config;
+  cacheKey?: string;
+};
+
+const queue = useTranscriptionQueue<TranscriptionRequest>({
+  key: ({ entry }) => entry.path,
+  run: executeTranscription,
+  cancel: ({ entry }) => api.cancelTranscribe(entry.path),
+  onError: (cause, job) => {
+    error.value = job.cacheKey ? `Re-diarize failed: ${String(cause)}` : String(cause);
+    idleStatus.value = "error";
+  },
+});
+const { active: queueActive, total: queueTotal, done: queueDone, busy } = queue;
+const status = computed(() => (queueActive.value ? "running" : idleStatus.value));
 
 const recorderRef = ref<InstanceType<typeof Recorder> | null>(null);
 const fileListRef = ref<InstanceType<typeof FileList> | null>(null);
@@ -370,11 +383,11 @@ onMounted(async () => {
   };
   unlisten.push(
     await events.onTranscribeProgress((p) => {
-      if (cancelledPaths.value.has(p.path)) return;
+      if (queue.states.value[p.path] !== "running") return;
       recordSet(progressByPath, p.path, p);
     }),
     await events.onTranscribeWarning((w) => {
-      warning.value = w.message;
+      if (queue.states.value[w.path] === "running") warning.value = w.message;
     }),
     ...(await essentials.attachListeners(refreshModels)),
     await getCurrentWebview().onDragDropEvent((event) => {
@@ -494,7 +507,6 @@ async function onAppDataReset() {
   selectedPath.value = "";
   clearSelection();
   progressByPath.value = {};
-  busy.value = {};
   probingTotal.value = 0;
   probingDone.value = 0;
   await refreshListing();
@@ -505,74 +517,50 @@ watch(saveError, (e) => {
   if (e) error.value = `save failed: ${e}`;
 });
 
+async function executeTranscription(job: TranscriptionRequest) {
+  const { entry: target, config: jobConfig, cacheKey } = job;
+  selectedPath.value = target.path;
+  idleStatus.value = "idle";
+  transcript.value = null;
+  try {
+    const result = cacheKey
+      ? await api.redoDiarization(target.path, cacheKey, jobConfig)
+      : await api.transcribeFile(target.path, jobConfig);
+    if (cacheKey && selectedPath.value === target.path) transcript.value = result;
+    await refreshListing();
+    if (jobConfig.auto_rename) {
+      const renamed = audioEntries.value.find((entry) => entry.path === target.path) ?? target;
+      await autoRename(renamed, { silent: true, transcript: result });
+    }
+  } finally {
+    recordOmit(progressByPath, target.path);
+  }
+}
+
 async function runTranscribe(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target || !config.value || !target.is_audio) return;
-  cancelledPaths.value.delete(target.path);
+  if (target) await transcribeAll([target]);
+}
+
+async function stopTranscribe(entry: DirEntry) {
+  recordOmit(progressByPath, entry.path);
+  await queue.cancel(entry.path);
+}
+
+async function transcribeAll(targets?: DirEntry[]) {
+  if (!config.value) return;
+  const items = (targets ?? untranscribedEntries.value).filter(
+    (entry) => entry.is_audio && !busy.value[entry.path],
+  );
+  if (!items.length) return;
   if (!selectedModelInstalled.value) {
     error.value = `Model "${selectedAsrModel.value?.display_name ?? config.value.model}" is not installed. Download it in Configuration.`;
     tab.value = "transcribe";
     return;
   }
-  selectedPath.value = target.path;
-  status.value = "running";
   error.value = null;
-  transcript.value = null;
-  recordSet(busy, target.path, true);
-  try {
-    await api.transcribeFile(target.path, config.value);
-    status.value = "idle";
-    await refreshListing();
-    if (config.value.auto_rename) {
-      const renamed = audioEntries.value.find((e) => e.path === target.path) ?? target;
-      await autoRename(renamed, { silent: true });
-    }
-  } catch (e) {
-    const msg = String(e);
-    if (msg.includes("cancelled")) {
-      status.value = "idle";
-    } else {
-      error.value = msg;
-      status.value = "error";
-    }
-  } finally {
-    recordOmit(busy, target.path);
-    recordOmit(progressByPath, target.path);
-  }
-}
-
-async function stopTranscribe(entry: DirEntry) {
-  cancelledPaths.value.add(entry.path);
-  for (const p of Object.keys(busy.value)) cancelledPaths.value.add(p);
-  for (const p of Object.keys(progressByPath.value)) cancelledPaths.value.add(p);
-  progressByPath.value = {};
-  busy.value = {};
-  status.value = "idle";
-  queueActive.value = false;
-  queueTotal.value = 0;
-  queueDone.value = 0;
-  await api.cancelAllTranscribes();
-}
-
-async function transcribeAll(targets?: DirEntry[]) {
-  if (!config.value || queueActive.value) return;
-  const items = targets ?? untranscribedEntries.value;
-  if (!items.length) return;
-  queueActive.value = true;
-  queueTotal.value = items.length;
-  queueDone.value = 0;
-  try {
-    for (const entry of items) {
-      if (!queueActive.value) break;
-      await runTranscribe(entry);
-      if (!queueActive.value) break;
-      queueDone.value += 1;
-    }
-  } finally {
-    queueActive.value = false;
-    queueTotal.value = 0;
-    queueDone.value = 0;
-  }
+  const jobConfig = { ...config.value };
+  await queue.enqueue(items.map((entry) => ({ entry: { ...entry }, config: jobConfig })));
 }
 
 const audioPathsList = () => audioEntries.value.map((e) => e.path);
@@ -613,12 +601,12 @@ async function bulkTranscribe() {
 }
 
 const autoRenamingPath = ref<string | null>(null);
-async function autoRename(entry?: DirEntry, opts?: { silent?: boolean }) {
+async function autoRename(entry?: DirEntry, opts?: { silent?: boolean; transcript?: Transcript }) {
   const target = entry ?? selectedEntry.value;
   if (!target || !target.is_audio || autoRenamingPath.value) return;
   autoRenamingPath.value = target.path;
   try {
-    let t = transcript.value;
+    let t = opts?.transcript ?? (selectedPath.value === target.path ? transcript.value : null);
     if (!t && target.cache_key) t = await api.historyLoad(target.cache_key);
     if (!t) {
       if (!opts?.silent) {
@@ -629,7 +617,7 @@ async function autoRename(entry?: DirEntry, opts?: { silent?: boolean }) {
       }
       return;
     }
-    status.value = "renaming";
+    idleStatus.value = "renaming";
     try {
       const s = await api.suggestFilename(t);
       const ext = target.name.includes(".") ? target.name.split(".").pop() : "";
@@ -641,12 +629,12 @@ async function autoRename(entry?: DirEntry, opts?: { silent?: boolean }) {
         if (!ok) return;
       }
       const newPath = await api.renameFile(target.path, suggestion);
-      selectedPath.value = newPath;
+      if (selectedPath.value === target.path) selectedPath.value = newPath;
       await refreshListing();
     } catch (e) {
       error.value = `auto-rename failed: ${String(e)}`;
     } finally {
-      status.value = "idle";
+      idleStatus.value = "idle";
     }
   } finally {
     autoRenamingPath.value = null;
@@ -744,25 +732,11 @@ async function commitRedoDiarize() {
     diarizer: redoDiarizeDiarizer.value,
     speakers: redoDiarizeSpeakers.value > 0 ? redoDiarizeSpeakers.value : null,
   };
-  selectedPath.value = target.path;
-  status.value = "running";
   error.value = null;
-  recordSet(busy, target.path, true);
-  try {
-    transcript.value = await api.redoDiarization(target.path, target.cache_key, overrideConfig);
-    status.value = "idle";
-    await refreshListing();
-    if (config.value.auto_rename) {
-      const renamed = audioEntries.value.find((e) => e.path === target.path) ?? target;
-      await autoRename(renamed, { silent: true });
-    }
-  } catch (e) {
-    error.value = `Re-diarize failed: ${String(e)}`;
-    status.value = "error";
-  } finally {
-    recordOmit(busy, target.path);
-    redoDiarizeTarget.value = null;
-  }
+  redoDiarizeTarget.value = null;
+  await queue.enqueue([
+    { entry: { ...target }, config: overrideConfig, cacheKey: target.cache_key },
+  ]);
 }
 
 const trimTarget = ref<DirEntry | null>(null);

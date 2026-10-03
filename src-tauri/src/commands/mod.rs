@@ -7,3 +7,4 @@ pub mod llm;
 pub mod models;
 pub mod system;
 pub mod transcribe;
+mod transcription_queue;

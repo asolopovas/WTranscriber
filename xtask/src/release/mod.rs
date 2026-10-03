@@ -390,15 +390,15 @@ fn patch_whisper_rs_sys() -> Result<()> {
 }
 
 fn dirs_home() -> Option<PathBuf> {
-    if let Ok(v) = std::env::var("HOME") {
-        if !v.is_empty() {
-            return Some(PathBuf::from(v));
-        }
+    if let Ok(v) = std::env::var("HOME")
+        && !v.is_empty()
+    {
+        return Some(PathBuf::from(v));
     }
-    if let Ok(v) = std::env::var("USERPROFILE") {
-        if !v.is_empty() {
-            return Some(PathBuf::from(v));
-        }
+    if let Ok(v) = std::env::var("USERPROFILE")
+        && !v.is_empty()
+    {
+        return Some(PathBuf::from(v));
     }
     None
 }

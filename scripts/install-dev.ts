@@ -1,32 +1,22 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
-const DEV_DIR = join(ROOT, "releases", "dev");
+const BUNDLE_DIR = join(ROOT, "src-tauri", "target", "release", "bundle", "nsis");
 const interactive = process.argv.includes("--interactive");
 
-function newestInstaller(): string | null {
-  if (!existsSync(DEV_DIR)) return null;
-  const matches = readdirSync(DEV_DIR)
-    .filter((n) => /^wtranscriber-setup-.*\.exe$/i.test(n))
-    .map((n) => join(DEV_DIR, n))
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-  return matches[0] ?? null;
-}
-
 if (platform() !== "win32") {
-  console.error(
-    "install-dev: Windows host installer only; use `just build` artefacts on other platforms.",
-  );
+  console.error("install-dev: Windows host installer only; use `just install` on Linux.");
   process.exit(1);
 }
 
-const installer = newestInstaller();
-if (!installer) {
-  console.error(`install-dev: no installer in ${DEV_DIR}. Run \`just build-host\` first.`);
+const config = JSON.parse(readFileSync(join(ROOT, "src-tauri", "tauri.conf.json"), "utf8"));
+const installer = join(BUNDLE_DIR, `${config.productName}_${config.version}_x64-setup.exe`);
+if (!existsSync(installer)) {
+  console.error(`install-dev: no installer at ${installer}. Run \`just install\` to build it.`);
   process.exit(1);
 }
 
@@ -37,9 +27,9 @@ if (res.error) {
   console.error(`install-dev: failed to launch installer: ${res.error.message}`);
   process.exit(1);
 }
-if (typeof res.status === "number" && res.status !== 0) {
-  console.error(`install-dev: installer exited with code ${res.status}`);
-  process.exit(res.status);
+if (res.status !== 0) {
+  console.error(`install-dev: installer failed (${res.signal ?? res.status})`);
+  process.exit(res.status ?? 1);
 }
 
 const installed = join(homedir(), "AppData", "Local", "WTranscriber", "wtranscriber.exe");

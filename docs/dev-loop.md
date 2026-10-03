@@ -17,6 +17,8 @@ Verification gates and the change-type matrix live in [`verification.md`](verifi
 
 Windows is the primary release host. Linux supports `just dev` and the Docker `.deb` path in `cargo xtask release`. `just build` runs only on a Windows host but builds the full matrix (Windows + Linux `.deb` + Android APK). `bundle.targets = ["nsis", "deb"]`; no macOS `.app`.
 
+`just install` bootstraps prerequisites and installs the current checkout on Windows and Linux. Linux builds natively with `sherpa-static`, installs the app and CLI under `~/.local`, and creates a desktop launcher without Docker or a Windows VM. It checks that the staged CLI starts before activating the new build. Stop a live session with `just stop` before installing. See [`release.md`](release.md) for installation details.
+
 ```bash
 just dev          # HMR (Vite + tauri dev)
 just dev stop     # stop any dev session (desktop + android)

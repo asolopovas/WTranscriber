@@ -96,16 +96,10 @@ pub fn run(
 }
 
 fn use_in_process(config: &Config) -> bool {
-    if std::env::var("WT_USE_SUBPROCESS")
-        .ok()
-        .is_some_and(|v| v == "1")
-    {
+    if std::env::var("WT_USE_SUBPROCESS").is_ok_and(|v| v == "1") {
         return false;
     }
-    if std::env::var("WT_FORCE_INPROCESS")
-        .ok()
-        .is_some_and(|v| v == "1")
-    {
+    if std::env::var("WT_FORCE_INPROCESS").is_ok_and(|v| v == "1") {
         return matches!(
             config.engine,
             Engine::Parakeet | Engine::NemoCtc | Engine::Qwen3Asr
@@ -117,9 +111,7 @@ fn use_in_process(config: &Config) -> bool {
     }
 
     if matches!(config.device, crate::config::Device::Cuda)
-        && std::env::var("WT_NO_INPROCESS_CUDA")
-            .ok()
-            .is_some_and(|v| v == "1")
+        && std::env::var("WT_NO_INPROCESS_CUDA").is_ok_and(|v| v == "1")
     {
         return false;
     }

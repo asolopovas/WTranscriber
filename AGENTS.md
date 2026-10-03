@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Stack: Tauri 2 · Rust edition 2024 (MSRV 1.88, pinned via `rust-toolchain.toml`) · Vue 3 + TS + Vite · Bun · `just`.
+Stack: Tauri 2 · Rust edition 2024 (MSRV 1.90, Rust 1.99 pinned via `rust-toolchain.toml`) · Vue 3 + TS + Vite · Bun · `just`.
 
 This file is the agent table of contents, not the project manual. Keep durable knowledge in `docs/` and link it here. If a task uncovers a missing rule, stale workflow, or repeated mistake, update the relevant doc in the same change.
 
@@ -28,7 +28,7 @@ just android           # Android USB/host HMR session (clean restart)
 just check             # full local gate; accepts job tags
 just check-changed     # changed-file gate for hooks/CI
 just build             # full dev release matrix (Windows host) -> releases/dev/
-just install           # build host installer then install it silently (--interactive for UI)
+just install           # bootstrap, build and install current checkout (Windows/Linux)
 just release           # publish dev; --stable bumps patch; --bump selects stable version
 just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
 just doctor            # diagnose host toolchain and prerequisites

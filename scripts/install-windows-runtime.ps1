@@ -112,7 +112,7 @@ function Copy-IfExists([string]$Source, [string]$Destination) {
 }
 
 function Install-OnnxRuntimeDirectML {
-    $version = '1.24.2'
+    $version = '1.24.4'
     Write-SetupLog "Installing ONNX Runtime DirectML $version"
     $archive = Join-Path $cache "Microsoft.ML.OnnxRuntime.DirectML.$version.zip"
     $stage = Join-Path $cache "Microsoft.ML.OnnxRuntime.DirectML.$version"
@@ -255,7 +255,7 @@ function Install-WhisperCudaWorker {
 }
 
 function Install-SherpaOnnx {
-    $version = 'v1.13.2'
+    $version = 'v1.13.3'
     Write-SetupLog "Installing sherpa-onnx speech runtime $version"
     if (Has-NvidiaGpu) {
         Write-SetupLog 'NVIDIA GPU detected; using the CUDA runtime package'

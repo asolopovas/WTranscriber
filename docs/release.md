@@ -2,20 +2,31 @@
 
 ## Commands
 
-| Command                             | What it does                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------------- |
-| `just build`                        | Full dev matrix (Windows host + Linux `.deb` + Android APK) into `releases/dev/` |
-| `just build-host`                   | Windows host installer only (no Docker)                                          |
-| `just install [--interactive]`      | Build the host installer, then install it silently (`--interactive` for NSIS UI) |
-| `just release`                      | Publish `releases/dev/*` to the rolling `dev` prerelease                         |
-| `just release --stable`             | Stable release: check + bump patch + build + publish                             |
-| `just release --bump [level]`       | Stable release with chosen bump; implies `--stable`                              |
-| `cargo xtask bump [level]`          | Bump version, commit, tag (no push, no build)                                    |
-| `cargo xtask release [--dev …]`     | Build artifacts into `releases/[dev/]`                                           |
-| `cargo xtask publish <dev\|stable>` | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                                   |
+| Command                             | What it does                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `just build`                        | Full dev matrix (Windows host + Linux `.deb` + Android APK) into `releases/dev/`                 |
+| `just build-host`                   | Windows host installer only (no Docker)                                                          |
+| `just install [--interactive]`      | Bootstrap, build and install current checkout on Windows/Linux (`--interactive` is Windows-only) |
+| `just release`                      | Publish `releases/dev/*` to the rolling `dev` prerelease                                         |
+| `just release --stable`             | Stable release: check + bump patch + build + publish                                             |
+| `just release --bump [level]`       | Stable release with chosen bump; implies `--stable`                                              |
+| `cargo xtask bump [level]`          | Bump version, commit, tag (no push, no build)                                                    |
+| `cargo xtask release [--dev …]`     | Build artifacts into `releases/[dev/]`                                                           |
+| `cargo xtask publish <dev\|stable>` | Upload `releases/[dev/]*` to `dev` or `vX.Y.Z`                                                   |
 
 `level`: `patch` (default), `minor`, `major`, or explicit `X.Y.Z`.
 `xtask release` flags (also accepted by `just release --stable`): `--dev`, `--no-host`, `--no-android`, `--no-deb`, `--no-windows-vm`, `--skip-rebuild`, `--sequential`.
+
+## Installing a branch locally
+
+Run `just install` from the checkout to build its current contents, including uncommitted changes. Pull updates yourself before running it when you want newer commits; installation does not change branches or fetch code. Internet access is required on a fresh machine.
+
+- Windows bootstraps missing tools with `scripts/bootstrap-windows.ps1`, refreshes the environment in the same invocation, then builds and installs the x64 NSIS bundle for the current checkout. It selects the current version from `src-tauri/target/release/bundle/nsis`, independently of release-channel artifacts or branch naming. Windows App Installer (`winget`) and administrator access are needed for toolchain setup. `--interactive` enables the installer UI.
+- Linux bootstraps Bun/Rust and native prerequisites using apt, dnf, pacman or zypper. Other distributions must provide native prerequisites themselves. Builds use `sherpa-static` and require neither CUDA nor Docker. Binaries and launchers go under `${WT_INSTALL_PREFIX:-$HOME/.local}`; desktop integration uses `${XDG_DATA_HOME:-$HOME/.local/share}`. Only missing system prerequisites require sudo; compilation and app installation run as the calling user.
+- Linux installation stages both binaries and native shared libraries, probes `wt --help`, then switches the installed build. A failed build or CLI probe keeps the previous build. A lock prevents concurrent installation into the same prefix.
+- macOS and other desktop systems are rejected before setup because the app's native runtime downloads do not support them.
+
+`just install --help` and invalid-option checks run without installing dependencies. A recorded dev session must be stopped with `just stop` before installation.
 
 ## Prerequisites for a stable release
 
@@ -32,7 +43,7 @@ The Windows host installer builds **natively**, not in Docker — Tauri's NSIS b
 
 ### Builder image (reusable, public)
 
-The builder is app-agnostic (Rust 1.88 + Bun + Tauri Linux deps + Android SDK/NDK + CUDA toolkit + cuDNN) and published to Docker Hub so contributors pull it instead of compiling the toolchain. `builders.rs` pulls it on demand. The image source lives in its own repo — [`asolopovas/tauri-app-container`](https://github.com/asolopovas/tauri-app-container) — where it is built and published (`just publish`); this repo only consumes the published tag. CUDA is included so CUDA-accelerated Linux builds work on NVIDIA hosts and so the image is reusable across other CUDA projects; `nvcc` is on `PATH` and the libs are on `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
+The builder is app-agnostic (Rust (the repository pins 1.99 and requires at least 1.90) + Bun + Tauri Linux deps + Android SDK/NDK + CUDA toolkit + cuDNN) and published to Docker Hub so contributors pull it instead of compiling the toolchain. `builders.rs` pulls it on demand. The image source lives in its own repo — [`asolopovas/tauri-app-container`](https://github.com/asolopovas/tauri-app-container) — where it is built and published (`just publish`); this repo only consumes the published tag. CUDA is included so CUDA-accelerated Linux builds work on NVIDIA hosts and so the image is reusable across other CUDA projects; `nvcc` is on `PATH` and the libs are on `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
 
 Publish flow (in the [`tauri-app-container`](https://github.com/asolopovas/tauri-app-container) repo): `docker login` once, then `just publish`. A newly pushed Docker Hub repo is **public** by default. To flip an existing private repo public via API:
 

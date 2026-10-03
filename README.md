@@ -13,13 +13,27 @@ Main engines:
 ## Requirements
 
 - [`just`](https://github.com/casey/just)
-- Windows: `just setup` installs the rest (Rust, Bun, VS Build Tools, CMake, CUDA, …)
-- Linux: Rust 1.88 (`rust-toolchain.toml`), Bun, Tauri platform prerequisites
+- Windows: `just install` bootstraps the build tools through Windows App Installer (`winget`)
+- Linux: `just install` bootstraps Rust, Bun and native dependencies (administrator access may be required)
 - Android builds: Android Studio SDK/NDK and JDK 21
 
 Desktop development works on Windows and Linux. `just build` is a Windows shortcut for the full dev release matrix: Windows NSIS, Android APK, and Linux `.deb`. macOS is not in the release matrix.
 
 ## Quick start
+
+From a checkout of the branch you want to install:
+
+```bash
+just install
+```
+
+This builds the current checkout, including local edits, then installs it. It does not pull commits or switch branches; pull the desired updates first if needed. No separate `just setup` is required. Internet access is required for toolchains and dependencies. Use `just install --help` for options.
+
+Windows uses the NSIS installer; `just install --interactive` shows its UI. Linux installs `wtranscriber` and `wt` into `~/.local/bin`, native libraries into `~/.local/lib/wtranscriber`, and a desktop launcher under `${XDG_DATA_HOME:-~/.local/share}`. If `~/.local/bin` is not on `PATH`, the installer prints the shell configuration to add. Set `WT_INSTALL_PREFIX` to an absolute path to change the Linux binary/library destination.
+
+Automatic Linux dependency installation covers apt, dnf, pacman and zypper hosts on x86_64 or aarch64. Other Linux distributions need the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#linux), CMake, Ninja, libclang, Git, curl and unzip installed first. macOS and other operating systems are not currently supported by the app's runtime downloads.
+
+For development:
 
 ```bash
 just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm

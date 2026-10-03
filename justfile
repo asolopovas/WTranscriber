@@ -126,10 +126,14 @@ build: setup-if-stale clean-logs
 build-host: setup-if-stale clean-logs
     {{_run}} --tag build-host --idle 1800 --max 3600 -- cargo xtask release --dev --no-android --no-deb --no-windows-vm
 
-# Build the host installer from current code, then install it silently. Pass --interactive for the NSIS UI.
+# Bootstrap, build and install the current checkout. --interactive opens the Windows installer UI.
 [windows]
-install *args: build-host
-    bun scripts/install-dev.ts {{args}}
+install $option="":
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1
+
+[unix]
+install $option="":
+    bash scripts/install.sh "$option"
 
 # Build optional CUDA worker zips for GitHub release hosting.
 [windows]

@@ -145,3 +145,19 @@ impl Backend for SortformerDiarizer {
         Ok(out)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires WT_TEST_SORTFORMER_MODEL pointing to the installed four-speaker model"]
+    fn installed_four_speaker_model_loads_and_processes_audio() {
+        let path = std::env::var_os("WT_TEST_SORTFORMER_MODEL").unwrap();
+        let mut model =
+            Sortformer::with_config(PathBuf::from(path), None, DiarizationConfig::callhome())
+                .unwrap();
+        let segments = model.diarize(vec![0.0; 16_000], 16_000, 1).unwrap();
+        assert!(segments.iter().all(|segment| segment.speaker_id < 4));
+    }
+}

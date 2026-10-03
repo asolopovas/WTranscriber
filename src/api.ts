@@ -82,7 +82,8 @@ export const api = {
       oldCacheKey,
       config: ConfigSchema.parse(config),
     }),
-  cancelAllTranscribes: () => invokeParsed<number>("cancel_all_transcribes", NumberSchema),
+  cancelTranscribe: (input: string) =>
+    invokeParsed<boolean>("cancel_transcribe", BooleanSchema, { input }),
   historyLoad: (key: string) =>
     invokeParsed<Transcript | null>("history_load", NullableTranscriptSchema, { key }),
   renameSpeaker: (key: string, old: string, name: string) =>

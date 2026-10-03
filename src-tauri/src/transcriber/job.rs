@@ -122,7 +122,7 @@ fn run_blocking(input: &Path, config: &Config, sink: &dyn Sink) -> Result<Transc
     let device_label = config.device.as_str().to_owned();
     let (st, scanned_end) = run_streaming_phase(input, config, sink, &key, &window)?;
 
-    let mut segments = st.state.segments.clone();
+    let mut segments = st.state.segments;
     apply_dedup(&mut segments);
 
     let duration_ms = if window.total_dur_ms > 0 {
