@@ -15,6 +15,8 @@ pub static EDIT_LOCK: Mutex<()> = Mutex::new(());
 pub struct SavedTranscript {
     pub key: String,
     pub transcript: Transcript,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub undo: Vec<Transcript>,
 }
 
 pub fn path(source: &Path) -> PathBuf {
@@ -50,9 +52,47 @@ fn stage(path: &Path, bytes: &[u8]) -> Result<tempfile::NamedTempFile> {
 }
 
 pub fn store(key: &str, source: &Path, transcript: &Transcript) -> Result<()> {
+    store_with_history(key, source, transcript, Vec::new())
+}
+
+pub fn store_edit(key: &str, source: &Path, transcript: &Transcript) -> Result<()> {
+    let previous = load_for_key(key, Some(source))?
+        .ok_or_else(|| Error::Config("transcript was not found".into()))?;
+    if previous == *transcript {
+        return Ok(());
+    }
+    let mut undo = load(source)?.map_or_else(Vec::new, |saved| saved.undo);
+    undo.push(previous);
+    store_with_history(key, source, transcript, undo)
+}
+
+pub fn can_undo(key: &str, source: &Path) -> Result<bool> {
+    load_for_key(key, Some(source))?;
+    Ok(load(source)?.is_some_and(|saved| !saved.undo.is_empty()))
+}
+
+pub fn undo_edit(key: &str, source: &Path) -> Result<Transcript> {
+    load_for_key(key, Some(source))?;
+    let mut saved =
+        load(source)?.ok_or_else(|| Error::Config("there are no edits to undo".into()))?;
+    let transcript = saved
+        .undo
+        .pop()
+        .ok_or_else(|| Error::Config("there are no edits to undo".into()))?;
+    store_with_history(key, source, &transcript, saved.undo)?;
+    Ok(transcript)
+}
+
+fn store_with_history(
+    key: &str,
+    source: &Path,
+    transcript: &Transcript,
+    undo: Vec<Transcript>,
+) -> Result<()> {
     let json = serde_json::to_vec_pretty(&SavedTranscript {
         key: key.into(),
         transcript: transcript.clone(),
+        undo,
     })?;
     let mut text = Vec::new();
     export::write_to(transcript, &mut text, export::Format::Txt)?;
@@ -171,6 +211,7 @@ mod tests {
             speakers_detected: 1,
             utterances: vec![
                 Utterance {
+                    needs_review: false,
                     start_ms: 1000,
                     end_ms: 2000,
                     speaker: Some("SPEAKER_01".into()),
@@ -178,6 +219,7 @@ mod tests {
                     language: None,
                 },
                 Utterance {
+                    needs_review: false,
                     start_ms: 3000,
                     end_ms: 4000,
                     speaker: Some("SPEAKER_01".into()),
@@ -369,6 +411,76 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn undo_restores_every_edit_and_survives_reopening() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("audio.wav");
+        let original = transcript();
+        store("key", &source, &original).unwrap();
+        let mut states = vec![original.clone()];
+        let mut edited = original;
+        edited.edit_utterance(0, "Correction.").unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        edited.set_utterance_speaker(0, "Alice").unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        edited.rename_speaker("SPEAKER_01", "Bob");
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        edited.replace_text("sentence", "phrase").unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        edited.mark_review(0, true).unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        let recognised = super::super::transcript_for_retry(
+            &[super::super::Segment {
+                text: "Retry result.".into(),
+                start_ms: 0,
+                end_ms: 500,
+                tokens: Vec::new(),
+            }],
+            &edited.utterances[0],
+        )
+        .unwrap();
+        edited.apply_recognition(0, recognised).unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        states.push(edited.clone());
+        edited.delete_utterance(0).unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        assert_eq!(load(&source).unwrap().unwrap().undo.len(), states.len());
+        for expected in states.into_iter().rev() {
+            assert!(can_undo("key", &source).unwrap());
+            let restored = undo_edit("key", &source).unwrap();
+            assert_eq!(restored, expected);
+            assert_eq!(load(&source).unwrap().unwrap().transcript, expected);
+            let mut text = Vec::new();
+            export::write_to(&expected, &mut text, export::Format::Txt).unwrap();
+            assert_eq!(std::fs::read(text_path(&source)).unwrap(), text);
+        }
+        assert!(!can_undo("key", &source).unwrap());
+        assert!(undo_edit("key", &source).is_err());
+        assert!(undo_edit("stale-key", &source).is_err());
+    }
+
+    #[test]
+    fn failed_undo_keeps_current_transcript_and_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("audio.wav");
+        store("key", &source, &transcript()).unwrap();
+        let mut edited = transcript();
+        edited.delete_utterance(0).unwrap();
+        store_edit("key", &source, &edited).unwrap();
+        let before = std::fs::read(path(&source)).unwrap();
+        std::fs::remove_file(text_path(&source)).unwrap();
+        std::fs::create_dir(text_path(&source)).unwrap();
+        assert!(undo_edit("key", &source).is_err());
+        assert_eq!(std::fs::read(path(&source)).unwrap(), before);
+        assert!(can_undo("key", &source).unwrap());
     }
 
     #[test]

@@ -3,10 +3,17 @@ import contextlib
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from quality import alignment_windows, make_words, run_stage
+from quality import alignment_windows, make_words, run_stage, speaker_for
 
 
 class QualityTests(unittest.TestCase):
+    def test_speaker_overlap_counts_each_instant_once_and_breaks_ties_consistently(self):
+        turns = [(0, 0.6, "A"), (0, 0.6, "A"), (0.2, 1, "B")]
+        self.assertEqual(speaker_for(0, 1, turns), "B")
+        self.assertEqual(speaker_for(0, 1, [(0, 1, "B"), (0, 1, "A")]), "A")
+        self.assertEqual(speaker_for(0, 1, [(0, 1, "A"), (0, 1, "B")]), "A")
+        self.assertIsNone(speaker_for(2, 3, turns))
+
     def test_cuda_oom_retries_same_stage_on_cpu_after_cleanup(self):
         class OOM(Exception):
             pass

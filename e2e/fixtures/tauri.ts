@@ -69,8 +69,20 @@ const transcript = {
   device: "cuda",
   speakers_detected: 2,
   utterances: [
-    { start_ms: 0, end_ms: 1_500, speaker: "SPEAKER_01", text: "Opening remarks." },
-    { start_ms: 2_000, end_ms: 4_000, speaker: "SPEAKER_02", text: "Follow up answer." },
+    {
+      start_ms: 0,
+      end_ms: 1_500,
+      needs_review: false,
+      speaker: "SPEAKER_01",
+      text: "Opening remarks.",
+    },
+    {
+      start_ms: 2_000,
+      end_ms: 4_000,
+      needs_review: false,
+      speaker: "SPEAKER_02",
+      text: "Follow up answer.",
+    },
   ],
   words: [],
 };
@@ -199,6 +211,7 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
         row.duration_ms = seedTranscript.duration_ms;
       }
 
+      const transcriptUndo: (typeof seedTranscript)[] = [];
       const replies: Record<string, (args: Record<string, unknown>) => unknown> = {
         app_version: () => "0.1.0",
         system_info: () => ({
@@ -235,22 +248,46 @@ export async function installTauriMocks(page: Pick<Page, "addInitScript">) {
         }),
         history_load: () => structuredClone(seedTranscript),
         rename_speaker: (args) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
           for (const utterance of seedTranscript.utterances) {
             if (utterance.speaker === args.old) utterance.speaker = String(args.new);
           }
           return structuredClone(seedTranscript);
         },
         update_transcript_text: ({ index, text }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
           seedTranscript.utterances[Number(index)].text = String(text);
           return structuredClone(seedTranscript);
         },
         set_transcript_speaker: ({ index, name }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
           seedTranscript.utterances[Number(index)].speaker = String(name);
           return structuredClone(seedTranscript);
         },
         replace_transcript_text: ({ find, replacement }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
           for (const u of seedTranscript.utterances)
             u.text = u.text.split(String(find)).join(String(replacement));
+          return structuredClone(seedTranscript);
+        },
+        transcript_can_undo: () => transcriptUndo.length > 0,
+        undo_transcript_edit: () => {
+          Object.assign(seedTranscript, transcriptUndo.pop()!);
+          return structuredClone(seedTranscript);
+        },
+        delete_transcript_segment: ({ index }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
+          seedTranscript.utterances.splice(Number(index), 1);
+          return structuredClone(seedTranscript);
+        },
+        mark_transcript_review: ({ index, marked }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
+          seedTranscript.utterances[Number(index)].needs_review = Boolean(marked);
+          return structuredClone(seedTranscript);
+        },
+        retry_transcript_segment: ({ index }) => {
+          transcriptUndo.push(structuredClone(seedTranscript));
+          seedTranscript.utterances[Number(index)].text = "Recognised segment.";
           return structuredClone(seedTranscript);
         },
         read_audio_bytes: () => silentWav(),

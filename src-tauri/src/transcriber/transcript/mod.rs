@@ -16,7 +16,7 @@ use crate::diarizer;
 use self::lang::{detect_script_lang, resolve_language};
 use self::words::group_words;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transcript {
     pub model: String,
     pub language: String,
@@ -30,8 +30,10 @@ pub struct Transcript {
     pub words: Vec<Word>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Utterance {
+    #[serde(default)]
+    pub needs_review: bool,
     pub start_ms: u64,
     pub end_ms: u64,
     pub speaker: Option<String>,
@@ -40,7 +42,7 @@ pub struct Utterance {
     pub language: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Word {
     pub text: String,
     pub start_ms: u64,
@@ -79,23 +81,99 @@ pub struct Segment {
 pub use diarizer::Segment as DiarSegment;
 
 impl Transcript {
+    fn word_range(&self, index: usize) -> crate::error::Result<std::ops::Range<usize>> {
+        self.utterances.get(index).ok_or_else(|| {
+            crate::error::Error::Config("transcript segment no longer exists".into())
+        })?;
+        let mut cursor = 0;
+        for (segment_index, utterance) in self.utterances[..=index].iter().enumerate() {
+            let expected: String = utterance
+                .text
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            let mut matched = None;
+            for start in cursor..self.words.len() {
+                if !word_belongs_to(&self.words[start], utterance) {
+                    continue;
+                }
+                let mut text = String::new();
+                for end in start..self.words.len() {
+                    if self.words[end].speaker != utterance.speaker {
+                        break;
+                    }
+                    text.extend(self.words[end].text.chars().filter(|c| !c.is_whitespace()));
+                    if text == expected {
+                        matched = Some(start..end + 1);
+                        break;
+                    }
+                    if !expected.starts_with(&text) {
+                        break;
+                    }
+                }
+                if matched.is_some() {
+                    break;
+                }
+            }
+            let range = matched.unwrap_or_else(|| {
+                let insertion = self.words[cursor..]
+                    .iter()
+                    .position(|word| word.start_ms >= utterance.start_ms)
+                    .map_or(self.words.len(), |offset| cursor + offset);
+                insertion..insertion
+            });
+            if segment_index == index {
+                return Ok(range);
+            }
+            cursor = range.end;
+        }
+        unreachable!()
+    }
+
     pub fn set_utterance_speaker(&mut self, index: usize, name: &str) -> crate::error::Result<()> {
         let name = name.trim();
         if name.is_empty() {
             return Err(crate::error::Error::Config("speaker name is empty".into()));
         }
+        let range = self.word_range(index)?;
+        for word in &mut self.words[range] {
+            word.speaker = Some(name.to_owned());
+        }
+        self.utterances[index].speaker = Some(name.to_owned());
+        self.recount_speakers();
+        Ok(())
+    }
+
+    pub fn delete_utterance(&mut self, index: usize) -> crate::error::Result<()> {
+        let range = self.word_range(index)?;
+        self.words.drain(range);
+        self.utterances.remove(index);
+        self.recount_speakers();
+        Ok(())
+    }
+
+    pub fn apply_recognition(
+        &mut self,
+        index: usize,
+        recognised: Vec<Word>,
+    ) -> crate::error::Result<()> {
+        let range = self.word_range(index)?;
+        self.utterances[index].text = words::join_words(
+            &recognised
+                .iter()
+                .map(|word| word.text.clone())
+                .collect::<Vec<_>>(),
+        );
+        self.utterances[index].needs_review = false;
+        self.words.splice(range, recognised);
+        Ok(())
+    }
+
+    pub fn mark_review(&mut self, index: usize, marked: bool) -> crate::error::Result<()> {
         let utterance = self.utterances.get_mut(index).ok_or_else(|| {
             crate::error::Error::Config("transcript segment no longer exists".into())
         })?;
-        for word in &mut self.words {
-            if word.speaker == utterance.speaker
-                && (utterance.start_ms..utterance.end_ms).contains(&word.start_ms)
-            {
-                word.speaker = Some(name.to_owned());
-            }
-        }
-        utterance.speaker = Some(name.to_owned());
-        self.recount_speakers();
+        utterance.needs_review = marked;
         Ok(())
     }
 
@@ -124,24 +202,17 @@ impl Transcript {
     }
 
     pub fn edit_utterance(&mut self, index: usize, text: &str) -> crate::error::Result<()> {
-        let utterance = self.utterances.get_mut(index).ok_or_else(|| {
-            crate::error::Error::Config("transcript segment no longer exists".into())
-        })?;
+        let range = self.word_range(index)?;
+        let utterance = &mut self.utterances[index];
         text.trim().clone_into(&mut utterance.text);
-        self.words.retain(|word| {
-            word.speaker != utterance.speaker
-                || !(utterance.start_ms..utterance.end_ms).contains(&word.start_ms)
+        let replacement = (!utterance.text.is_empty()).then(|| Word {
+            text: utterance.text.clone(),
+            start_ms: utterance.start_ms,
+            end_ms: utterance.end_ms,
+            speaker: utterance.speaker.clone(),
+            confidence: 0.0,
         });
-        if !utterance.text.is_empty() {
-            self.words.push(Word {
-                text: utterance.text.clone(),
-                start_ms: utterance.start_ms,
-                end_ms: utterance.end_ms,
-                speaker: utterance.speaker.clone(),
-                confidence: 0.0,
-            });
-            self.words.sort_by_key(|word| word.start_ms);
-        }
+        self.words.splice(range, replacement);
         Ok(())
     }
 
@@ -161,6 +232,46 @@ impl Transcript {
         self.recount_speakers();
         hits
     }
+}
+
+pub fn transcript_for_retry(
+    segments: &[Segment],
+    utterance: &Utterance,
+) -> crate::error::Result<Vec<Word>> {
+    let recognised = build(
+        segments,
+        &[],
+        Meta {
+            duration_ms: utterance.end_ms.saturating_sub(utterance.start_ms),
+            ..Meta::default()
+        },
+    );
+    let mut words = recognised.words;
+    words.retain(|word| !word.text.trim().is_empty());
+    if words.is_empty() {
+        return Err(crate::error::Error::Transcribe(
+            "no speech was recognised; the segment has been kept".into(),
+        ));
+    }
+    for word in &mut words {
+        word.start_ms = utterance
+            .start_ms
+            .saturating_add(word.start_ms)
+            .min(utterance.end_ms);
+        word.end_ms = utterance
+            .start_ms
+            .saturating_add(word.end_ms)
+            .min(utterance.end_ms);
+        word.speaker.clone_from(&utterance.speaker);
+    }
+    Ok(words)
+}
+
+fn word_belongs_to(word: &Word, utterance: &Utterance) -> bool {
+    word.speaker == utterance.speaker
+        && word.start_ms >= utterance.start_ms
+        && (word.start_ms < utterance.end_ms
+            || (utterance.start_ms == utterance.end_ms && word.start_ms == utterance.start_ms))
 }
 
 pub fn rediarize_words(words: Vec<Word>, diar: &[DiarSegment], meta: Meta) -> Transcript {
@@ -281,36 +392,7 @@ pub fn build(segments: &[Segment], diar: &[DiarSegment], meta: Meta) -> Transcri
         }
     }
 
-    if meta.duration_ms > 0 {
-        for word in &mut words {
-            word.start_ms = word.start_ms.min(meta.duration_ms);
-            word.end_ms = word.end_ms.max(word.start_ms).min(meta.duration_ms);
-        }
-    }
-    let mut utterances = group_words(&words);
-    for u in &mut utterances {
-        u.language = detect_script_lang(&u.text);
-    }
-
-    let mut speakers = std::collections::HashSet::new();
-    for w in &words {
-        if let Some(s) = &w.speaker {
-            speakers.insert(s.clone());
-        }
-    }
-
-    let language = resolve_language(&meta.language, &utterances);
-
-    Transcript {
-        model: meta.model,
-        language,
-        duration_ms: meta.duration_ms,
-        diarizer: meta.diarizer,
-        device: meta.device,
-        speakers_detected: speakers.len(),
-        utterances,
-        words,
-    }
+    from_words(words, meta)
 }
 
 #[cfg(test)]
@@ -318,6 +400,77 @@ mod tests {
     use super::lang::{detect_script_lang, resolve_language};
     use super::words::{group_words, is_sentence_end, join_words};
     use super::*;
+
+    #[test]
+    fn segment_corrections_do_not_touch_overlapping_neighbouring_dialogue() {
+        let original = from_words(
+            vec![
+                word("First.", 1000, 3000, Some("Alice")),
+                word("Second.", 2000, 4000, Some("Alice")),
+            ],
+            Meta {
+                duration_ms: 4000,
+                ..Meta::default()
+            },
+        );
+        let other = original.words[1].clone();
+        let mut renamed = original.clone();
+        renamed.set_utterance_speaker(0, "Bob").unwrap();
+        assert_eq!(renamed.words[1], other);
+        let mut edited = original.clone();
+        edited.edit_utterance(0, "Changed.").unwrap();
+        assert_eq!(edited.words[1], other);
+        let mut deleted = original;
+        deleted.delete_utterance(0).unwrap();
+        assert_eq!(deleted.words, vec![other]);
+    }
+
+    #[test]
+    fn retry_retains_range_and_speaker_without_changing_other_dialogue() {
+        let mut transcript = from_words(
+            vec![
+                word("First.", 1000, 2000, Some("Alice")),
+                word("Second.", 2000, 3000, Some("Bob")),
+            ],
+            Meta {
+                duration_ms: 3000,
+                ..Meta::default()
+            },
+        );
+        let other = transcript.utterances[1].clone();
+        let other_word = transcript.words[1].clone();
+        let recognised = transcript_for_retry(
+            &[Segment {
+                text: "Corrected.".into(),
+                start_ms: 100,
+                end_ms: 4000,
+                tokens: Vec::new(),
+            }],
+            &transcript.utterances[0],
+        )
+        .unwrap();
+        transcript.apply_recognition(0, recognised).unwrap();
+        assert_eq!(transcript.utterances[0].start_ms, 1000);
+        assert_eq!(transcript.utterances[0].end_ms, 2000);
+        assert_eq!(transcript.words[0].speaker.as_deref(), Some("Alice"));
+        assert_eq!(transcript.words[0].start_ms, 1100);
+        assert_eq!(transcript.words[0].end_ms, 2000);
+        assert_eq!(transcript.utterances[1], other);
+        assert_eq!(transcript.words[1], other_word);
+        assert!(transcript_for_retry(&[], &transcript.utterances[0]).is_err());
+        transcript.delete_utterance(0).unwrap();
+        assert_eq!(transcript.words, vec![other_word]);
+        assert_eq!(transcript.speakers_detected, 1);
+    }
+
+    #[test]
+    fn overlapping_word_ends_do_not_shorten_their_segment() {
+        let grouped = group_words(&[
+            word("hello", 1000, 2000, Some("Alice")),
+            word("there", 1500, 1700, Some("Alice")),
+        ]);
+        assert_eq!(grouped[0].end_ms, 2000);
+    }
 
     #[test]
     fn detects_sentence_end() {
@@ -419,7 +572,7 @@ mod tests {
 
     #[test]
     fn group_words_returns_empty_for_empty_input() {
-        assert!(group_words(&[]).is_empty());
+        assert_eq!(group_words(&[]).len(), 0);
     }
 
     #[test]
@@ -438,6 +591,7 @@ mod tests {
     #[test]
     fn resolve_language_falls_back_to_detected_when_auto() {
         let utts = vec![Utterance {
+            needs_review: false,
             start_ms: 0,
             end_ms: 1,
             speaker: None,
@@ -451,6 +605,7 @@ mod tests {
     fn resolve_language_joins_multiple_detected_languages() {
         let utts = vec![
             Utterance {
+                needs_review: false,
                 start_ms: 0,
                 end_ms: 1,
                 speaker: None,
@@ -458,6 +613,7 @@ mod tests {
                 language: Some("en".into()),
             },
             Utterance {
+                needs_review: false,
                 start_ms: 1,
                 end_ms: 2,
                 speaker: None,
@@ -578,6 +734,7 @@ mod tests {
 
     fn utt(speaker: Option<&str>, text: &str) -> Utterance {
         Utterance {
+            needs_review: false,
             start_ms: 0,
             end_ms: 0,
             speaker: speaker.map(str::to_owned),

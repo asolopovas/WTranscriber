@@ -108,6 +108,26 @@ export const api = {
       index,
       text,
     }),
+  transcriptCanUndo: (key: string, input: string) =>
+    invokeParsed<boolean>("transcript_can_undo", BooleanSchema, { key, input }),
+  undoTranscriptEdit: (key: string, input: string) =>
+    invokeParsed<Transcript>("undo_transcript_edit", TranscriptSchema, { key, input }),
+  deleteTranscriptSegment: (key: string, input: string, index: number) =>
+    invokeParsed<Transcript>("delete_transcript_segment", TranscriptSchema, { key, input, index }),
+  markTranscriptReview: (key: string, input: string, index: number, marked: boolean) =>
+    invokeParsed<Transcript>("mark_transcript_review", TranscriptSchema, {
+      key,
+      input,
+      index,
+      marked,
+    }),
+  retryTranscriptSegment: (key: string, input: string, index: number, config: Config) =>
+    invokeParsed<Transcript>("retry_transcript_segment", TranscriptSchema, {
+      key,
+      input,
+      index,
+      config: ConfigSchema.parse(config),
+    }),
   suggestFilename: (transcript: Transcript) =>
     invokeParsed<Suggestion>("suggest_filename", SuggestionSchema, {
       transcript: TranscriptSchema.parse(transcript),

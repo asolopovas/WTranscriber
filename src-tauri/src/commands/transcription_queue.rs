@@ -79,6 +79,25 @@ impl TranscriptionQueue {
         .map_err(|error| Error::Transcribe(format!("task: {error}")))?
     }
 
+    pub(super) fn run_if_idle<T>(
+        &self,
+        path: &str,
+        action: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        let jobs = self
+            .jobs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if jobs.contains_key(path) {
+            return Err(Error::Config(
+                "stop transcription before removing this recording".into(),
+            ));
+        }
+        let result = action();
+        drop(jobs);
+        result
+    }
+
     pub(super) fn cancel(&self, path: &str) -> bool {
         let jobs = self
             .jobs
@@ -115,6 +134,19 @@ mod tests {
             .await
             .unwrap()
             .unwrap()
+    }
+
+    #[test]
+    fn refuses_file_removal_while_registered() {
+        let queue = TranscriptionQueue::default();
+        let job = queue.register("audio.wav".into()).unwrap();
+        assert!(
+            queue
+                .run_if_idle::<()>("audio.wav", || panic!("must not remove active audio"))
+                .is_err()
+        );
+        drop(job);
+        assert_eq!(queue.run_if_idle("audio.wav", || Ok(7)).unwrap(), 7);
     }
 
     #[tokio::test]

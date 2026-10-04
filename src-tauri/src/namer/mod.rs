@@ -184,6 +184,7 @@ mod tests {
             device: None,
             speakers_detected: 1,
             utterances: vec![crate::transcriber::Utterance {
+                needs_review: false,
                 start_ms: 0,
                 end_ms: 1,
                 speaker: Some("SPEAKER_01".into()),
@@ -205,6 +206,7 @@ mod tests {
             device: None,
             speakers_detected: 0,
             utterances: vec![crate::transcriber::Utterance {
+                needs_review: false,
                 start_ms: 0,
                 end_ms: 1,
                 speaker: None,

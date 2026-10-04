@@ -132,13 +132,32 @@ pub fn rename_speaker(
     Ok(transcript)
 }
 
-fn persist_edit(key: &str, input: Option<&std::path::Path>, transcript: &Transcript) -> Result<()> {
+pub(super) fn persist_edit(
+    key: &str,
+    input: Option<&std::path::Path>,
+    transcript: &Transcript,
+) -> Result<()> {
     let source = transcriber::saved::source_for_key(key, input)?;
-    transcriber::saved::store(key, &source, transcript)?;
-    if transcriber::cache::load(key)?.is_some() {
-        transcriber::cache::overwrite_transcript(key, transcript)?;
-    }
+    transcriber::saved::store_edit(key, &source, transcript)?;
+    sync_edit_cache(key, transcript);
     Ok(())
+}
+
+fn sync_edit_cache(key: &str, transcript: &Transcript) {
+    let result = transcriber::cache::load(key).and_then(|cached| {
+        if cached.is_some() {
+            transcriber::cache::overwrite_transcript(key, transcript)?;
+        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        logfile::warn(&format!(
+            "transcript edit saved; disposable cache update failed: {error}"
+        ));
+        if let Err(error) = transcriber::cache::invalidate(key) {
+            logfile::warn(&format!("could not remove stale transcript cache: {error}"));
+        }
+    }
 }
 
 #[tauri::command]
@@ -188,6 +207,53 @@ pub fn update_transcript_text(
     let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
         .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
     transcript.edit_utterance(index, &text)?;
+    persist_edit(&key, Some(&input), &transcript)?;
+    Ok(transcript)
+}
+
+#[tauri::command]
+pub fn transcript_can_undo(key: String, input: PathBuf) -> Result<bool> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    transcriber::saved::can_undo(&key, &input)
+}
+
+#[tauri::command]
+pub fn undo_transcript_edit(key: String, input: PathBuf) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let transcript = transcriber::saved::undo_edit(&key, &input)?;
+    sync_edit_cache(&key, &transcript);
+    Ok(transcript)
+}
+
+#[tauri::command]
+pub fn delete_transcript_segment(key: String, input: PathBuf, index: usize) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
+        .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
+    transcript.delete_utterance(index)?;
+    persist_edit(&key, Some(&input), &transcript)?;
+    Ok(transcript)
+}
+
+#[tauri::command]
+pub fn mark_transcript_review(
+    key: String,
+    input: PathBuf,
+    index: usize,
+    marked: bool,
+) -> Result<Transcript> {
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut transcript = transcriber::saved::load_for_key(&key, Some(&input))?
+        .ok_or_else(|| crate::error::Error::Config("transcript was not found".into()))?;
+    transcript.mark_review(index, marked)?;
     persist_edit(&key, Some(&input), &transcript)?;
     Ok(transcript)
 }

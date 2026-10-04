@@ -206,12 +206,34 @@ pub fn reveal_in_folder(path: PathBuf) -> Result<()> {
 
 #[tauri::command]
 pub fn delete_file(path: PathBuf) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    std::fs::remove_file(&path)?;
-    logfile::info(&format!("delete {}", path.display()));
-    Ok(())
+    super::transcribe::with_idle_recording(&path, || {
+        if !path.exists() {
+            return Ok(());
+        }
+        if !path.is_file() {
+            return Err(Error::Config("only recording files can be removed".into()));
+        }
+        let parent = path
+            .parent()
+            .ok_or_else(|| Error::Config("recording has no parent folder".into()))?;
+        let trash = parent.join(".meta/trash");
+        std::fs::create_dir_all(&trash)?;
+        let recovery = tempfile::Builder::new()
+            .prefix("removed-")
+            .tempdir_in(trash)?;
+        let target = recovery.path().join(
+            path.file_name()
+                .ok_or_else(|| Error::Config("recording has no name".into()))?,
+        );
+        std::fs::rename(&path, &target)?;
+        let _ = recovery.keep();
+        logfile::info(&format!(
+            "remove {} -> {} (recoverable)",
+            path.display(),
+            target.display()
+        ));
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -245,6 +267,35 @@ pub fn share_transcript(title: String, text: String) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removal_keeps_audio_recoverable_and_retains_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("recording.wav");
+        std::fs::write(&source, b"original audio").unwrap();
+        meta::save(
+            &source,
+            &meta::AudioMeta {
+                trim_start_ms: 123,
+                ..meta::AudioMeta::default()
+            },
+        )
+        .unwrap();
+        let metadata = std::fs::read(meta::meta_path(&source)).unwrap();
+        delete_file(source.clone()).unwrap();
+        assert!(!source.exists());
+        let folder = std::fs::read_dir(dir.path().join(".meta/trash"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            std::fs::read(folder.join("recording.wav")).unwrap(),
+            b"original audio"
+        );
+        assert_eq!(std::fs::read(meta::meta_path(&source)).unwrap(), metadata);
+    }
 
     #[test]
     fn add_to_workdir_returns_existing_path_for_same_file() {

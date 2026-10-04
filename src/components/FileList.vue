@@ -391,6 +391,7 @@ defineExpose({
         <MenuItem
           icon="delete"
           tone="danger"
+          :disabled="busy[activeMenuEntry.path]"
           @click="
             emit('delete', activeMenuEntry);
             closeMenu();

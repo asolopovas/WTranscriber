@@ -192,6 +192,7 @@ test("retranscribes a completed recording without reusing its cached transcript"
   expect(await commandCount(page, "redo_diarization")).toBe(0);
   await finishTranscriptions(page);
   await expect(page.getByRole("heading", { name: "Transcript", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close transcript", exact: true }).click();
   await row.getByTitle("Retranscribe", { exact: true }).click();
   await expect.poll(() => commandCount(page, "transcribe_file")).toBe(2);
 });
@@ -312,6 +313,57 @@ test("opens logs from a job error and clears the displayed log", async ({ page }
   await expect(page.getByText("(log is empty)", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Transcribe", exact: true }).click();
   await expect(rowNamed(page, "interview")).toBeVisible();
+});
+
+test("editing text and speaker names cannot select or delete recordings", async ({ page }) => {
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await page.getByRole("button", { name: "Edit segment 1", exact: true }).click();
+  const text = page.getByRole("textbox", { name: "Segment text" });
+  await text.press("Control+a");
+  await text.press("Backspace");
+  await expect(text).toHaveValue("");
+  expect(await commandCount(page, "delete_file")).toBe(0);
+  await expect(page.getByText("3 selected", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByTitle("Rename speaker").first().click();
+  const name = page.getByRole("combobox", { name: "Speaker name", exact: true });
+  await name.press("Control+a");
+  await name.press("Backspace");
+  expect(await commandCount(page, "delete_file")).toBe(0);
+  await expect(page.getByRole("listitem")).toHaveCount(3);
+});
+
+test("bulk removal requires confirmation and Backspace cannot remove files", async ({ page }) => {
+  await rowNamed(page, "board_meeting").click();
+  await page.keyboard.press("Control+a");
+  await expect(page.getByText("3 selected", { exact: true })).toBeVisible();
+  await page.keyboard.press("Backspace");
+  expect(await commandCount(page, "delete_file")).toBe(0);
+  await page.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = async (cmd, args, options) => {
+      if (cmd === "plugin:dialog|message") {
+        window.__WT_TEST__.commandCalls.push({ command: cmd, args: args ?? {} });
+        return "Cancel";
+      }
+      if (cmd === "plugin:dialog|confirm") return false;
+      return invoke(cmd, args, options);
+    };
+  });
+  await page.keyboard.press("Delete");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__WT_TEST__.commandCalls.some(
+          (call) =>
+            call.command === "plugin:dialog|message" &&
+            String(call.args.message).includes("3 recordings"),
+        ),
+      ),
+    )
+    .toBe(true);
+  expect(await commandCount(page, "delete_file")).toBe(0);
+  await expect(page.getByRole("listitem")).toHaveCount(3);
 });
 
 test("deletes only the file targeted by its menu", async ({ page }) => {
@@ -490,6 +542,47 @@ test("records synthetic input, saves mono 16 kHz WAV bytes, and releases its med
   expect(view.getInt16(44, true)).toBe(4095);
 });
 
+test("shows optional timing review and plays the original filtered segment", async ({
+  page,
+}, testInfo) => {
+  await page.evaluate(() => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    window.__TAURI_INTERNALS__.invoke = async (cmd, args, options) => {
+      const result = await invoke(cmd, args, options);
+      if (cmd !== "history_load") return result;
+      return {
+        ...(result as object),
+        diarizer: "whisperx-community-1-v1",
+        words: [
+          { text: "Opening", start_ms: 0, end_ms: 500, speaker: "SPEAKER_01", confidence: 0.9 },
+          { text: "answer.", start_ms: 3000, end_ms: 4000, speaker: "SPEAKER_02", confidence: 0.2 },
+        ],
+      };
+    };
+  });
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await page.getByText("Timing review: 1 of 2 words", { exact: true }).click();
+  await page.getByRole("button", { name: "Show 1 segment to review", exact: true }).click();
+  await expect(page.getByText("Lower-scoring words: answer.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Play segment 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Play segment 2", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Play segment 2", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__WT_TEST__.commandCalls
+          .filter((call) => call.command === "read_audio_segment")
+          .some((call) => call.args.startMs === 2000 && call.args.endMs === 4000),
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("timing-desktop.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("timing-mobile.png") });
+  await page.getByRole("button", { name: "Show all segments", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Play segment 1", exact: true })).toBeVisible();
+});
+
 test("edits a completed segment and plays only its audio range", async ({ page }, testInfo) => {
   await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
   await page.getByRole("button", { name: "Edit segment 1", exact: true }).click();
@@ -591,4 +684,48 @@ test("corrects one speaker and replaces text across the current transcript", asy
   await openTranscript();
   await expect(page.getByRole("button", { name: "Alice", exact: true })).toBeVisible();
   await expect(page.getByText("Opening remarks!", { exact: true })).toBeVisible();
+});
+
+test("edits in a responsive transcript modal with persistent undo, review and segment retry", async ({
+  page,
+}, testInfo) => {
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  const modal = page.getByRole("dialog", { name: "Transcript", exact: true });
+  await expect(modal).toBeVisible();
+  expect((await modal.boundingBox())!.width).toBe(1000);
+  await page.getByRole("button", { name: "SPEAKER_01", exact: true }).click();
+  const rename = page.getByRole("dialog", { name: "Rename speaker" });
+  await expect(rename.getByRole("combobox", { name: "Apply to" })).toHaveValue("segment");
+  await expect(rename.getByText(/Change only segment|saved text transcript/)).toHaveCount(0);
+  await rename.getByRole("combobox", { name: "Speaker name" }).fill("Alice");
+  await rename.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(modal.getByRole("button", { name: "Alice", exact: true })).toBeFocused();
+  await modal.getByRole("button", { name: "Undo edit", exact: true }).click();
+  await expect(modal.getByRole("button", { name: "SPEAKER_01", exact: true })).toBeVisible();
+  await modal.getByRole("button", { name: "Mark for review: segment 2", exact: true }).click();
+  await modal.getByRole("button", { name: "Show 1 segment to review", exact: true }).click();
+  await expect(modal.locator("article")).toHaveCount(1);
+  await modal.getByRole("button", { name: "Retry recognition for segment 2", exact: true }).click();
+  await expect(modal.getByText("Recognised segment.", { exact: true })).toBeVisible();
+  const retry = await page.evaluate(() =>
+    window.__WT_TEST__.commandCalls.find((call) => call.command === "retry_transcript_segment"),
+  );
+  expect(retry?.args).toMatchObject({ index: 1, key: "board" });
+  await modal.getByRole("button", { name: "Show all segments", exact: true }).click();
+  await modal.getByRole("button", { name: "Delete segment 1", exact: true }).click();
+  await expect(modal.locator("article")).toHaveCount(1);
+  await page.keyboard.press("Control+z");
+  await expect(modal.locator("article")).toHaveCount(2);
+  await expect(modal.getByText("Opening remarks.", { exact: true })).toBeVisible();
+  await expect(modal.locator("..")).toHaveCSS("opacity", "1");
+  await page.screenshot({ path: testInfo.outputPath("transcript-modal-desktop.png") });
+  await modal.getByRole("button", { name: "Close transcript", exact: true }).click();
+  await rowNamed(page, "board_meeting").getByTitle("Transcript ready — view").click();
+  await expect(modal.getByRole("button", { name: "Undo edit", exact: true })).toBeEnabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await modal.boundingBox())!.width).toBeLessThan(390);
+  await expect(
+    modal.getByRole("button", { name: "Close transcript", exact: true }),
+  ).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath("transcript-modal-mobile.png") });
 });

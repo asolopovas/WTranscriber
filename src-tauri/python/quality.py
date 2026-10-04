@@ -17,12 +17,20 @@ def progress(phase, percent, warning=None):
 
 
 def speaker_for(start, end, turns):
-    overlaps = {}
+    spans = {}
     for a, b, speaker in turns:
-        overlap = min(end, b) - max(start, a)
-        if overlap > 0:
-            overlaps[speaker] = overlaps.get(speaker, 0) + overlap
-    return max(overlaps, key=overlaps.get) if overlaps else None
+        a, b = max(start, a), min(end, b)
+        if b > a:
+            spans.setdefault(speaker, []).append((a, b))
+    overlaps = {}
+    for speaker, ranges in spans.items():
+        covered_end = float("-inf")
+        duration = 0
+        for a, b in sorted(ranges):
+            duration += max(0, b - max(a, covered_end))
+            covered_end = max(covered_end, b)
+        overlaps[speaker] = duration
+    return min(overlaps, key=lambda speaker: (-overlaps[speaker], speaker)) if overlaps else None
 
 
 def make_words(segments, turns, offset, limit):
@@ -168,9 +176,6 @@ def run(request):
         warnings.append("Some previous segments cross the current trim boundary and were excluded. Retranscribe to recognise speech up to the new trim edges.")
     if unaligned:
         warnings.append(f"{unaligned} words could not be aligned: their timing remains approximate and their speaker is unassigned.")
-    uncertain = sum(w["confidence"] < 0.3 for w in words)
-    if uncertain:
-        warnings.append(f"{uncertain} words have low alignment confidence. Review their timing against the recording.")
     progress("diarizing", 100)
     return {"words": words, "language": language or "auto", "duration_ms": duration,
             "model": model_name, "warnings": warnings}

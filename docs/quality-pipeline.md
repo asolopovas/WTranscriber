@@ -38,3 +38,5 @@ python3 -m unittest discover -s src-tauri/python -p 'test_*.py'
 Native tests cover trim validation, cache invalidation and persistence; UI tests cover desktop-only selection. Actual model quality must also be checked against known speaker changes and word boundaries in the source recording. Do not claim perfect diarization from a passing synthetic test.
 
 Sources: [WhisperX](https://github.com/m-bain/whisperX), [Community-1 model card](https://huggingface.co/pyannote/speaker-diarization-community-1).
+
+Low alignment scores are shown in the transcript's optional **Timing review** section, with the total word count and a filter for affected segments. The 0.3 cutoff is an application review heuristic, not a calibrated error probability. Scores remain in saved word metadata; routine low scores do not trigger a global warning. Actual failed alignment, excluded trim-edge text and CPU fallback still produce warnings.

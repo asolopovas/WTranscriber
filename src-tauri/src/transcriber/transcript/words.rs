@@ -21,6 +21,7 @@ pub(super) fn group_words(words: &[Word]) -> Vec<Utterance> {
     let flush =
         |out: &mut Vec<Utterance>, start: u64, end: u64, spk: &Option<String>, parts: &[String]| {
             out.push(Utterance {
+                needs_review: false,
                 start_ms: start,
                 end_ms: end,
                 speaker: spk.clone(),
@@ -36,7 +37,11 @@ pub(super) fn group_words(words: &[Word]) -> Vec<Utterance> {
             cur_spk.clone_from(&w.speaker);
             parts.clear();
         }
-        cur_end = w.end_ms;
+        cur_end = if parts.is_empty() {
+            w.end_ms
+        } else {
+            cur_end.max(w.end_ms)
+        };
         parts.push(w.text.clone());
         prev_end = is_sentence_end(&w.text);
     }

@@ -132,6 +132,7 @@ export const RuntimeProgressSchema: z.ZodType<RuntimeProgress> = z.object({
 });
 
 export const UtteranceSchema: z.ZodType<Utterance> = z.object({
+  needs_review: z.boolean().optional(),
   start_ms: z.number(),
   end_ms: z.number(),
   speaker: z.string().nullable(),

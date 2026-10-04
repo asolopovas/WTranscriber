@@ -35,6 +35,10 @@ use crate::{
     transcriber::{self, Job, Transcript, cache, rediarize_words},
 };
 
+pub(super) fn with_idle_recording<T>(path: &Path, action: impl FnOnce() -> Result<T>) -> Result<T> {
+    TRANSCRIBE_QUEUE.run_if_idle(&path.to_string_lossy(), action)
+}
+
 static TRANSCRIBE_QUEUE: LazyLock<TranscriptionQueue> = LazyLock::new(TranscriptionQueue::default);
 
 #[derive(Debug, Clone, Serialize)]
@@ -900,4 +904,87 @@ mod tests {
     fn accepts_catalog_model_with_matching_engine() {
         assert!(validate_transcription_model(&Config::default()).is_ok());
     }
+}
+
+#[tauri::command]
+pub async fn retry_transcript_segment(
+    input: PathBuf,
+    key: String,
+    index: usize,
+    mut config: Config,
+) -> Result<Transcript> {
+    sync_engine(&mut config);
+    validate_transcription_model(&config)?;
+    if let Some(note) = crate::engine::resolve_device(&mut config) {
+        logfile::warn(&note);
+    }
+    config.diarize = false;
+    config.precise_word_timestamps = true;
+    TRANSCRIBE_QUEUE
+        .run(
+            input.to_string_lossy().into_owned(),
+            move |cancel| async move {
+                crate::android_start_transcription_service("Recognising transcript segment");
+                let _service = TranscriptionService;
+                tokio::task::spawn_blocking(move || {
+                    retry_segment_blocking(&input, &key, index, &config, &cancel)
+                })
+                .await
+                .map_err(|error| Error::Transcribe(format!("retry segment: {error}")))?
+            },
+        )
+        .await
+}
+
+fn retry_segment_blocking(
+    input: &Path,
+    key: &str,
+    index: usize,
+    config: &Config,
+    cancel: &CancellationToken,
+) -> Result<Transcript> {
+    let previous = {
+        let _guard = transcriber::saved::EDIT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        transcriber::saved::load_for_key(key, Some(input))?
+            .ok_or_else(|| Error::Config("transcript was not found".into()))?
+    };
+    let utterance = previous
+        .utterances
+        .get(index)
+        .ok_or_else(|| Error::Config("transcript segment no longer exists".into()))?;
+    let bytes = audio::playback_segment(input, utterance.start_ms, utterance.end_ms)?;
+    let fragment = tempfile::Builder::new().suffix(".wav").tempfile()?;
+    std::fs::write(fragment.path(), bytes)?;
+    let samples = audio::read_pcm16_wav(fragment.path())?;
+    let duration_sec = samples.len() as f64 / f64::from(audio::WHISPER_SAMPLE_RATE);
+    let mut segments = Vec::new();
+    let recognition = crate::engine::run(
+        &samples,
+        duration_sec,
+        config,
+        &mut |_| {},
+        &|| cancel.is_cancelled(),
+        &mut |chunk, _| segments.extend(chunk),
+    );
+    crate::engine::shutdown();
+    recognition?;
+    if cancel.is_cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let recognised = transcriber::transcript_for_retry(&segments, utterance)?;
+    let _guard = transcriber::saved::EDIT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut current = transcriber::saved::load_for_key(key, Some(input))?
+        .ok_or_else(|| Error::Config("transcript was not found".into()))?;
+    if current != previous {
+        return Err(Error::Config(
+            "transcript changed during recognition; retry the segment again".into(),
+        ));
+    }
+    current.apply_recognition(index, recognised)?;
+    super::diagnostics::persist_edit(key, Some(input), &current)?;
+    Ok(current)
 }

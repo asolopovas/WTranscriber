@@ -137,6 +137,7 @@ mod tests {
             speakers_detected: 2,
             utterances: vec![
                 Utterance {
+                    needs_review: false,
                     start_ms: 0,
                     end_ms: 1_500,
                     speaker: Some("SPEAKER_01".into()),
@@ -144,6 +145,7 @@ mod tests {
                     language: None,
                 },
                 Utterance {
+                    needs_review: false,
                     start_ms: 2_000,
                     end_ms: 4_500,
                     speaker: None,

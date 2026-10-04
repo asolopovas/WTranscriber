@@ -104,7 +104,7 @@ pub fn build_key_params(source_path: &Path, options: KeyOptions<'_>) -> Result<K
 #[must_use]
 pub fn compute_key(p: &KeyParams) -> String {
     let s = format!(
-        "trimmed-diarization-v7\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+        "speaker-attribution-v8\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         p.diarizer,
         p.source_path.display(),
         p.mtime_ns,
@@ -163,6 +163,8 @@ pub fn overwrite_transcript(key: &str, transcript: &Transcript) -> Result<()> {
     for e in &mut entries {
         if e.key == key {
             e.size_bytes = size_bytes;
+            e.utterances = transcript.utterances.len();
+            e.duration_ms = transcript.duration_ms;
             changed = true;
         }
     }

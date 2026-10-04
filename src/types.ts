@@ -109,6 +109,7 @@ export interface RuntimeProgress {
 }
 
 export interface Utterance {
+  needs_review?: boolean;
   start_ms: number;
   end_ms: number;
   speaker: string | null;

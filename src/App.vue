@@ -410,14 +410,27 @@ onMounted(async () => {
   );
   function onKeyDown(e: KeyboardEvent) {
     if (tab.value !== "transcribe") return;
-    if (dialogOpen.value) return;
+    if (
+      dialogOpen.value ||
+      e.defaultPrevented ||
+      e.isComposing ||
+      e.repeat ||
+      document.querySelector('[role="dialog"]')
+    )
+      return;
+    const target = e.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"]'))
+    )
+      return;
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
       selection.selectAll(audioPathsList);
     } else if (e.key === "Escape" && selectedPaths.value.size > 0) {
       clearSelection();
-    } else if ((e.key === "Delete" || e.key === "Backspace") && selectedPaths.value.size > 0) {
+    } else if (e.key === "Delete" && selectedPaths.value.size > 0) {
       e.preventDefault();
       void bulkDelete();
     }
@@ -525,6 +538,7 @@ watch(saveError, (e) => {
 });
 
 async function executeTranscription(job: TranscriptionRequest) {
+  warning.value = null;
   const { entry: target, config: jobConfig, cacheKey } = job;
   selectedPath.value = target.path;
   idleStatus.value = "idle";
@@ -583,7 +597,22 @@ function clearSelection() {
 
 async function bulkDelete() {
   const targets = [...selectedPaths.value];
-  if (!targets.length) return;
+  if (!targets.length || dialogOpen.value) return;
+  if (targets.some((path) => busy.value[path])) {
+    error.value = "Stop the selected recordings before removing them.";
+    return;
+  }
+  const names = targets.map(
+    (path) => audioEntries.value.find((entry) => entry.path === path)?.name ?? path,
+  );
+  const ok = await withDialog(() =>
+    confirm(
+      `Move ${targets.length} recording${targets.length === 1 ? "" : "s"} to the .meta/trash recovery folder? Saved trims and transcripts will be kept.\n\n${names.join("\n")}`,
+      { title: "Remove recordings", okLabel: "Remove", cancelLabel: "Cancel", kind: "warning" },
+    ),
+  );
+  if (!ok) return;
+  if (targets.some((path) => busy.value[path])) return;
   clearSelection();
   for (const path of targets) {
     try {
@@ -687,10 +716,10 @@ async function revealEntry(entry?: DirEntry) {
 
 async function deleteEntry(entry?: DirEntry) {
   const target = entry ?? selectedEntry.value;
-  if (!target) return;
+  if (!target || busy.value[target.path] || dialogOpen.value) return;
   const ok = await withDialog(() =>
     confirm(
-      `Remove "${target.name}" from this folder?\n\nThe original file in its source location is not affected.`,
+      `Move "${target.name}" to the .meta/trash recovery folder? Saved trims and transcripts will be kept.`,
       {
         title: "Delete file",
         okLabel: "Delete",
@@ -700,6 +729,7 @@ async function deleteEntry(entry?: DirEntry) {
   );
   if (!ok) return;
   try {
+    if (busy.value[target.path]) return;
     await api.deleteFile(target.path);
     if (selectedPath.value === target.path) {
       selectedPath.value = "";
@@ -1010,6 +1040,8 @@ const selectedProgress = computed(() =>
             v-if="transcript"
             :key="`${selectedPath}:${selectedEntry?.modified_ms}:${selectedEntry?.size_bytes}`"
             :transcript="transcript"
+            :config="config"
+            :busy="!!busy[selectedPath]"
             :source-path="selectedPath"
             :cache-key="selectedEntry?.cache_key ?? null"
             @close="closeTranscript"
