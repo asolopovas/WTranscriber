@@ -1,10 +1,10 @@
 # Technical debt
 
-Temporary patches, cleanup work, and removal triggers. Each item must be specific enough to retire without external memory.
+Compatibility pins and platform patches; retain each until its removal trigger is verified.
 
 ## Platform build workarounds
 
-Review these against upstream changes and verify the affected platform before removal. Tauri 2.12 plugin packages now include their consumer ProGuard rules, so the old rule-file workaround has been removed.
+Tauri 2.12 supplies consumer ProGuard rules; the former rule-file patch is retired.
 
 - `src-tauri/gen/android/app/src/main/java/com/asolopovas/wtranscriber/generated/WryActivity.kt` carries inline `@Suppress("DEPRECATION")` annotations on the `packageManager.getPackageInfo(...)` calls in the WebView-version getter so they do not fail `-Werror` Kotlin builds.
 - `src-tauri/build.rs::stub_windows_bundle_resources` touches the Windows bundle placeholder needed by `tauri_build` resource validation during `just check` / dev builds on a fresh checkout. `install_cuda_dlls` copies real CUDA DLLs from `%APPDATA%` during release builds. Pre-bundle, verify file sizes before shipping a release.

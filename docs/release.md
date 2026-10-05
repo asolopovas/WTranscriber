@@ -22,7 +22,7 @@
 Run `just install` from the checkout to build its current contents, including uncommitted changes. Pull updates yourself before running it when you want newer commits; installation does not change branches or fetch code. Internet access is required on a fresh machine.
 
 - Windows bootstraps missing tools with `scripts/bootstrap-windows.ps1`, refreshes the environment in the same invocation, then builds and installs the x64 NSIS bundle for the current checkout. It selects the current version from `src-tauri/target/release/bundle/nsis`, independently of release-channel artifacts or branch naming. Windows App Installer (`winget`) and administrator access are needed for toolchain setup. `--interactive` enables the installer UI.
-- Linux bootstraps Bun/Rust and native prerequisites using apt, dnf, pacman or zypper. Other distributions must provide native prerequisites themselves. Builds use `sherpa-static` and require neither CUDA nor Docker. Binaries and launchers go under `${WT_INSTALL_PREFIX:-$HOME/.local}`; desktop integration uses `${XDG_DATA_HOME:-$HOME/.local/share}`. Only missing system prerequisites require sudo; compilation and app installation run as the calling user.
+- Linux bootstraps Bun/Rust and native prerequisites using apt, dnf, pacman or zypper. Other distributions must provide native prerequisites themselves. Builds use CPU or supported CUDA as described in [Linux acceleration](dev-loop.md#linux-acceleration); Docker is not required. Binaries and launchers go under `${WT_INSTALL_PREFIX:-$HOME/.local}`; desktop integration uses `${XDG_DATA_HOME:-$HOME/.local/share}`. Only missing system prerequisites require sudo; compilation and app installation run as the calling user.
 - Linux installation stages both binaries and native shared libraries, probes `wt --help`, then switches the installed build. A failed build or CLI probe keeps the previous build. A lock prevents concurrent installation into the same prefix.
 - macOS and other desktop systems are rejected before setup because the app's native runtime downloads do not support them.
 
@@ -41,28 +41,15 @@ Run `just install` from the checkout to build its current contents, including un
 
 The Windows host installer builds **natively**, not in Docker — Tauri's NSIS bundling and WebView2 linking are unsupported on Linux.
 
-### Builder image (reusable, public)
+### Builder image
 
-The builder is app-agnostic (Rust (the repository pins 1.99 and requires at least 1.90) + Bun + Tauri Linux deps + Android SDK/NDK + CUDA toolkit + cuDNN) and published to Docker Hub so contributors pull it instead of compiling the toolchain. `builders.rs` pulls it on demand. The image source lives in its own repo — [`asolopovas/tauri-app-container`](https://github.com/asolopovas/tauri-app-container) — where it is built and published (`just publish`); this repo only consumes the published tag. CUDA is included so CUDA-accelerated Linux builds work on NVIDIA hosts and so the image is reusable across other CUDA projects; `nvcc` is on `PATH` and the libs are on `LD_LIBRARY_PATH=/usr/local/cuda/lib64`.
-
-Publish flow (in the [`tauri-app-container`](https://github.com/asolopovas/tauri-app-container) repo): `docker login` once, then `just publish`. A newly pushed Docker Hub repo is **public** by default. To flip an existing private repo public via API:
-
-```bash
-TOKEN=$(curl -s -H "Content-Type: application/json" \
-  -d '{"username":"asolopovas","password":"<PAT>"}' \
-  https://hub.docker.com/v2/users/login/ | jq -r .token)
-curl -s -X PATCH -H "Authorization: JWT $TOKEN" -H "Content-Type: application/json" \
-  -d '{"is_private":false}' \
-  https://hub.docker.com/v2/repositories/asolopovas/tauri-builder/
-```
-
-CUDA is installed from NVIDIA's `debian12` apt repo (`cuda-minimal-build` + cuDNN 9) in a parallel `cuda` stage and copied into the final image, keeping the Debian 12 glibc baseline so the resulting `.deb` stays portable.
+`xtask/src/release/builders.rs` pulls `asolopovas/tauri-builder:debian12` on demand; `WT_BUILDER_IMAGE` overrides it. Image source/publication belongs in [tauri-app-container](https://github.com/asolopovas/tauri-app-container). It supplies Linux/Android toolchains and CUDA while retaining a Debian 12 glibc baseline.
 
 ## Windows VM (Linux host)
 
 `cargo xtask release` from Linux builds the NSIS installer over SSH against the VM under `windowsVm`. Set `sshHost` and `vmDir` in `release.config.local.json` (gitignored; falls back to committed `release.config.json`, or `WT_RELEASE_CONFIG`).
 
-It auto-restarts the VM and retries the build once on failure. If `rust-std-x86_64-pc-windows-msvc is corrupt` persists, repair inside the VM: delete `~/.rustup` and `~/.cargo/bin`, reinstall via `rustup-init.exe`, re-add the msvc target.
+It restarts the VM and retries once on failure. Persistent toolchain corruption must be diagnosed and repaired inside that VM before retrying.
 
 ## Channels
 
@@ -94,4 +81,4 @@ keytool -genkey -v -keystore ~/.keystores/wtranscriber-release.jks \
   -alias wtranscriber -keyalg RSA -keysize 4096 -validity 10000
 ```
 
-Back up the keystore; losing it forfeits app identity.
+Keep the release keystore: replacements cannot update installations signed by the old identity.

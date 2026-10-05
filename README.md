@@ -1,138 +1,63 @@
 # WTranscriber
 
-Offline audio transcription app built with Tauri 2, Vue 3, TypeScript, and Rust.
-It runs speech recognition locally, adds speaker labels, and can suggest file names with a local LLM.
+Offline transcription app for Windows, Linux, and Android, built with Tauri 2, Vue 3, TypeScript, and Rust. Speech recognition, speaker labels, language detection, and optional filename suggestions run locally.
 
-Main engines:
-
-- ASR: Parakeet, Whisper.cpp, GigaAM
-- Diarization: Sortformer ONNX, pyannote + TitaNet ONNX
-- Language detection: Silero Lang95 ONNX
-- Naming: Qwen3 GGUF via llama.cpp
-
-## Requirements
-
-- [`just`](https://github.com/casey/just)
-- Windows: `just install` bootstraps the build tools through Windows App Installer (`winget`)
-- Linux: `just install` bootstraps Rust, Bun and native dependencies (administrator access may be required)
-- Android builds: Android Studio SDK/NDK and JDK 21
-
-Desktop development works on Windows and Linux. `just build` is a Windows shortcut for the full dev release matrix: Windows NSIS, Android APK, and Linux `.deb`. macOS is not in the release matrix.
-
-## Quick start
-
-From a checkout of the branch you want to install:
+## Install from a checkout
 
 ```bash
 just install
 ```
 
-This builds the current checkout, including local edits, then installs it. It does not pull commits or switch branches; pull the desired updates first if needed. No separate `just setup` is required. Internet access is required for toolchains and dependencies. Use `just install --help` for options.
+Requires [just](https://github.com/casey/just). Installation bootstraps missing tools and builds the current checkout, including local edits; it does not fetch updates or change branches. Fresh setup requires internet access and may need administrator privileges.
 
-Windows uses the NSIS installer; `just install --interactive` shows its UI. Linux installs `wtranscriber` and `wt` into `~/.local/bin`, native libraries into `~/.local/lib/wtranscriber`, and a desktop launcher under `${XDG_DATA_HOME:-~/.local/share}`. If `~/.local/bin` is not on `PATH`, the installer prints the shell configuration to add. Set `WT_INSTALL_PREFIX` to an absolute path to change the Linux binary/library destination.
+Windows uses NSIS; `just install --interactive` shows its UI. Linux installs binaries under `~/.local/bin`, libraries under `~/.local/lib/wtranscriber`, and a desktop launcher under `${XDG_DATA_HOME:-~/.local/share}`. `WT_INSTALL_PREFIX` changes the Linux binary/library prefix. Linux prerequisite setup supports apt, dnf, pacman, and zypper on x86_64/aarch64. Other distributions need the native prerequisites installed manually. macOS is unsupported.
 
-Automatic Linux dependency installation covers apt, dnf, pacman and zypper hosts on x86_64 or aarch64. Other Linux distributions need the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#linux), CMake, Ninja, libclang, Git, curl and unzip installed first. macOS and other operating systems are not currently supported by the app's runtime downloads.
+CUDA is selected automatically when the GPU/toolkit supports it. `WT_CUDA=0 just install` selects CPU; `WT_CUDA=1 just install` requires CUDA. See [development](docs/dev-loop.md#linux-acceleration) and [installation details](docs/release.md#installing-a-branch-locally).
 
-For development:
+## Development
 
-```bash
-just setup             # fresh-clone setup: toolchain (Windows), JS deps, git hooks, cargo prewarm
-just dev               # desktop HMR
-just android           # clean-start an Android USB HMR session
-just check             # full local quality gate
-just build             # full dev release matrix (Windows host) → releases/dev/
-just release           # publish releases/dev/ to the rolling dev prerelease
-just release --stable  # bump patch, check, build, publish stable
-```
+| Task                        | Command                 |
+| --------------------------- | ----------------------- |
+| Fresh-clone setup           | `just setup`            |
+| Desktop HMR                 | `just dev`              |
+| Android USB HMR             | `just android`          |
+| Stop dev sessions           | `just dev stop`         |
+| Checks                      | `just check`            |
+| Windows release matrix      | `just build`            |
+| Publish rolling dev release | `just release`          |
+| Stable patch release        | `just release --stable` |
 
-Use `just --list` for all recipes. Developer workflow details live in [`AGENTS.md`](AGENTS.md) and [`docs/dev-loop.md`](docs/dev-loop.md).
-
-## Common tasks
-
-| Need                  | Command                                                                  |
-| --------------------- | ------------------------------------------------------------------------ |
-| Stop dev sessions     | `just dev stop`                                                          |
-| Android APK only      | `bun scripts/android-install.ts`                                         |
-| Reinstall Android APK | `bun scripts/android-install.ts --force`                                 |
-| Headless emulator     | `bun scripts/android-emu.ts`                                             |
-| Changed-file checks   | `just check-changed --staged`                                            |
-| Stable release        | `just release --stable`                                                  |
-| CLI model catalogue   | `cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- models list` |
-
-## Optional Windows CUDA setup
-
-`just setup` installs or repairs the Windows host toolchain, CUDA Toolkit 12.x, cuDNN 9, and the sherpa-onnx CUDA runtime. The CUDA pieces can also be installed individually:
-
-```powershell
-just cudnn         # cuDNN 9 (CUDA 12)
-just sherpa-cuda   # sherpa-onnx CUDA runtime
-just doctor        # verify prerequisites
-```
-
-CUDA is optional. CPU builds and Android builds still work without a CUDA GPU.
+Use `just --list` for all recipes. Android needs the pinned SDK/NDK and JDK 21; see [Android](docs/android.md). Release commands publish externally; their exact build/signing contracts are in [release.md](docs/release.md).
 
 ## CLI
 
-After a release install, use `wt`. During development, run it through Cargo:
+After installation, use `wt`. During development, prefix these commands with `cargo run --manifest-path src-tauri/Cargo.toml --bin wt --`:
 
 ```bash
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- audio.wav
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- -l en --speakers 3 meeting.ogg
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- --no-diarize a.wav b.mp3
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- --device cpu --no-cache a.wav
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- models list
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- models install whisper-cpp-large-v3-turbo-q8
-cargo run --manifest-path src-tauri/Cargo.toml --bin wt -- models status parakeet-tdt-0.6b-v3-int8
+wt audio.wav
+wt --lang en --speakers 3 meeting.ogg
+wt --no-diarize a.wav b.mp3
+wt --device cpu --no-cache a.wav
+wt models list
+wt models install whisper-cpp-large-v3-turbo-q8
 ```
 
-The CLI writes JSON transcripts next to the input files.
+JSON transcripts are written under each input folder's `.meta/`; the text export sits beside the recording. `wt --help` provides CLI options, and [ASR routing](docs/asr-pipeline.md) explains model/device selection.
 
-## Downloads and disk use
+## Models and downloads
 
-The installer is small. Models and native runtimes are downloaded on first use into the OS user data directory:
+Models and native runtimes download on first use into `%APPDATA%\asolopovas\wtranscriber\` on Windows, `~/.local/share/wtranscriber/` on Linux, or app-private Android storage. Download archives remain cached for reinstalls. Default models total about 1.6 GB before desktop runtimes.
 
-- Windows: `%APPDATA%\asolopovas\wtranscriber\`
-- Linux: `~/.local/share/wtranscriber/`
-- Android: app-private storage
+| Role                 | Default model               |
+| -------------------- | --------------------------- |
+| ASR                  | `parakeet-tdt-0.6b-v3-int8` |
+| Language detection   | `silero-lang95-onnx`        |
+| Diarization          | `sortformer-v2-onnx-4spk`   |
+| Filename suggestions | `qwen3-0.6b-q4km`           |
 
-Default essentials are about **1.6 GB** before any desktop runtime downloads:
+Whisper.cpp, GigaAM, Qwen3-ASR, and TitaNet provide other recognition/speaker options. `wt models list` shows the current catalogue, sizes, and installation status. Desktop users can add [WhisperX alignment and Community-1](docs/quality-pipeline.md).
 
-| Component          | ID                          |   Size |
-| ------------------ | --------------------------- | -----: |
-| ASR                | `parakeet-tdt-0.6b-v3-int8` | 670 MB |
-| Language detection | `silero-lang95-onnx`        |  16 MB |
-| Diarization        | `sortformer-v2-onnx-4spk`   | 492 MB |
-| Local rename LLM   | `qwen3-0.6b-q4km`           | 397 MB |
-
-Desktop CUDA runs also download CUDA runtimes such as sherpa-onnx and cuDNN. The local rename feature downloads a separate llama.cpp runtime. Download archives are kept in cache so reinstalls are faster.
-
-## Model IDs
-
-ASR:
-
-- `parakeet-tdt-0.6b-v3-int8` — default, 25 European languages, Android-friendly
-- `whisper-cpp-large-v3-turbo-q8` — multilingual Whisper fallback
-- `gigaam-v3-ru` — Russian-specialised model
-
-Diarization:
-
-- `sortformer-v2-onnx-4spk` — default, up to 4 speakers
-- `sherpa-pyannote-titanet` — fallback for other cases
-
-LLM:
-
-- `qwen3-0.6b-q4km` — default rename model
-- `qwen3-1.7b-q4km` — larger rename model
-
-Run `wt models list` for install status and exact sizes.
-
-## More docs
-
-- [`docs/dev-loop.md`](docs/dev-loop.md) — desktop and Android development loop
-- [`docs/android.md`](docs/android.md) — Android prerequisites and bootstrap contract
-- [`docs/asr-pipeline.md`](docs/asr-pipeline.md) — current ASR and diarization routing
-- [`docs/release.md`](docs/release.md) — release commands, artifacts, signing, recovery
-- [`docs/tmp.md`](docs/tmp.md) — scratch files and liveness logs
+[Documentation map](docs/README.md) · [Agent guide](AGENTS.md) · [Security reports](SECURITY.md)
 
 ## License
 

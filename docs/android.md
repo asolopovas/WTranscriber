@@ -1,49 +1,55 @@
 # Android
 
-Dev-loop commands: [`dev-loop.md`](dev-loop.md). This file: prerequisites, build/install, bootstrap stages.
-
 ## Prerequisites
 
-- Android Studio with SDK + NDK (version `27.2.12479018`, pinned in `justfile` `_android_ndk`)
-- JDK 21
-- Rust Android targets (`rustup target add aarch64-linux-android`, etc.)
-- sherpa-onnx Android prebuilts fetch automatically on first build into `.android-prebuilt/`
+SDK/NDK from Android Studio, JDK 21, and Rust targets for the selected ABI. NDK `27.2.12479018` is pinned in `justfile`'s `_android_ndk`. Sherpa prebuilts download into `.android-prebuilt/` on first build. `just doctor` checks prerequisites.
 
-`bun scripts/doctor.ts` (or `just doctor`) validates host prerequisites.
+## APK build/install
 
-## Build / install (no live session)
+Run outside a live HMR session:
 
 ```bash
-cargo xtask android build                # build the APK (aarch64 default)
-cargo xtask android build --target armv7 # targets: aarch64 | armv7 | i686 | x86_64
-bun scripts/android-install.ts           # build + adb install -r
-bun scripts/android-install.ts --force   # on signature mismatch: uninstall (wipes data) + reinstall
+cargo xtask android build
+cargo xtask android build --target armv7
+bun scripts/android-install.ts
 ```
 
-`android-install.ts` derives `ANDROID_HOME`/`NDK_HOME` from the standard SDK location (Windows/Linux), runs `cargo xtask android build`, then `adb install -r`. Without `--force` a signature mismatch fails with instructions. `.vscode/tasks.json` wraps it as "android: build + install APK" and "android: build + reinstall APK (wipe data)".
+Targets: `aarch64` (default), `armv7`, `i686`, `x86_64`. The install script derives SDK/NDK paths for Windows/Linux and uses `adb install -r`. Signature mismatch fails unless `--force` is chosen; force uninstalls and wipes app data. VS Code wraps both install modes.
 
-`xtask/src/release/builders.rs::ensure_dev_keystore_properties` regenerates the keystore-properties path per-host when the recorded `storeFile` is missing, so the same checkout signs APKs on Windows and Linux.
+`ensure_dev_keystore_properties` in `xtask/src/release/builders.rs` regenerates missing host-specific keystore paths for Android and release builds.
 
-## What `just android` guarantees
+## Bootstrap contract
 
-`just android` runs `cargo xtask android bootstrap usb` directly (no idle/max harness). It stops any existing session and force-stops the app first, then brings up a fresh one. Stages are labelled `[stage N/7]`:
+`just android` invokes `cargo xtask android bootstrap usb` directly, without the run harness watchdog. Stages:
 
-- **0** — stop previous session, force-stop app.
-- **1** — preflight (`node_modules`, adb device); writes `tmp/_platform`.
-- **2** — clears then tails focused logcat → `tmp/logcat.log` (`*:S` baseline + `RustStdoutStderr:I`, `Tauri:I`, `chromium:W`, `AndroidRuntime:E`; `am_crash`/`am_proc_died`/`am_proc_start`/`am_kill` at `:V`). Spawns `scripts/dev-vital.ts`.
-- **3a** — Vite dev server → `tmp/android-dev.{log,err.log}`. USB sets `TAURI_DEV_HOST=127.0.0.1` + `adb reverse tcp:1420`/`tcp:1421`; host mode detects LAN IP. Vite is bootstrap-owned so it survives the APK launch.
-- **3b** — `tauri android dev` (external-vite) → `tmp/android-tauri.{log,err.log}`.
-- **4** — waits for Vite HMR on `:1420`; fast-fails on child death or signature mismatch.
-- **5** — waits for cargo+gradle build → APK install/launch.
-- **6** — attaches WebView DevTools (≤90 s, succeeds when the devtools socket appears via `/proc/net/unix`), then probes Tauri IPC via `system_info` over CDP (≤20 s, non-fatal). **This is the liveness signal.**
-- **7** — attaches lldb (best-effort).
+| Stage | Work                                                                                                |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| 0     | Stop previous session and force-stop app                                                            |
+| 1     | Check node_modules/device; write `tmp/_platform`                                                    |
+| 2     | Clear/tail focused logcat; start `scripts/dev-vital.ts`                                             |
+| 3a    | Start bootstrap-owned Vite; configure USB reverse or LAN host                                       |
+| 3b    | Start `tauri android dev` with external Vite                                                        |
+| 4     | Await HMR on 1420; fail on child death/signature mismatch                                           |
+| 5     | Await Cargo/Gradle, APK installation, and launch                                                    |
+| 6     | Await WebView socket in `/proc/net/unix` (90 s); probe `system_info` IPC over CDP (20 s, non-fatal) |
+| 7     | Best-effort lldb attachment                                                                         |
 
-On APK signature mismatch the bootstrap auto-recovers (uninstall + retry once). On success it writes `tmp/_pids.json` and prints `BOOTSTRAP OK …` (CDP on `tcp:9222`).
+Success writes `tmp/_pids.json`, prints `BOOTSTRAP OK`, and exposes CDP on 9222. Signature mismatch triggers one uninstall/retry, wiping app data. Logcat captures RustStdoutStderr/Tauri info, chromium warnings, AndroidRuntime errors, and app process/crash events.
 
-## Headless emulator
+[dev-loop.md](dev-loop.md#live-session-signals) owns liveness/restart rules; [tmp.md](tmp.md) owns output files.
+
+## WebView inspection
 
 ```bash
-bun scripts/android-emu.ts        # cross-platform; bounded waits
+bun scripts/cdp.ts 'document.title'
 ```
 
-Creates the AVD on first run, boots `-no-window -no-audio -gpu swiftshader_indirect -accel on`. Each wait stage prints progress every 5 s.
+The helper uses `dev.config.ts`'s CDP host/port, accepts `CDP_HOST`/`CDP_PORT` overrides, and selects the first page target with a WebSocket debugger URL. It evaluates with awaitPromise/returnByValue and a 15 s timeout; verify the selected target when several exist. Use `http://127.0.0.1:9222/json` to inspect forwarded targets after restart.
+
+A stale LAN HMR URL after switching to USB requires refetching the page from the current server; do not replace the APK during HMR. Native crash symbolisation uses unstripped libraries under `target/<triple>/{debug,release}/deps/`, not APK-stripped copies.
+
+## Emulator
+
+`bun scripts/android-emu.ts` creates the AVD if needed and boots headlessly with no audio, SwiftShader, and acceleration. Waits are bounded with progress every 5 s.
+
+Source: `xtask/src/android/`, `scripts/android-install.ts`, `scripts/android-emu.ts`, `scripts/cdp.ts`.

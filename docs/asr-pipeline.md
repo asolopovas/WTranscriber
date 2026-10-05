@@ -17,7 +17,7 @@
 7. All diarizers receive only the saved trim. Native Sortformer/TitaNet use an isolated cropped WAV; results are clamped to that audio and shifted to source time exactly once. Re-diarization follows the same path and excludes saved words outside the current trim. Diarization + merge — per-word or per-segment speaker lookup, speaker-preserving sentence grouping (`transcriber/transcript/`).
 8. Cache store, durable `.meta` transcript, and adjacent text export.
 
-Speaker assignment preserves short responses and alternating turns. Overlapping turns for one speaker are counted once; exact ties use a stable speaker order or the previous label, without overriding a stronger match. Words outside detected speech turns remain unassigned. Word grouping preserves dialogue order and keeps the furthest word end when timestamps overlap. The former isolated-entry smoothing rule could relabel whole sentences and one-word replies; it is removed from both initial transcription and re-diarization. Sentence grouping also splits across long timestamp gaps. Speech detection is probabilistic and word times remain model estimates, not forced alignment. Previously saved results remain unchanged until explicitly reprocessed.
+Speaker assignment preserves short responses and alternating turns. Overlapping turns for one speaker are counted once; exact ties use a stable speaker order or the previous label, without overriding a stronger match. Words outside detected speech turns remain unassigned. Word grouping preserves dialogue order and keeps the furthest word end when timestamps overlap. Neither initial transcription nor re-diarization smooths away isolated speaker turns. Sentence grouping also splits across long timestamp gaps. Speech detection is probabilistic and word times remain model estimates, not forced alignment. Previously saved results remain unchanged until explicitly reprocessed.
 
 Postprocessing also handles phrase-sized Whisper tokens and tokenless segment loops. Three or more low-confidence copies within 30 seconds can collapse to the first copy, retaining intervening text; isolated and distant repetitions remain. This is a heuristic, not a claim about what was spoken. Previously saved transcripts are kept intact, and the revised cache-key version forces a fresh run when transcription is explicitly requested again.
 
@@ -33,9 +33,7 @@ Manual transcription, folder/selection batches, and re-diarization share `useTra
 
 Rust's `commands/transcription_queue.rs` independently bounds native execution to one job across transcription and re-diarization. This protects shared engine caches, subprocess ownership, and model memory. The worker owns its cancellation registration and execution guard until the native operation has actually finished, even if its IPC caller disappears. Cancelling pending work removes it without waiting for the active job; cancelling active work signals only that job and retains its slot while the worker shuts down. `cancel_transcribe` is scoped to one path; `cancel_all_transcribes` remains an explicit backend operation.
 
-The previous implementation had separate manual and batch lifecycles, treated a row's Stop action as cancel-all, replaced cancellation tokens for duplicate paths, and released the native lock while cancelled work continued in a detached task. That allowed unrelated progress to be cleared and shared engine shutdown to overlap subsequent jobs. Starting a batch alone did not explicitly request cancellation; the original incident has no matching captured runtime trace, so these verified defects are covered separately by regression tests.
-
-The lifecycle follows the single-owner state transitions and completion guard used in [Handy's recording coordinator](https://github.com/cjpais/Handy/blob/main/src-tauri/src/transcription_coordinator.rs), adapted to independent file jobs. [Tokio's blocking-task contract](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html) requires waiting for already-running native work rather than assuming cancellation aborts it. [p-queue](https://github.com/sindresorhus/p-queue#api) provides the comparable additive admission, bounded concurrency and per-task cancellation model; the Vue composable keeps those semantics without another runtime dependency. Queue unit tests use controlled completion signals; the Playwright suite exercises adding remaining files during active transcription and cancellation/failure isolation through the actual UI with mocked IPC.
+Queue tests use controlled completion signals. Browser tests cover additive admission and cancellation/failure isolation through the UI with mocked IPC; they do not verify native inference.
 
 ## Defaults
 
@@ -52,23 +50,7 @@ Android uses the same default ASR, diarizer, language detector, and rename model
 
 ## CLI controls
 
-```bash
-wt audio.wav
-wt --lang en --speakers 2 meeting.wav
-wt --model whisper-cpp-large-v3-turbo-q8 audio.wav
-wt --diarizer sortformer-onnx audio.wav
-wt --diarizer titanet --speakers 6 audio.wav
-wt --no-diarize audio.wav
-wt --no-auto-route audio.wav
-```
-
-Important rules:
-
-- `--model` is authoritative. The engine is taken from the model catalogue.
-- `--engine` exists for advanced debugging only.
-- `--no-auto-route` keeps the saved model and language.
-- `--diarizer` accepts `sortformer-onnx` or `titanet`.
-- `--speakers N` sets the expected speaker count when diarization is enabled.
+`--model` determines the engine from the catalogue; `--engine` is diagnostic. `--no-auto-route` keeps the saved model/language. `--diarizer` accepts `sortformer-onnx` or `titanet`; `--speakers N` supplies the expected count when diarization is enabled. Other syntax is in `wt --help`.
 
 ## Language-aware ASR routing
 
@@ -84,9 +66,7 @@ When `--model` is not passed and `--no-auto-route` is not set, the CLI picks the
    - all other languages → Whisper.cpp
 4. Only installed models are selected. If no candidate is installed, the saved config remains unchanged.
 
-Parakeet languages: `bg`, `hr`, `cs`, `da`, `nl`, `en`, `et`, `fi`, `fr`, `de`, `el`, `hu`, `it`, `lv`, `lt`, `mt`, `pl`, `pt`, `ro`, `sk`, `sl`, `es`, `sv`, `ru`, `uk`.
-
-Qwen3-ASR languages: `zh`, `en`, `yue`, `ar`, `de`, `fr`, `es`, `pt`, `id`, `it`, `ko`, `ru`, `th`, `vi`, `ja`, `tr`, `hi`, `ms`, `nl`, `sv`, `da`, `fi`, `pl`, `cs`, `fil`, `fa`, `el`, `hu`, `mk`, `ro`.
+Supported language lists and catalogue entries are owned by `api.rs::route_model_for_lang` and `models/catalog_data.rs` rather than copied here.
 
 ## Engines
 
@@ -106,19 +86,9 @@ Qwen3-ASR languages: `zh`, `en`, `yue`, `ar`, `de`, `fr`, `es`, `pt`, `id`, `it`
 
 Diarization runs without Python. The transcript merge expects word-level or short ASR segments; Parakeet and Whisper.cpp both provide that.
 
-## Verification samples
+## Verification
 
-Use focused CLI runs when changing routing, models, diarization, or transcript merge code:
-
-```bash
-wt --no-cache --lang en audio_30s_4speakers.m4a
-wt --no-cache --lang ru russian.wav
-wt --no-cache --lang zh mandarin.wav
-wt --no-cache --model whisper-cpp-large-v3-turbo-q8 --diarizer sortformer-onnx audio.wav
-wt --no-cache --diarizer titanet --speakers 6 meeting.wav
-```
-
-Expected result: each run produces a JSON transcript with a sensible `language`, `speakers_detected`, utterance list, and word timings.
+Routing/merge changes need focused native tests and a no-cache CLI run through the affected model/language/diarizer. Inspect saved language, speaker count, words, and timestamps against the source audio. Durable storage and edit contracts are in [recordings.md](recordings.md).
 
 ## Optional desktop alignment and speaker pipeline
 

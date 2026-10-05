@@ -1,6 +1,6 @@
 # Verification
 
-Use the smallest check that proves the change while iterating. Before handoff, run the matrix row that matches the touched files. Execution semantics and live-session liveness are owned by [`dev-loop.md`](dev-loop.md).
+Select checks from the touched-file matrix. Execution semantics live in [dev-loop.md](dev-loop.md).
 
 ## Pre-commit hook
 
@@ -44,9 +44,6 @@ CI runs `just check-changed --base …`; full native Rust/Tauri gates are local/
 | Release / build orchestration | `xtask/**`, `justfile`, `scripts/install-*`                          | Targeted command, then `just check`                           | Stop live dev first          |
 | Docs only                     | `docs/**`, `AGENTS.md`                                               | `bun x prettier --check <changed docs>` + `bun run lint-docs` | No restart                   |
 
-## Live-session review loop
+## Runtime evidence
 
-- Desktop: scan the live `[dev]` stream for new error/panic lines.
-- Android: diff `tmp/logcat.log` line counts; new failures need root cause from `logs/*.log`, `tmp/*.log`, `adb logcat`, and recent git history.
-- Android JS edits must show `[vite] hmr update` in `tmp/android-dev.log`.
-- New `am_kill`/`am_proc_died`/`am_crash` for the app means inspect `tmp/logcat.log` around the timestamp before continuing.
+Use [dev-loop.md's signals](dev-loop.md#live-session-signals) for HMR/crashes and [Android WebView inspection](android.md#webview-inspection) for native-app probes. Browser E2E with mocked IPC verifies UI behaviour; actual native inference needs separate evidence.

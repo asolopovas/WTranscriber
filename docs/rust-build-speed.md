@@ -1,57 +1,22 @@
-# Rust build speed
+# Native build and cache constraints
 
-## Rules
+- Keep release `lto = false` and do not cap `CARGO_BUILD_JOBS`. Profiles are owned by `src-tauri/Cargo.toml`; avoid duplicating them in documentation.
+- Linux x86_64 C++ needs `_GLIBCXX_USE_CXX11_ABI=0`, matching prebuilt Sherpa/ONNX Runtime. `.cargo/config.toml` supplies target-specific CXXFLAGS. After changing that flag, clean `whisper-rs-sys` explicitly: its build script does not track the environment change. Mixing ABIs can abort in `std::regex` during model initialisation.
+- `just setup` prewarms whisper/sherpa C++ dependencies. After wiping targets, prewarm again before parallel `just check` jobs contend for Cargo locks.
 
-- Do not re-enable LTO in `[profile.release]` (`lto = false`). Heavy work is C++; LTO costs minutes for sub-1% gain.
-- Do not cap `CARGO_BUILD_JOBS`.
-- Linux x86_64 native C++ must use `_GLIBCXX_USE_CXX11_ABI=0`, matching the prebuilt Sherpa/ONNX Runtime archives. `.cargo/config.toml` sets the target-specific `CXXFLAGS`; mixing Whisper's default new ABI with those archives can abort inside `std::regex` during model initialisation. After changing this flag, run `cargo clean --manifest-path src-tauri/Cargo.toml -p whisper-rs-sys` before rebuilding because the upstream build script does not track that environment change.
-- Inner loop: `cargo check` / `cargo clippy`, not `cargo build`. `just check` runs both in parallel.
-- Profile with `cargo build --timings`; re-measure after each change.
+## Windows wrappers
 
-## Toolchain wrappers (installed by `scripts/bootstrap-windows.ps1`, set as User env vars)
+`scripts/bootstrap-windows.ps1` sets user environment variables:
 
-- **sccache** — `RUSTC_WRAPPER=sccache` plus `CMAKE_{C,CXX}_COMPILER_LAUNCHER=sccache` for cmake C/C++. Survives `cargo clean`; shares artefacts across host + Android where deps overlap. `sccache --show-stats` for hit rate. sccache will not cache incremental rustc output, so Android build sets `CARGO_INCREMENTAL=0` in `xtask::android::build::build_env`; desktop `just dev` keeps incremental on.
-- **`lld-link.exe`** — `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=lld-link.exe`, set once LLVM is on PATH. Faster than `link.exe` on warm rebuilds. Env-based (not in `.cargo/config.toml`) so fresh checkouts build with `link.exe` before bootstrap runs.
+| Tool         | Configuration                                                               |
+| ------------ | --------------------------------------------------------------------------- |
+| sccache      | `RUSTC_WRAPPER`, `CMAKE_C_COMPILER_LAUNCHER`, `CMAKE_CXX_COMPILER_LAUNCHER` |
+| lld-link.exe | `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER` once LLVM is available         |
 
-Disable either: `[Environment]::SetEnvironmentVariable('NAME', $null, 'User')`.
+The linker stays environment-based so unbootstrapped clones can use link.exe. Android sets `CARGO_INCREMENTAL=0` in xtask's build environment for sccache; desktop development keeps incremental compilation. Disable a wrapper by removing its user environment variable.
 
-## Dev profile (committed in `src-tauri/Cargo.toml`)
+## Cache ownership
 
-```toml
-[profile.dev]
-incremental = true
-debug = "line-tables-only"
-split-debuginfo = "unpacked"
-codegen-units = 256
+Generator changes are managed by `xtask/src/check.rs` using `target/.cmake-generator`; see [technical debt](technical-debt.md). `target/sherpa-onnx-prebuilt/` is a download cache outside Cargo's cleanup ownership; deleting it forces download.
 
-[profile.dev.package."*"]
-opt-level = 3
-```
-
-Optimises deps once; hot-path crates stay fast. If `tauri dev` reload misbehaves, drop dep `opt-level` to `1`.
-
-## Reference times
-
-Warm rebuild after one Rust source change (Windows, 16 cores):
-
-| Command                                           | Time  | Output                              |
-| ------------------------------------------------- | ----- | ----------------------------------- |
-| `cargo xtask release --dev --no-android --no-deb` | ~50 s | Host only: GUI installer + `wt` CLI |
-| `just build`                                      | ~5 m  | Windows-only full dev matrix        |
-
-Cold builds compile whisper.cpp, ggml, and sherpa-onnx native code — much slower.
-
-## Dependencies
-
-- `cargo tree --duplicate` after `cargo update` — flag duplicate versions.
-- `tokio = { features = ["full"] }` is the heaviest feature flag.
-
-## Cache hygiene
-
-`src-tauri/target` reaches 15–20 GB (debug ~6 GB, release ~11 GB).
-
-- Full nuke (~210 s to refill release): `cargo clean --manifest-path src-tauri/Cargo.toml && cargo clean --manifest-path xtask/Cargo.toml && rm -rf tmp dist node_modules`.
-- Surgical: `cargo clean --release --manifest-path src-tauri/Cargo.toml` reclaims ~11 GB.
-- `~/.cargo` registry/git caches: `cargo cache -a` (needs `cargo-cache`).
-
-`target/sherpa-onnx-prebuilt/` (~900 MB) is a download cache for prebuilt sherpa-onnx binaries, **not** managed by cargo. Deleting it forces re-download on the next build.
+Use `cargo build --timings` and `sccache --show-stats` for actual build/cache measurements.
