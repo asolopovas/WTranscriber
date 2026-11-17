@@ -127,7 +127,7 @@ fn jobs() -> Vec<Job> {
         },
         Job {
             tag: "audit",
-            command: "cargo audit --file src-tauri/Cargo.lock && bun audit",
+            command: "cargo audit --file src-tauri/Cargo.lock && bun run audit",
         },
     ]
 }

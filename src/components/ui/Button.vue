@@ -3,13 +3,7 @@ import { computed } from "vue";
 import Icon from "@components/ui/Icon.vue";
 
 type Variant =
-  | "primary"
-  | "neutral"
-  | "danger"
-  | "error"
-  | "ghost"
-  | "ghost-primary"
-  | "ghost-error";
+  "primary" | "neutral" | "danger" | "error" | "ghost" | "ghost-primary" | "ghost-error";
 
 type Shape = "pill" | "square" | "circle" | "icon" | "tab" | "tab-mobile" | "link";
 

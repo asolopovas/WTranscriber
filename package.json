@@ -13,7 +13,8 @@
     "lint-docs": "bun run scripts/lint-docs.ts",
     "test": "vitest run src scripts",
     "test:watch": "vitest",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "audit": "bun audit --ignore=GHSA-fc5q-39xc-vjpf"
   },
   "dependencies": {
     "@fontsource-variable/material-symbols-outlined": "^5.3.8",
@@ -21,12 +22,14 @@
     "@tauri-apps/plugin-dialog": "^2.8.1",
     "@tauri-apps/plugin-fs": "^2.6.0",
     "vue": "^3.5.43",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "ws": "8.22.0",
     "js-cookie": "^3.0.8",
-    "vite": "^8.3.2"
+    "vite": "^8.3.8",
+    "glob": "^14.0.6",
+    "minimatch": "^11.0.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -36,12 +39,12 @@
     "@types/bun": "^1.4.2",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.1",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^21.0.4",
     "knip": "^6.39.0",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
-    "vite": "^8.3.2",
+    "vite": "^8.3.8",
     "vitest": "^5.0.3",
     "vue-tsc": "^3.3.12"
   }

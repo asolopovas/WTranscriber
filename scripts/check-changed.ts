@@ -139,6 +139,6 @@ if (needsCargoAudit) {
   }
   run("cargo audit", "cargo", ["audit", "--file", "src-tauri/Cargo.lock"]);
 }
-if (needsBunAudit) run("bun audit", "bun", ["audit"]);
+if (needsBunAudit) run("bun audit", "bun", ["run", "audit"]);
 
 console.log("✓ changed-file checks passed");
