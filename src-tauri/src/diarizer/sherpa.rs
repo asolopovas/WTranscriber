@@ -10,7 +10,6 @@ use sherpa_onnx::{
 
 use crate::{
     audio::decode,
-    config::Device,
     diarizer::{Backend, Progress, Segment},
     error::{Error, Result},
     paths,
@@ -23,7 +22,6 @@ pub struct SherpaDiarizer {
     seg_model: PathBuf,
     emb_model: PathBuf,
     num_speakers: u32,
-    device: Device,
 }
 
 fn resolve_models(emb_rel: &str) -> Result<(PathBuf, PathBuf)> {
@@ -56,22 +54,17 @@ fn diarizer_threads() -> i32 {
 }
 
 impl SherpaDiarizer {
-    pub fn new(num_speakers: u32, emb_rel: &str, device: Device) -> Result<Self> {
+    pub fn new(num_speakers: u32, emb_rel: &str) -> Result<Self> {
         let (seg_model, emb_model) = resolve_models(emb_rel)?;
         Ok(Self {
             seg_model,
             emb_model,
             num_speakers,
-            device,
         })
     }
 
-    fn config(&self, num_speakers: u32, provider: &str) -> OfflineSpeakerDiarizationConfig {
-        let threads = if provider == "cuda" {
-            2
-        } else {
-            diarizer_threads()
-        };
+    fn config(&self, num_speakers: u32) -> OfflineSpeakerDiarizationConfig {
+        let threads = diarizer_threads();
         let n_clusters = i32::try_from(if num_speakers > 0 {
             num_speakers
         } else {
@@ -85,13 +78,13 @@ impl SherpaDiarizer {
                 },
                 num_threads: threads,
                 debug: false,
-                provider: Some(provider.into()),
+                provider: Some("cpu".into()),
             },
             embedding: SpeakerEmbeddingExtractorConfig {
                 model: Some(self.emb_model.to_string_lossy().into_owned()),
                 num_threads: threads,
                 debug: false,
-                provider: Some(provider.into()),
+                provider: Some("cpu".into()),
             },
             clustering: FastClusteringConfig {
                 num_clusters: n_clusters,
@@ -122,16 +115,7 @@ impl Backend for SherpaDiarizer {
         cancelled: &dyn Fn() -> bool,
         on_progress: Progress<'_>,
     ) -> Result<Vec<Segment>> {
-        let provider = crate::runtimes::dependencies::onnx_provider(self.device);
-        let config = self.config(num_speakers, provider);
-        let sd = OfflineSpeakerDiarization::create(&config)
-            .or_else(|| {
-                if provider != "cuda" {
-                    return None;
-                }
-                crate::logfile::warn("titanet GPU initialisation failed; retrying on CPU");
-                OfflineSpeakerDiarization::create(&self.config(num_speakers, "cpu"))
-            })
+        let sd = OfflineSpeakerDiarization::create(&self.config(num_speakers))
             .ok_or_else(|| Error::Transcribe("diarizer init failed".into()))?;
 
         let samples = decode::decode_to_pcm_f32(wav, sd.sample_rate())?;
@@ -168,21 +152,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn both_models_use_the_selected_provider() {
+    fn both_models_run_on_cpu() {
         let diarizer = SherpaDiarizer {
             seg_model: PathBuf::from("segmentation.onnx"),
             emb_model: PathBuf::from("embedding.onnx"),
             num_speakers: 3,
-            device: Device::Cuda,
         };
-        let provider = crate::runtimes::dependencies::onnx_provider(diarizer.device);
-        let config = diarizer.config(0, provider);
-        assert_eq!(config.segmentation.provider.as_deref(), Some(provider));
-        assert_eq!(config.embedding.provider.as_deref(), Some(provider));
+        let config = diarizer.config(0);
+        assert_eq!(config.segmentation.provider.as_deref(), Some("cpu"));
+        assert_eq!(config.embedding.provider.as_deref(), Some("cpu"));
         assert_eq!(config.clustering.num_clusters, 3);
-        let fallback = diarizer.config(2, "cpu");
-        assert_eq!(fallback.segmentation.provider.as_deref(), Some("cpu"));
-        assert_eq!(fallback.embedding.provider.as_deref(), Some("cpu"));
-        assert_eq!(fallback.clustering.num_clusters, 2);
+        assert_eq!(diarizer.config(2).clustering.num_clusters, 2);
     }
 }

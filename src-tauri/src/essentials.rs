@@ -2,19 +2,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::Emitter;
 
-use crate::{logfile, models, runtime_install};
+use crate::{config, logfile, models, runtime_install};
 
 #[must_use]
 pub fn essential_model_ids() -> Vec<String> {
-    [
+    let cfg = config::Config::load().unwrap_or_default();
+    let configured = [
+        Some(cfg.model.as_str()),
+        cfg.diarize.then(|| cfg.diarizer.as_str()),
+    ];
+    let mut ids: Vec<String> = [
         models::Family::Asr,
         models::Family::Diarizer,
         models::Family::Llm,
         models::Family::LangId,
     ]
     .iter()
-    .filter_map(|f| models::default_id(*f).map(String::from))
-    .collect()
+    .filter_map(|f| models::default_id(*f))
+    .chain(configured.into_iter().flatten())
+    .filter(|id| models::by_id(id).is_some())
+    .map(String::from)
+    .collect();
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 static ESSENTIALS_STARTED: AtomicBool = AtomicBool::new(false);
