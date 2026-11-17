@@ -266,9 +266,25 @@ export async function desktop(mode: "dev" | "build", root: string): Promise<void
       `https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/linux-x86_64/cudnn-linux-x86_64-${cudnnVersion}_cuda12-archive.tar.xz`,
       ["libcudnn.so.9"],
     );
+    const cudaRuntime = [
+      { name: "cuda_cudart", release: "12.9.79", library: "libcudart.so.12" },
+      { name: "libcublas", release: "12.9.1.4", library: "libcublasLt.so.12" },
+      { name: "cuda_nvrtc", release: "12.9.86", library: "libnvrtc.so.12" },
+    ].map(({ name, release, library }) => ({
+      destination: join(data, "cuda", name, release),
+      url: `https://developer.download.nvidia.com/compute/cuda/redist/${name}/linux-x86_64/${name}-linux-x86_64-${release}-archive.tar.xz`,
+      library,
+    }));
+    for (const { destination, url, library } of cudaRuntime) {
+      await ensureRuntime(root, cache, destination, url, [library]);
+    }
     env.CMAKE_CUDA_HOST_COMPILER = cudaHostCompiler(root, backend.architectures[0]!, env);
     console.log(`desktop: CUDA host compiler ${env.CMAKE_CUDA_HOST_COMPILER}`);
-    libraries.push(join(sherpa, "lib"), join(cudnn, "lib"));
+    libraries.push(
+      join(sherpa, "lib"),
+      join(cudnn, "lib"),
+      ...cudaRuntime.map(({ destination }) => join(destination, "lib")),
+    );
     env.SHERPA_ONNX_LIB_DIR = libraries[0];
     env.CMAKE_CUDA_ARCHITECTURES ||= backend.architectures.join(";");
     env.LD_LIBRARY_PATH = [...libraries, env.LD_LIBRARY_PATH].filter(Boolean).join(":");

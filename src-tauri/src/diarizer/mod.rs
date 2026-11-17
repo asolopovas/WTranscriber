@@ -39,8 +39,12 @@ pub fn new_with_choice(
     device: Device,
 ) -> Result<Box<dyn Backend>> {
     let titanet_fallback = || {
-        SherpaDiarizer::new(num_speakers, DiarizerChoice::Titanet.embedding_rel())
-            .map(|d| Box::new(d) as Box<dyn Backend>)
+        SherpaDiarizer::new(
+            num_speakers,
+            DiarizerChoice::Titanet.embedding_rel(),
+            device,
+        )
+        .map(|d| Box::new(d) as Box<dyn Backend>)
     };
     match choice {
         DiarizerChoice::WhisperxCommunity1 => Err(crate::error::Error::Config(
@@ -71,8 +75,10 @@ pub fn new_with_choice(
                 }
             }
         }
-        DiarizerChoice::Titanet => SherpaDiarizer::new(num_speakers, choice.embedding_rel())
-            .map(|d| Box::new(d) as Box<dyn Backend>),
+        DiarizerChoice::Titanet => {
+            SherpaDiarizer::new(num_speakers, choice.embedding_rel(), device)
+                .map(|d| Box::new(d) as Box<dyn Backend>)
+        }
     }
 }
 

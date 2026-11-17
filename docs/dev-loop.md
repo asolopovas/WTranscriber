@@ -12,7 +12,7 @@ Most `just` recipes use `scripts/run.ts`: `[tag]` output, `logs/<tag>.log`, defa
 
 ### Linux acceleration
 
-`scripts/desktop.ts` selects CUDA for supported NVIDIA hardware/toolkits, checks compute architectures and the host compiler, and supplies pinned Sherpa/cuDNN runtime paths. Otherwise it uses `sherpa-static` CPU. `WT_CUDA=0` selects CPU; `WT_CUDA=1` requires CUDA.
+`scripts/desktop.ts` selects CUDA for supported NVIDIA hardware/toolkits, checks compute architectures and the host compiler, and supplies pinned Sherpa, cuDNN and CUDA 12.9 runtime (cudart, cuBLAS, nvrtc) paths; installs bundle them because ONNX Runtime needs CUDA 12.8 or newer. Otherwise it uses `sherpa-static` CPU. `WT_CUDA=0` selects CPU; `WT_CUDA=1` requires CUDA.
 
 Local builds target detected GPUs; override `CMAKE_CUDA_ARCHITECTURES` for other machines. An incompatible default compiler needs a supported g++ or `CMAKE_CUDA_HOST_COMPILER`. Installation copies selected GPU libraries beside the build and prioritises them over existing `LD_LIBRARY_PATH`; the staged CLI is probed before activation. Old Whisper ABI caches are rebuilt before development/installation.
 

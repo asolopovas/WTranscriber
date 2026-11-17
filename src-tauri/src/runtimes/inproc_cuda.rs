@@ -106,7 +106,11 @@ pub fn setup() {
 }
 
 fn setup_linux() {
-    if let Some(bin) = cudnn::library_dir() {
+    let bundled = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .filter(|dir| dir.join(cudnn::target_dll()).exists());
+    if let Some(bin) = bundled.or_else(cudnn::library_dir) {
         let dll = bin.join(cudnn::target_dll());
         if dll.exists() {
             prepend_to_env("LD_LIBRARY_PATH", &bin);
