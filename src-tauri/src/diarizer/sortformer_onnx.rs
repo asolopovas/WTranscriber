@@ -17,7 +17,7 @@ const SAMPLE_RATE: i32 = 16_000;
 pub struct SortformerDiarizer {
     model_path: PathBuf,
     inner: Mutex<Sortformer>,
-    cpu_fallback: Mutex<Option<Sortformer>>,
+    accelerated: std::sync::atomic::AtomicBool,
 }
 
 impl SortformerDiarizer {
@@ -30,7 +30,7 @@ impl SortformerDiarizer {
             )));
         }
         let exec_cfg = sortformer_exec_config(device);
-        let accelerated = exec_cfg.is_some();
+        let mut accelerated = exec_cfg.is_some();
         let sf = Sortformer::with_config(&model_path, exec_cfg, DiarizationConfig::callhome())
             .or_else(|error| {
                 if !accelerated {
@@ -39,13 +39,14 @@ impl SortformerDiarizer {
                 crate::logfile::warn(&format!(
                     "sortformer GPU initialisation failed ({error}); retrying on CPU"
                 ));
+                accelerated = false;
                 Sortformer::with_config(&model_path, None, DiarizationConfig::callhome())
             })
             .map_err(|e| Error::Transcribe(format!("sortformer load: {e}")))?;
         Ok(Self {
             model_path,
             inner: Mutex::new(sf),
-            cpu_fallback: Mutex::new(None),
+            accelerated: accelerated.into(),
         })
     }
 }
@@ -73,12 +74,6 @@ fn sortformer_exec_config(device: Device) -> Option<parakeet_rs::ExecutionConfig
 #[cfg(not(any(feature = "cuda", all(windows, feature = "directml"))))]
 const fn sortformer_exec_config(_device: Device) -> Option<parakeet_rs::ExecutionConfig> {
     None
-}
-
-fn is_cuda_kernel_image_error(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    message.contains("nokernelimagefordevice")
-        || message.contains("no kernel image is available for execution on the device")
 }
 
 impl Backend for SortformerDiarizer {
@@ -117,27 +112,19 @@ impl Backend for SortformerDiarizer {
         #[allow(clippy::cast_sign_loss)]
         let segs = match guard.diarize(samples.clone(), SAMPLE_RATE as u32, 1) {
             Ok(segs) => segs,
-            Err(e) if is_cuda_kernel_image_error(&e.to_string()) => {
-                drop(guard);
-                crate::logfile::warn(
-                    "sortformer CUDA unavailable for this GPU; retrying diarization on CPU",
-                );
-                let mut cpu = self
-                    .cpu_fallback
-                    .lock()
-                    .map_err(|e| Error::Transcribe(format!("sortformer cpu lock poisoned: {e}")))?;
-                if cpu.is_none() {
-                    *cpu = Some(
-                        Sortformer::with_config(
-                            &self.model_path,
-                            None,
-                            DiarizationConfig::callhome(),
-                        )
-                        .map_err(|e| Error::Transcribe(format!("sortformer cpu load: {e}")))?,
-                    );
-                }
-                cpu.as_mut()
-                    .ok_or_else(|| Error::Transcribe("sortformer cpu not initialised".into()))?
+            Err(e)
+                if self
+                    .accelerated
+                    .swap(false, std::sync::atomic::Ordering::SeqCst) =>
+            {
+                crate::logfile::warn(&format!(
+                    "sortformer GPU diarization failed ({e}); retrying on CPU"
+                ));
+                let cpu =
+                    Sortformer::with_config(&self.model_path, None, DiarizationConfig::callhome())
+                        .map_err(|e| Error::Transcribe(format!("sortformer cpu load: {e}")))?;
+                std::mem::forget(std::mem::replace(&mut *guard, cpu));
+                guard
                     .diarize(samples, SAMPLE_RATE as u32, 1)
                     .map_err(|e| Error::Transcribe(format!("sortformer cpu diarize: {e}")))?
             }
