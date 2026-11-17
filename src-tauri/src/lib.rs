@@ -184,7 +184,18 @@ const fn setup_app(_app: &mut tauri::App) {}
 pub fn run() {
     init_logging();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        use tauri::Manager;
+        if let Some(window) = app.webview_windows().values().next() {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .setup(|app| {
             setup_app(app);
             Ok(())

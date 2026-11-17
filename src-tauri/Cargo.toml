@@ -67,6 +67,9 @@ sherpa-onnx-sys = { version = "=1.13.3", default-features = false }
 [package.metadata.cargo-machete]
 ignored = ["ort-sys", "sherpa-onnx-sys"]
 
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
