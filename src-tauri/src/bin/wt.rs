@@ -188,12 +188,23 @@ async fn main() -> ExitCode {
     } else {
         run_transcribe(cli).await
     };
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
+    let code = match result {
+        Ok(()) => 0,
         Err(e) => {
             eprintln!("error: {e}");
-            ExitCode::FAILURE
+            1
         }
+    };
+    exit_without_native_teardown(code)
+}
+
+fn exit_without_native_teardown(code: i32) -> ! {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::_exit(code)
     }
 }
 

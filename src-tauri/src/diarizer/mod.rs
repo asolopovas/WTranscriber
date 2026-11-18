@@ -135,6 +135,38 @@ pub fn speaker_id_for_time(
     Some(*best)
 }
 
+pub fn limit_speakers(segments: &mut [Segment], max_speakers: u32) {
+    let mut talk: std::collections::BTreeMap<u32, f64> = std::collections::BTreeMap::new();
+    for s in segments.iter() {
+        *talk.entry(s.speaker).or_default() += (s.end_sec - s.start_sec).max(0.0);
+    }
+    if max_speakers == 0 || talk.len() <= max_speakers as usize {
+        return;
+    }
+    let mut ranked: Vec<(u32, f64)> = talk.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let kept: std::collections::BTreeSet<u32> = ranked
+        .iter()
+        .take(max_speakers as usize)
+        .map(|(speaker, _)| *speaker)
+        .collect();
+    let anchors: Vec<Segment> = segments
+        .iter()
+        .filter(|s| kept.contains(&s.speaker))
+        .copied()
+        .collect();
+    for s in segments.iter_mut().filter(|s| !kept.contains(&s.speaker)) {
+        let gap = |a: &Segment| {
+            (a.start_sec - s.end_sec)
+                .max(s.start_sec - a.end_sec)
+                .max(0.0)
+        };
+        if let Some(nearest) = anchors.iter().min_by(|a, b| gap(a).total_cmp(&gap(b))) {
+            s.speaker = nearest.speaker;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,6 +177,30 @@ mod tests {
             start_sec: start,
             end_sec: end,
         }
+    }
+
+    #[test]
+    fn limit_speakers_merges_minor_speakers_into_nearest_kept_speaker() {
+        let mut segs = vec![
+            seg(0, 0.0, 10.0),
+            seg(2, 10.5, 11.0),
+            seg(1, 20.0, 30.0),
+            seg(3, 30.2, 31.0),
+        ];
+        limit_speakers(&mut segs, 2);
+        let speakers: Vec<u32> = segs.iter().map(|s| s.speaker).collect();
+        assert_eq!(speakers, vec![0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn limit_speakers_keeps_segments_when_within_limit_or_unset() {
+        let original = vec![seg(0, 0.0, 1.0), seg(1, 1.0, 2.0), seg(2, 2.0, 3.0)];
+        let mut unset = original.clone();
+        limit_speakers(&mut unset, 0);
+        assert_eq!(unset, original);
+        let mut within = original.clone();
+        limit_speakers(&mut within, 3);
+        assert_eq!(within, original);
     }
 
     #[test]

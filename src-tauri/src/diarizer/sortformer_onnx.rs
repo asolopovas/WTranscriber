@@ -90,7 +90,7 @@ impl Backend for SortformerDiarizer {
     fn diarize(
         &self,
         wav: &Path,
-        _num_speakers: u32,
+        num_speakers: u32,
         _audio_dur_sec: f64,
         cancelled: &dyn Fn() -> bool,
         on_progress: Progress<'_>,
@@ -137,7 +137,7 @@ impl Backend for SortformerDiarizer {
         on_progress(0.95);
 
         #[allow(clippy::cast_precision_loss)]
-        let out = segs
+        let mut out: Vec<Segment> = segs
             .into_iter()
             .map(|s| Segment {
                 speaker: u32::try_from(s.speaker_id).unwrap_or(u32::MAX),
@@ -145,6 +145,7 @@ impl Backend for SortformerDiarizer {
                 end_sec: s.end as f64 / f64::from(SAMPLE_RATE),
             })
             .collect();
+        crate::diarizer::limit_speakers(&mut out, num_speakers);
         on_progress(1.0);
         Ok(out)
     }

@@ -174,6 +174,8 @@ fn setup_android_paths(app: &tauri::App) {
 #[cfg(target_os = "android")]
 fn setup_app(app: &mut tauri::App) {
     setup_android_paths(app);
+    #[cfg(not(target_os = "android"))]
+    auto_install_essentials(app.handle().clone());
 }
 
 #[cfg(not(target_os = "android"))]
